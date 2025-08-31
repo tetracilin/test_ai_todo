@@ -1,0 +1,57 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-g" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini Task Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#007AFF',
+              'secondary': '#8E8E93',
+              'background': '#F2F2F7',
+              'surface': '#FFFFFF',
+              'surface-dark': '#1C1C1E',
+              'background-dark': '#000000',
+              'text-primary': '#000000',
+              'text-secondary': '#636366',
+              'text-primary-dark': '#FFFFFF',
+              'text-secondary-dark': '#8D8D92',
+              'border-light': '#E5E5EA',
+              'border-dark': '#38383A',
+            },
+            keyframes: {
+              'slide-in': {
+                '0%': { transform: 'translateX(100%)', opacity: '0' },
+                '100%': { transform: 'translateX(0)', opacity: '1' },
+              },
+            },
+            animation: {
+              'slide-in': 'slide-in 0.3s ease-out forwards',
+            }
+          }
+        },
+        darkMode: 'class',
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.11.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-background dark:bg-background-dark">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

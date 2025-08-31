@@ -1,0 +1,10 @@
+import React from 'react';
+import { Icon } from './Icon';
+
+export const ClipboardCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <Icon className={className}>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+    <path d="m9 12 2 2 4-4"></path>
+    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+  </Icon>
+);

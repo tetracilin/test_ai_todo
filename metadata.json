@@ -1,0 +1,8 @@
+{
+  "name": "Gemini Task Manager",
+  "description": "A personal task manager designed to help busy professionals organize and manage their tasks efficiently. It uses Gemini AI to help break down large projects into smaller, manageable tasks.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "prompt": ""
+}
