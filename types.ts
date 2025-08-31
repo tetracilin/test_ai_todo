@@ -1,4 +1,3 @@
-
 export enum ItemStatus {
   Active = 'Active',
   Completed = 'Completed',
@@ -34,11 +33,6 @@ export interface Tag {
   name: string;
 }
 
-export interface SecurityQuestion {
-    question: string;
-    answerHash: string;
-}
-
 export interface Person {
   id:string;
   name: string;
@@ -46,8 +40,6 @@ export interface Person {
   mobile: string;
   avatarUrl?: string; // Optional avatar
   aiPrompt?: string; // Custom prompt for AI interactions
-  passwordHash?: string; // Hashed password for email/password auth
-  securityQuestions?: SecurityQuestion[];
 }
 
 export interface BaseItem {

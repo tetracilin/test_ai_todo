@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { TaskProvider, useTasks } from './context/TaskContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -461,11 +460,11 @@ const FullApp: React.FC = () => {
 
 const App: React.FC = () => {
     return (
-        <TaskProvider>
-            <AuthProvider>
+        <AuthProvider>
+            <TaskProvider>
                 <FullApp />
-            </AuthProvider>
-        </TaskProvider>
+            </TaskProvider>
+        </AuthProvider>
     );
 };
 

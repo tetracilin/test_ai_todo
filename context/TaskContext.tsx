@@ -1,11 +1,13 @@
-
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useTaskStore, UseTaskStoreReturn } from '../hooks/useTaskStore';
+import { useAuth } from './AuthContext';
 
 const TaskContext = createContext<UseTaskStoreReturn | undefined>(undefined);
 
 export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const taskStore = useTaskStore();
+  const { currentUserId, isReady } = useAuth();
+  const taskStore = useTaskStore(isReady ? currentUserId : null);
+  
   return (
     <TaskContext.Provider value={taskStore}>
       {children}
