@@ -1,0 +1,29 @@
+{
+  "name": "paperclip-discord-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Discord chat bridge for Paperclip — lets a linked human view/comment/approve Paperclip issues from Discord, and pushes issue notifications back into Discord. Talks only to Paperclip's public HTTP API.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "register-commands": "tsx src/registerCommands.ts",
+    "test": "vitest run",
+    "smoke-test": "tsx src/smokeTest.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
