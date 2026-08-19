@@ -12,3 +12,30 @@ packages:
   - server
   - ui
   - cli
+
+allowBuilds:
+  '@embedded-postgres/linux-x64': true
+  cpu-features: true
+  es5-ext: true
+  esbuild: true
+  sqlite3: true
+  ssh2: true
+
+overrides:
+  rollup: ">=4.59.0"
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  lexical: 0.46.0
+  "@lexical/clipboard": 0.46.0
+  "@lexical/link": 0.46.0
+  "@lexical/list": 0.46.0
+  "@lexical/markdown": 0.46.0
+  "@lexical/plain-text": 0.46.0
+  "@lexical/react": 0.46.0
+  "@lexical/rich-text": 0.46.0
+  "@lexical/selection": 0.46.0
+  "@lexical/utils": 0.46.0
+
+patchedDependencies:
+  acpx@0.12.0: patches/acpx@0.12.0.patch
+  embedded-postgres@18.1.0-beta.16: patches/embedded-postgres@18.1.0-beta.16.patch
