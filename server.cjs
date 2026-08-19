@@ -18,10 +18,10 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
 };
 
-function serveStatic(req, res) {
-  let filePath = path.join(DIST_DIR, req.url === '/' ? 'index.html' : req.url);
+function serveStatic(req, res, distDir) {
+  let filePath = path.join(distDir, req.url === '/' ? 'index.html' : req.url);
   filePath = path.normalize(filePath);
-  if (!filePath.startsWith(DIST_DIR)) {
+  if (!filePath.startsWith(distDir)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -33,7 +33,7 @@ function serveStatic(req, res) {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       // SPA fallback: serve index.html for non-file routes
-      fs.readFile(path.join(DIST_DIR, 'index.html'), (err2, fallback) => {
+      fs.readFile(path.join(distDir, 'index.html'), (err2, fallback) => {
         if (err2) {
           res.writeHead(404);
           res.end('Not found');
@@ -49,28 +49,36 @@ function serveStatic(req, res) {
   });
 }
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/api/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      status: 'ok',
-      app: 'gemini-task-manager',
-      version: '0.0.0',
-      time: new Date().toISOString(),
-    }));
-    return;
-  }
+function createServer(options = {}) {
+  const distDir = options.distDir || DIST_DIR;
+  return http.createServer((req, res) => {
+    if (req.url === '/api/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        app: 'gemini-task-manager',
+        version: '0.0.0',
+        time: new Date().toISOString(),
+      }));
+      return;
+    }
 
-  if (req.url.startsWith('/api/')) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'not found' }));
-    return;
-  }
+    if (req.url.startsWith('/api/')) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
 
-  serveStatic(req, res);
-});
+    serveStatic(req, res, distDir);
+  });
+}
 
-server.listen(PORT, () => {
-  console.log(`Gemini Task Manager running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-});
+module.exports = { createServer, DIST_DIR };
+
+if (require.main === module) {
+  const server = createServer();
+  server.listen(PORT, () => {
+    console.log(`Gemini Task Manager running on http://localhost:${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+  });
+}
