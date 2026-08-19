@@ -109,6 +109,7 @@ jobs:
         run: npm run build
         env:
           GEMINI_API_KEY: dummy-build-key
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
 
       - name: Install discord-bridge dependencies
         working-directory: discord-bridge
@@ -129,3 +130,28 @@ jobs:
         with:
           name: discord-bridge-dist
           path: discord-bridge/dist/
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

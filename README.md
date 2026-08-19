@@ -8,6 +8,14 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/drive/1YgTJ-8fwfcXfkGzDjY_U5DdtqTYxuGdq
 
+## Live build
+
+Every push to `main` that passes CI deploys the latest `dist/` build to GitHub Pages:
+
+https://tetracilin.github.io/test_ai_todo/
+
+See the `deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
