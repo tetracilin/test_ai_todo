@@ -31,12 +31,23 @@ log "building dist/"
 GEMINI_API_KEY="${GEMINI_API_KEY:-dummy-deploy-key}" VITE_BASE_PATH="${VITE_BASE_PATH:-/}" npm run build
 
 log "restarting server.cjs on port $PORT"
-if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-  kill "$(cat "$PID_FILE")"
-  sleep 1
-fi
+# Scan /proc rather than trust only the PID file: this environment has no
+# `ps`, and a stale/missing PID file must not leave two servers racing for
+# the port.
+for p in /proc/[0-9]*; do
+  [ -r "$p/cmdline" ] || continue
+  cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
+  case "$cmd" in
+    *"node server.cjs"*)
+      pid="${p#/proc/}"
+      kill "$pid" 2>/dev/null || true
+      ;;
+  esac
+done
+sleep 1
 
-nohup env T3_PORT="$PORT" node server.cjs > "$LOG_FILE" 2>&1 &
+export T3_PORT="$PORT"
+nohup node server.cjs > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 
 sleep 1
