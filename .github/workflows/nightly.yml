@@ -78,11 +78,15 @@ jobs:
           retention-days: 14
 
       - name: Notify Discord on failure
-        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        if: failure()
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL not set — skipping Discord notification."
+            exit 0
+          fi
           curl -sf -X POST -H "Content-Type: application/json" \
-            -d "{\"content\": \"🔴 Nightly regression failed for test_ai_todo on ${{ github.repository }}@${{ github.sha }} — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            -d "{\"content\": \"Nightly regression failed for test_ai_todo on ${{ github.repository }}@${{ github.sha }} — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "$DISCORD_WEBHOOK_URL"
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
