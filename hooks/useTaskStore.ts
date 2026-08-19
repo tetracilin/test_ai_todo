@@ -202,11 +202,11 @@ export const useTaskStore = (userId: string | null) => {
     const itemToDelete = data.items.find(i => i.id === id);
     if (!itemToDelete) return;
 
-    const itemsToDeleteIds = Array.from(getDescendants(id));
+    const itemsToDeleteIds = Array.from<string>(getDescendants(id));
     itemsToDeleteIds.push(id);
 
     const batch = writeBatch(db);
-    itemsToDeleteIds.forEach(itemId => {
+    itemsToDeleteIds.forEach((itemId: string) => {
         const itemRef = doc(db, "items", itemId);
         batch.delete(itemRef);
     });

@@ -3,10 +3,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { UserCircleIcon } from './icons/UserCircleIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
-import { Person } from '../types';
 
 export const UserMenu: React.FC = () => {
-  const { users, currentUser, logout, switchUser, showAccountSettings } = useAuth();
+  const { currentUser, logout, showAccountSettings } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -26,13 +25,6 @@ export const UserMenu: React.FC = () => {
     return null;
   }
 
-  const handleSelectUser = (user: Person) => {
-    if (currentUser.id !== user.id) {
-        switchUser(user.email);
-    }
-    setIsOpen(false);
-  };
-  
   const handleAccountSettings = () => {
       showAccountSettings();
       setIsOpen(false);
@@ -50,18 +42,6 @@ export const UserMenu: React.FC = () => {
       </button>
       {isOpen && (
         <div className="absolute z-10 top-full mt-2 w-full bg-surface dark:bg-surface-dark rounded-lg shadow-lg border border-border-light dark:border-border-dark py-1">
-          <div className="px-4 pt-2 pb-1 text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">Switch Account</div>
-          {users.map((user) => (
-            <button
-              key={user.id}
-              onClick={() => handleSelectUser(user)}
-              className="w-full text-left px-4 py-2 text-sm text-text-primary dark:text-text-primary-dark hover:bg-gray-200/50 dark:hover:bg-gray-700/50 flex items-center space-x-3"
-            >
-              <UserCircleIcon className={`w-5 h-5 ${user.id === currentUser.id ? 'text-primary' : 'text-text-secondary'}`} />
-              <span className="truncate">{user.name}</span>
-            </button>
-          ))}
-          <div className="my-1 h-px bg-border-light dark:bg-border-dark" />
            <button
             onClick={handleAccountSettings}
             className="w-full text-left px-4 py-2 text-sm text-text-primary dark:text-text-primary-dark hover:bg-gray-200/50 dark:hover:bg-gray-700/50"

@@ -56,6 +56,12 @@ function parseCsvRow(row: string): string[] {
         if (match.index === regex.lastIndex) {
             regex.lastIndex++;
         }
+        // The regex leaves a zero-width match trailing every fully-consumed row;
+        // skip it here so it doesn't become a phantom extra field. A genuine
+        // trailing empty field (row ending in ',') is handled below instead.
+        if (match[0] === '' && match.index === row.length && values.length > 0) {
+            continue;
+        }
         let value = match[1] !== undefined ? match[1].replace(/""/g, '"') : (match[2] || '');
         values.push(value);
     }

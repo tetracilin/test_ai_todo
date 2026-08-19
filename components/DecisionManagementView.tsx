@@ -203,7 +203,7 @@ export const DecisionManagementView: React.FC<{
             ? allDecisions 
             : allDecisions.filter(d => d.projectId === projectFilter);
         
-        const decisionMap = new Map(filteredDecisions.map(d => [d.id, d]));
+        const decisionMap = new Map<string, Decision>(filteredDecisions.map(d => [d.id, d]));
         const roots = filteredDecisions.filter(d => !d.parentId || !decisionMap.has(d.parentId));
 
         if (roots.length === 0) return { nodes: [], connectors: [], width: 0, height: 0 };

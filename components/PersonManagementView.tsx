@@ -7,8 +7,9 @@ import { TrashIcon } from './icons/TrashIcon';
 import { PlusIcon } from './icons/PlusIcon';
 
 export const PersonManagementView: React.FC = () => {
-    const { upsertPerson, deletePerson } = useTasks();
-    const { currentUserId, users } = useAuth();
+    const { upsertPerson, deletePerson, getPersons } = useTasks();
+    const { currentUserId } = useAuth();
+    const users = getPersons();
     
     const [formData, setFormData] = useState<Partial<Person>>({});
     const [isEditing, setIsEditing] = useState(false);

@@ -86,7 +86,7 @@ export const RoutineModal: React.FC<RoutineModalProps> = ({ routine, onClose, on
 
         const finalRecurrenceRule: RecurrenceRule = {
             frequency: formData.recurrenceRule?.frequency || RecurrenceFrequency.Daily,
-            daysOfWeek: Array.from(selectedDays).sort(),
+            daysOfWeek: Array.from<number>(selectedDays).sort(),
         };
 
         if (finalRecurrenceRule.frequency === RecurrenceFrequency.Weekly && finalRecurrenceRule.daysOfWeek?.length === 0) {
