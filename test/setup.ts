@@ -1,5 +1,12 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
+import * as React from 'react';
+import { act } from 'react';
+
+// React 19 removed React.act as a property; react-dom/test-utils still calls React.act(). Patch it.
+if (typeof (React as Record<string, unknown>).act !== 'function') {
+  (React as Record<string, unknown>).act = act;
+}
 
 // Every unit test runs offline: shim firebase/app + firebase/auth + firebase/firestore
 // so importing app code (context, components) never touches the network.
