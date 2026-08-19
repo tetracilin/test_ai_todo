@@ -8,8 +8,84 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  test:
+    name: Unit + integration tests
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Test-population guard
+        run: npm run check-tests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+
+      - name: Install discord-bridge dependencies
+        working-directory: discord-bridge
+        run: npm ci
+
+      - name: Build discord-bridge
+        working-directory: discord-bridge
+        run: npm run build
+
+      - name: Test discord-bridge
+        working-directory: discord-bridge
+        run: npm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e suite
+        run: npm run test:e2e
+        env:
+          CI: true
+          GEMINI_API_KEY: dummy-e2e-key
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  build:
+    name: Build artifacts
+    runs-on: ubuntu-latest
+    needs: [test, e2e]
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +99,8 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+        env:
+          GEMINI_API_KEY: dummy-build-key
 
       - name: Install discord-bridge dependencies
         working-directory: discord-bridge
@@ -31,10 +109,6 @@ jobs:
       - name: Build discord-bridge
         working-directory: discord-bridge
         run: npm run build
-
-      - name: Test discord-bridge
-        working-directory: discord-bridge
-        run: npm test
 
       - name: Upload frontend dist
         uses: actions/upload-artifact@v4

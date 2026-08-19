@@ -1,0 +1,96 @@
+name: Nightly regression
+
+on:
+  schedule:
+    # 02:00 UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    name: Full regression suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit -- --reporter=default --reporter=junit --outputFile=junit-unit.xml
+
+      - name: Integration tests
+        run: npm run test:integration -- --reporter=default --reporter=junit --outputFile=junit-integration.xml
+
+      - name: Install discord-bridge dependencies
+        working-directory: discord-bridge
+        run: npm ci
+
+      - name: Build discord-bridge
+        working-directory: discord-bridge
+        run: npm run build
+
+      - name: Test discord-bridge
+        working-directory: discord-bridge
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          GEMINI_API_KEY: dummy-nightly-key
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        id: e2e
+        run: npm run test:e2e
+        env:
+          CI: true
+          GEMINI_API_KEY: dummy-nightly-key
+
+      - name: Upload JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-junit-reports
+          path: |
+            junit-unit.xml
+            junit-integration.xml
+          retention-days: 14
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Notify Discord on failure
+        if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
+        run: |
+          curl -sf -X POST -H "Content-Type: application/json" \
+            -d "{\"content\": \"🔴 Nightly regression failed for test_ai_todo on ${{ github.repository }}@${{ github.sha }} — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Nightly regression — ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Unit + integration: JUnit reports in the \`nightly-junit-reports\` artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "- E2E: HTML report in the \`nightly-playwright-report\` artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"
