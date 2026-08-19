@@ -54,6 +54,7 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +67,14 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        # apt-get (pulled in by --with-deps) intermittently hangs on the
+        # ubuntu-latest runner's package mirror; retry instead of hanging
+        # for hours (see actions/runner-images#11347).
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          command: npx playwright install --with-deps chromium
 
       - name: Run e2e suite
         run: npm run test:e2e
