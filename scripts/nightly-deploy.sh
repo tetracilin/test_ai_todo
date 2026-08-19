@@ -23,7 +23,9 @@ git checkout main
 git reset --hard origin/main
 
 log "now at $(git rev-parse --short HEAD), installing deps"
-npm ci
+# --include=dev: this environment sets NODE_ENV=production, which makes
+# plain `npm ci` skip devDependencies (vite) and breaks the build step.
+npm ci --include=dev
 
 log "building dist/"
 GEMINI_API_KEY="${GEMINI_API_KEY:-dummy-deploy-key}" VITE_BASE_PATH="${VITE_BASE_PATH:-/}" npm run build
