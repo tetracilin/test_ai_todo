@@ -11,6 +11,9 @@ import {
   Network,
   Boxes,
   Repeat,
+  Repeat2,
+  CalendarClock,
+  CalendarDays,
   Layers,
   GitBranch,
   Package,
@@ -229,6 +232,9 @@ export function Sidebar() {
           {showCases ? (
             <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
           ) : null}
+          <SidebarNavItem to="/today" label="Today" icon={CalendarClock} />
+          <SidebarNavItem to="/schedule" label="Schedule" icon={CalendarDays} />
+          <SidebarNavItem to="/schedule/routines" label="Scheduling Routines" icon={Repeat2} />
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
