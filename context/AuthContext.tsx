@@ -14,7 +14,7 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Person, LogAction } from '../types';
 import { auth, db } from '../services/firebase';
-import { useTasks } from './TaskContext';
+import taskStoreBridge from './taskStoreBridge';
 
 
 interface AuthContextType {
@@ -40,7 +40,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [appView, setAppView] = useState<'main' | 'account-settings'>('main');
-  const { addLogEntry, upsertPerson } = useTasks();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -71,7 +70,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
     await setPersistence(auth, persistence);
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    addLogEntry({
+    taskStoreBridge.current?.addLogEntry({
         userId: userCredential.user.uid,
         action: LogAction.LOGIN,
         details: `User logged in.`
@@ -79,9 +78,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
   
   const signup = async (name: string, email: string, password: string): Promise<void> => {
+      if (!taskStoreBridge.current) {
+          throw new Error('Task store is not ready yet. Please try again in a moment.');
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const { user } = userCredential;
-      
+
       const newUserProfile: Person = {
           id: user.uid,
           name,
@@ -90,9 +93,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           avatarUrl: '',
           aiPrompt: `A busy professional named ${name}.`,
       };
-      
+
       // Use the existing upsertPerson which now talks to Firestore
-      await upsertPerson(newUserProfile, user.uid);
+      await taskStoreBridge.current.upsertPerson(newUserProfile, user.uid);
       setCurrentUser(newUserProfile);
   };
 
