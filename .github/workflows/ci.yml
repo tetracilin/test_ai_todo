@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install discord-bridge dependencies
+        working-directory: discord-bridge
+        run: npm ci
+
+      - name: Build discord-bridge
+        working-directory: discord-bridge
+        run: npm run build
+
+      - name: Test discord-bridge
+        working-directory: discord-bridge
+        run: npm test
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+      - name: Upload discord-bridge dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-bridge-dist
+          path: discord-bridge/dist/

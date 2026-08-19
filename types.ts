@@ -40,6 +40,7 @@ export interface Person {
   mobile: string;
   avatarUrl?: string; // Optional avatar
   aiPrompt?: string; // Custom prompt for AI interactions
+  reportsTo?: string | null; // Person ID this person reports to (org chart)
 }
 
 export interface BaseItem {
@@ -192,6 +193,8 @@ export enum LogAction {
     BLOCK = 'BLOCK',
     IMPORT = 'IMPORT',
     ROUTINE_GENERATE = 'ROUTINE_GENERATE',
+    APPROVAL_REQUEST = 'APPROVAL_REQUEST',
+    APPROVAL_RESOLVE = 'APPROVAL_RESOLVE',
 }
 
 export interface LogEntry {
@@ -249,6 +252,25 @@ export interface Routine {
     lastGeneratedForDate?: string;
 }
 
+export enum ApprovalStatus {
+    Pending = 'Pending',
+    Approved = 'Approved',
+    Rejected = 'Rejected',
+}
+
+export interface ApprovalRequest {
+    id: string;
+    taskId: string;          // The task needing approval
+    requesterId: string;     // Person who requested approval
+    approverId: string;      // Person who must approve (from org chart)
+    status: ApprovalStatus;
+    reason?: string;         // Why approval is needed
+    response?: string;       // Approver's response note
+    createdAt: string;
+    updatedAt: string;
+    resolvedAt?: string | null;
+}
+
 export interface InboxFeedFilter {
     assignments: boolean;
     collaborations: boolean;
@@ -263,6 +285,7 @@ export type AppData = {
   decisions: Decision[];
   routines: Routine[];
   logs: LogEntry[];
+  approvals: ApprovalRequest[];
   todayViewTagIds?: string[];
   todayViewConfig: TodayViewConfig;
   leaveBlocks: LeaveBlock[];
@@ -287,4 +310,5 @@ export enum Perspective {
     DecisionTable = 'DecisionTable',
     DecisionTree = 'DecisionTree',
     Log = 'Log',
+    Approvals = 'Approvals',
 }

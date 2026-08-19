@@ -626,3 +626,6 @@ export const ItemDetail: React.FC<{
     )}
     </>
   );
+};
+
+export default ItemDetail;

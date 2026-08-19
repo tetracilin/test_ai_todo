@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { Item, Tag, AppData, ItemStatus, ItemType, WorkPackageType, Task, WorkPackage, Person, DefinitionOfDone, Project, Decision, PhaseType, KnowledgeGap, LogEntry, LogAction, DecisionStatus, TodayViewConfig, LeaveBlock, AiConfig, Routine, RecurrenceFrequency, RecurrenceRule, InboxFeedFilter } from '../types';
+import { Item, Tag, AppData, ItemStatus, ItemType, WorkPackageType, Task, WorkPackage, Person, DefinitionOfDone, Project, Decision, PhaseType, KnowledgeGap, LogEntry, LogAction, DecisionStatus, TodayViewConfig, LeaveBlock, AiConfig, Routine, RecurrenceFrequency, RecurrenceRule, InboxFeedFilter, ApprovalRequest, ApprovalStatus } from '../types';
 
 const createLogEntry = (log: Omit<LogEntry, 'id' | 'timestamp'>): LogEntry => ({
     id: crypto.randomUUID(),
@@ -23,6 +23,7 @@ const getInitialData = (): AppData => ({
     decisions: [],
     routines: [],
     logs: [],
+    approvals: [],
     todayViewTagIds: [],
     todayViewConfig: { startHour: 8, endHour: 20, slotDuration: 60 },
     leaveBlocks: [],
@@ -57,7 +58,7 @@ export const useTaskStore = (userId: string | null) => {
         return;
     }
 
-    const collections: (keyof AppData)[] = ['items', 'tags', 'persons', 'projects', 'decisions', 'routines', 'logs', 'leaveBlocks'];
+    const collections: (keyof AppData)[] = ['items', 'tags', 'persons', 'projects', 'decisions', 'routines', 'logs', 'leaveBlocks', 'approvals'];
     const unsubscribes = collections.map(collectionName => 
         onSnapshot(collection(db, collectionName), (snapshot) => {
             const collectionData = snapshot.docs.map(doc => fromFirestore({ id: doc.id, ...doc.data() }));
@@ -308,6 +309,7 @@ export const useTaskStore = (userId: string | null) => {
   const getLogs = useCallback(() => data.logs, [data.logs]);
   const getItem = useCallback((id: string) => data.items.find(item => item.id === id), [data.items]);
   const getRoutines = useCallback(() => data.routines || [], [data.routines]);
+  const getApprovals = useCallback(() => data.approvals || [], [data.approvals]);
   const getTodayViewTagIds = useCallback(() => data.todayViewTagIds || [], [data.todayViewTagIds]);
   const getTodayViewConfig = useCallback(() => data.todayViewConfig, [data.todayViewConfig]);
   const getAiConfig = useCallback(() => data.aiConfig || DEFAULT_AI_CONFIG, [data.aiConfig]);
@@ -337,7 +339,65 @@ export const useTaskStore = (userId: string | null) => {
   const dismissFeedItem = notImpl as (feedItemId: string) => void;
   const undismissAllFeedItems = notImpl as () => void;
 
-  return { getItems, getItem, getTags, getPersons, getInbox, getLogs, addLogEntry, upsertItem, deleteItem, addSubTasksToWorkPackage, upsertTag, deleteTag, getDescendants, upsertPerson, deletePerson, saveClarification, getProjects, getDecisions, upsertProject, deleteProject, upsertDecision, deleteDecision, convertKnowledgeGapToWp, convertDecisionToWp, getTodayViewTagIds, setTodayViewTagIds, getTodayViewConfig, setTodayViewConfig, getLeaveBlocks, upsertLeaveBlock, deleteLeaveBlock, getAiConfig, setAiConfig, importData, getRoutines, upsertRoutine, deleteRoutine, getInboxFeedFilter, setInboxFeedFilter, getDismissedFeedItemIds, dismissFeedItem, undismissAllFeedItems, batchCreateItems, isLoaded };
+  // --- Approval operations ---
+  const requestApproval = useCallback(async (taskId: string, requesterId: string, approverId: string, reason?: string) => {
+    const now = new Date().toISOString();
+    const approval: ApprovalRequest = {
+      id: crypto.randomUUID(),
+      taskId,
+      requesterId,
+      approverId,
+      status: ApprovalStatus.Pending,
+      reason: reason || '',
+      response: '',
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: null,
+    };
+    await setDoc(doc(db, "approvals", approval.id), approval);
+    addLogEntry({
+      userId: requesterId,
+      action: LogAction.APPROVAL_REQUEST,
+      details: `Approval requested for task`,
+      targetId: taskId,
+      targetType: 'Task',
+    });
+    return approval;
+  }, [addLogEntry]);
+
+  const resolveApproval = useCallback(async (approvalId: string, status: ApprovalStatus, actorId: string, response?: string) => {
+    const now = new Date().toISOString();
+    const existing = data.approvals.find(a => a.id === approvalId);
+    if (!existing) return;
+    const updated: ApprovalRequest = {
+      ...existing,
+      status,
+      response: response || '',
+      updatedAt: now,
+      resolvedAt: now,
+    };
+    await setDoc(doc(db, "approvals", approvalId), updated, { merge: true });
+    addLogEntry({
+      userId: actorId,
+      action: LogAction.APPROVAL_RESOLVE,
+      details: `Approval ${status.toLowerCase()} for task`,
+      targetId: existing.taskId,
+      targetType: 'Task',
+    });
+  }, [data.approvals, addLogEntry]);
+
+  // --- Org chart helpers ---
+  const getApproverForPerson = useCallback((personId: string): Person | null => {
+    const person = data.persons.find(p => p.id === personId);
+    if (!person || !person.reportsTo) return null;
+    return data.persons.find(p => p.id === person.reportsTo) || null;
+  }, [data.persons]);
+
+  const getReports = useCallback((personId: string): Person[] => {
+    return data.persons.filter(p => p.reportsTo === personId);
+  }, [data.persons]);
+
+  return { getItems, getItem, getTags, getPersons, getInbox, getLogs, addLogEntry, upsertItem, deleteItem, addSubTasksToWorkPackage, upsertTag, deleteTag, getDescendants, upsertPerson, deletePerson, saveClarification, getProjects, getDecisions, upsertProject, deleteProject, upsertDecision, deleteDecision, convertKnowledgeGapToWp, convertDecisionToWp, getTodayViewTagIds, setTodayViewTagIds, getTodayViewConfig, setTodayViewConfig, getLeaveBlocks, upsertLeaveBlock, deleteLeaveBlock, getAiConfig, setAiConfig, importData, getRoutines, upsertRoutine, deleteRoutine, getInboxFeedFilter, setInboxFeedFilter, getDismissedFeedItemIds, dismissFeedItem, undismissAllFeedItems, batchCreateItems, isLoaded, getApprovals, requestApproval, resolveApproval, getApproverForPerson, getReports };
 };
 
 export type UseTaskStoreReturn = ReturnType<typeof useTaskStore>;
