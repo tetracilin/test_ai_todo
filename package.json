@@ -1,0 +1,44 @@
+{
+  "name": "t3-project-management",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Project management tool forked from Paperclip, enabling humans and agent collaborators to work together inside the same project-management workflow.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-runner.mjs dev",
+    "dev:once": "node scripts/dev-runner.mjs dev --once",
+    "dev:watch": "node scripts/dev-runner.mjs watch",
+    "dev:mobile": "node scripts/dev-runner.mjs dev --mobile",
+    "dev:both": "node scripts/dev-both.mjs",
+    "dev:list": "node scripts/dev-runner.mjs list",
+    "dev:stop": "node scripts/dev-runner.mjs stop",
+    "build": "pnpm --filter @paperclipai/ui build && pnpm --filter @paperclipai/plugin-sdk build && pnpm --filter @paperclipai/server build",
+    "test": "vitest run",
+    "storybook": "pnpm --filter @paperclipai/ui storybook",
+    "build-storybook": "pnpm --filter @paperclipai/ui build-storybook"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/t3-project/t3-project-management.git"
+  },
+  "keywords": [
+    "project",
+    "management",
+    "paperclip",
+    "agents",
+    "collaboration",
+    "scheduling"
+  ],
+  "author": "T3",
+  "license": "MIT"
+}
