@@ -55,6 +55,14 @@ jobs:
       - name: Test no-git-push check
         run: node --test ./scripts/check-no-git-push.test.mjs
 
+      # K4 contract: report findings without failing CI. K12 owns switching
+      # this command to blocking mode after vendor runtime removal is complete.
+      - name: Report forbidden runtime inventory
+        run: pnpm check:no-google-runtime
+
+      - name: Test forbidden runtime inventory
+        run: pnpm test:check-no-google-runtime
+
       - name: Test general-server shard partition
         run: node --test ./scripts/__tests__/run-vitest-stable-shard.test.mjs
 
