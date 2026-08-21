@@ -2,6 +2,12 @@
   <img src="doc/assets/banner.jpg" alt="Paperclip is the app people use to manage AI agents for work." width="720" />
 </p>
 
+> [!IMPORTANT]
+> **Fork identity:** `tetracilin/test_ai_todo` is the T3 AI Todo fork of
+> [`paperclipai/paperclip`](https://github.com/paperclipai/paperclip). Fork work is integrated on
+> `integration/paperclip`; `main` remains the preserved legacy application until an explicit human
+> cutover. See [`doc/UPSTREAM-SYNC.md`](doc/UPSTREAM-SYNC.md) and [`NOTICE`](NOTICE).
+
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
   <a href="https://docs.paperclip.ing"><strong>Docs</strong></a> &middot;
@@ -502,7 +508,8 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 ## License
 
-MIT &copy; 2026 [Paperclip Labs, Inc](https://paperclip.ing)
+MIT. Paperclip copyright and license terms remain in [`LICENSE`](LICENSE); fork attribution and
+baseline details are recorded in [`NOTICE`](NOTICE).
 
 ## Star History
 

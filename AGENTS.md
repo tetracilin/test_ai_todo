@@ -7,6 +7,12 @@ Guidance for human and AI contributors working in this repository.
 Paperclip is a control plane for AI-agent companies.
 The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
 
+This repository is the T3 AI Todo fork of `paperclipai/paperclip`. Fork changes are integrated on
+`integration/paperclip`; `main` remains the preserved legacy application until an explicit human
+cutover. Keep `upstream` pointed at `https://github.com/paperclipai/paperclip.git`, follow
+`doc/UPSTREAM-SYNC.md`, and preserve `LICENSE` and `NOTICE` when copying or distributing upstream
+code. Never force-push `integration/paperclip` or `main`.
+
 ## 2. Read This First
 
 Before making changes, read in this order:
