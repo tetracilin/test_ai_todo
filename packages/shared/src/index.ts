@@ -2424,6 +2424,17 @@ export type {
   MoveFolderItemRequest,
   EnsureMySkillFolderRequest,
 } from "./types/folder.js";
+export type {
+  SchedulingRecurrenceRule,
+  SchedulingRoutineStatus,
+  IssueScheduling,
+  UpsertIssueSchedulingRequest,
+  ScheduledIssueListItem,
+  SchedulingRoutine,
+  CreateSchedulingRoutineRequest,
+  UpdateSchedulingRoutineRequest,
+  GenerateSchedulingRoutineIssuesResult,
+} from "./types/scheduling.js";
 
 export {
   adapterRegistryEntrySchema,
@@ -2447,6 +2458,20 @@ export {
   type MoveFolderItem,
   type EnsureMySkillFolder,
 } from "./validators/folder.js";
+
+export {
+  schedulingRoutineStatusSchema,
+  schedulingRecurrenceRuleSchema,
+  schedulingTimeOfDaySchema,
+  upsertIssueSchedulingSchema,
+  createSchedulingRoutineSchema,
+  updateSchedulingRoutineSchema,
+  generateSchedulingRoutineIssuesSchema,
+  type UpsertIssueScheduling,
+  type CreateSchedulingRoutine,
+  type UpdateSchedulingRoutine,
+  type GenerateSchedulingRoutineIssues,
+} from "./validators/scheduling.js";
 
 export {
   environmentCustomImageTemplateKindSchema,
