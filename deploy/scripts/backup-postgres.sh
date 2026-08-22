@@ -27,6 +27,6 @@ docker compose -f "$COMPOSE_FILE" exec -T db sh -eu -c \
 
 docker compose -f "$COMPOSE_FILE" exec -T db pg_restore --list < "$TEMP_DESTINATION" > /dev/null
 mv "$TEMP_DESTINATION" "$DESTINATION"
-sha256sum "$DESTINATION" > "$DESTINATION.sha256"
+(cd "$(dirname -- "$DESTINATION")" && sha256sum "$(basename -- "$DESTINATION")" > "$(basename -- "$DESTINATION").sha256")
 trap - EXIT INT TERM
 printf '%s\n' "$DESTINATION"
