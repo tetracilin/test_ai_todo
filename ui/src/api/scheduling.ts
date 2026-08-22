@@ -12,12 +12,16 @@ import { api } from "./client";
 export interface ScheduledIssuesFilters {
   from?: string;
   to?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 function scheduledIssuesSearchParams(filters?: ScheduledIssuesFilters) {
   const params = new URLSearchParams();
   if (filters?.from) params.set("from", filters.from);
   if (filters?.to) params.set("to", filters.to);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters?.cursor) params.set("cursor", filters.cursor);
   return params;
 }
 
@@ -35,7 +39,7 @@ export const schedulingApi = {
     api.delete<{ deleted: boolean }>(`/companies/${companyId}/issues/${issueId}/scheduling`),
   listScheduledIssues: (companyId: string, filters?: ScheduledIssuesFilters) => {
     const qs = scheduledIssuesSearchParams(filters).toString();
-    return api.get<{ items: ScheduledIssueListItem[] }>(
+    return api.get<{ items: ScheduledIssueListItem[]; nextCursor: string | null }>(
       `/companies/${companyId}/scheduled-issues${qs ? `?${qs}` : ""}`,
     );
   },

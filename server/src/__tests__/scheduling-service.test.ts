@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
@@ -111,8 +112,8 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(partialUpdate.scheduledDurationMinutes).toBe(45);
 
     const listed = await svc.listScheduledIssues(companyId, {});
-    expect(listed).toHaveLength(1);
-    expect(listed[0]!.issueId).toBe(issue.id);
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0]!.issueId).toBe(issue.id);
 
     const cleared = await svc.clearIssueScheduling(companyId, issue.id);
     expect(cleared).toBe(true);
@@ -235,9 +236,9 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(first.lastGeneratedForDate).toBe("2026-08-19");
 
     const scheduled = await svc.listScheduledIssues(companyId, {});
-    expect(scheduled).toHaveLength(1);
-    expect(scheduled[0]!.scheduledDurationMinutes).toBe(30);
-    expect(scheduled[0]!.assigneeAgentId).toBe(agentId);
+    expect(scheduled.items).toHaveLength(1);
+    expect(scheduled.items[0]!.scheduledDurationMinutes).toBe(30);
+    expect(scheduled.items[0]!.assigneeAgentId).toBe(agentId);
 
     // Re-running for the same date is a no-op.
     const repeat = await svc.generateDueIssuesForRoutine(companyId, routine.id, { asOf: firstAsOf, maxDays: 14 });
@@ -251,7 +252,93 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(caughtUp.lastGeneratedForDate).toBe("2026-09-02");
 
     const allScheduled = await svc.listScheduledIssues(companyId, {});
-    expect(allScheduled).toHaveLength(3);
+    expect(allScheduled.items).toHaveLength(3);
+  });
+
+  it("paginates scheduled issues deterministically and excludes deleted issues", async () => {
+    const { companyId, issueSvc, svc } = await seedFixture();
+    const first = await issueSvc.create(companyId, { title: "First", status: "todo", priority: "medium" });
+    const second = await issueSvc.create(companyId, { title: "Second", status: "todo", priority: "medium" });
+    const deleted = await issueSvc.create(companyId, { title: "Deleted", status: "todo", priority: "medium" });
+    for (const issue of [first, second, deleted]) {
+      await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: new Date("2026-08-22T09:00:00Z") });
+    }
+    await db.update(issues).set({ hiddenAt: new Date() }).where(eq(issues.id, deleted.id));
+
+    const pageOne = await svc.listScheduledIssues(companyId, { limit: 1 });
+    const pageTwo = await svc.listScheduledIssues(companyId, { limit: 1, cursor: pageOne.nextCursor! });
+
+    expect(pageOne.items).toHaveLength(1);
+    expect(pageOne.nextCursor).not.toBeNull();
+    expect(pageTwo.items).toHaveLength(1);
+    expect(pageTwo.nextCursor).toBeNull();
+    expect(new Set([...pageOne.items, ...pageTwo.items].map((item) => item.issueId))).toEqual(
+      new Set([first.id, second.id]),
+    );
+  });
+
+  it("generates a local scheduled time across a DST boundary", async () => {
+    const { companyId, svc } = await seedFixture();
+    const routine = await svc.createRoutine(
+      companyId,
+      {
+        title: "Morning task",
+        recurrenceRule: { kind: "daily" },
+        timezone: "America/New_York",
+        scheduledTime: "09:00",
+      },
+      {},
+    );
+
+    await svc.generateDueIssuesForRoutine(companyId, routine.id, { asOf: new Date("2026-03-08T16:00:00Z") });
+    const scheduled = await svc.listScheduledIssues(companyId, {});
+
+    expect(scheduled.items[0]?.scheduledAt).toBe("2026-03-08T13:00:00.000Z");
+  });
+
+  it("creates no duplicate issues under concurrent repeated generation", async () => {
+    const { companyId, svc } = await seedFixture();
+    const routine = await svc.createRoutine(
+      companyId,
+      { title: "Concurrent task", recurrenceRule: { kind: "daily" } },
+      {},
+    );
+    const asOf = new Date("2026-08-22T12:00:00Z");
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => svc.generateDueIssuesForRoutine(companyId, routine.id, { asOf })),
+    );
+    const generated = await db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), eq(issues.originId, routine.id)));
+
+    expect(generated).toHaveLength(1);
+    expect(results.flatMap((result) => result.createdIssueIds)).toEqual([generated[0]!.id]);
+  });
+
+  it("rejects generation after an assigned user loses active membership", async () => {
+    const { companyId, svc } = await seedFixture();
+    const userId = randomUUID();
+    await db.insert(companyMemberships).values({
+      companyId,
+      principalType: "user",
+      principalId: userId,
+      status: "active",
+    });
+    const routine = await svc.createRoutine(
+      companyId,
+      { title: "User task", recurrenceRule: { kind: "daily" }, assigneeUserId: userId },
+      {},
+    );
+    await db
+      .update(companyMemberships)
+      .set({ status: "removed" })
+      .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.principalId, userId)));
+
+    await expect(
+      svc.generateDueIssuesForRoutine(companyId, routine.id, { asOf: new Date("2026-08-22T12:00:00Z") }),
+    ).rejects.toThrow("Assignee user not found");
   });
 
   it("does not generate issues for a paused routine", async () => {
