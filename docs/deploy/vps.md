@@ -64,7 +64,7 @@ cd deploy
 ./scripts/restore-postgres.sh backups/paperclip-YYYYMMDDTHHMMSSZ.dump
 ```
 
-Restore stops Paperclip gracefully, verifies checksum when sidecar exists, restores with `--clean --if-exists --exit-on-error`, restarts app, then checks PostgreSQL, Paperclip, and Hermes. Compose stop grace is 45 seconds for Paperclip and 60 seconds for PostgreSQL.
+Restore stops Paperclip gracefully, verifies checksum when sidecar exists, force-closes remaining database sessions, recreates the dedicated application database, restores with `--exit-on-error`, restarts app, then checks PostgreSQL, Paperclip, and Hermes. Recreating the database makes repeated restores deterministic and removes objects introduced by a later migration before the next restore. Compose stop grace is 45 seconds for Paperclip and 60 seconds for PostgreSQL.
 
 ## Rollback
 
