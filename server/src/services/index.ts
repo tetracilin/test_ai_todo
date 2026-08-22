@@ -87,6 +87,17 @@ export type {
   WorkTimelineSpan,
 } from "./work-timeline.js";
 export { approvalService } from "./approvals.js";
+export {
+  legacyApprovalImporter,
+  legacyApprovalImportService,
+  type LegacyApprovalImportCheckpoint,
+  type LegacyApprovalImportCheckpointEntry,
+  type LegacyApprovalImportException,
+  type LegacyApprovalImportOperations,
+  type LegacyApprovalImportResult,
+  type LegacyApprovalImportRow,
+  type LegacyApprovalImportStore,
+} from "./legacy-approval-import.js";
 export { budgetService } from "./budgets.js";
 export { secretService } from "./secrets.js";
 export { createRunSecretRedactionRegistry } from "./run-secret-redaction.js";
