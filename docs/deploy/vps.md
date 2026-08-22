@@ -23,6 +23,7 @@ Never replace either with `latest`. Release work must update Paperclip digest to
 ```sh
 cd deploy
 docker compose config --quiet
+./scripts/test-container-entrypoint.sh
 docker compose pull
 docker compose up -d --wait
 ./scripts/healthcheck.sh

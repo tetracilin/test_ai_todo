@@ -45,6 +45,7 @@
     "check:no-google-runtime": "node scripts/check-no-google-runtime.mjs",
     "test:check-no-google-runtime": "node --test scripts/check-no-google-runtime.test.mjs",
     "test:install-sh-docker": "./scripts/test-install-sh-docker.sh",
+    "test:deploy-entrypoint": "./deploy/scripts/test-container-entrypoint.sh",
     "test:hermes-gateway-smoke": "node --test scripts/smoke/hermes-gateway-smoke.test.mjs",
     "docs:dev": "cd docs && npx mintlify dev",
     "smoke:hermes-gateway-join": "./scripts/smoke/hermes-gateway-join.sh",
