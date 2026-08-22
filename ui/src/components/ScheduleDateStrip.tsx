@@ -107,13 +107,13 @@ export function ScheduleDateStrip({
               onClick={() => onDateSelect(date)}
               className={cn(
                 "relative rounded-lg p-2 text-center transition-colors",
-                isDragOver && "outline outline-2 outline-offset-[-2px] outline-primary",
+                isDragOver && "outline -outline-offset-0.5 outline-2 outline-primary",
                 selected && "bg-primary text-primary-foreground shadow-sm",
                 !selected && today && "bg-accent",
                 !selected && !today && "hover:bg-accent/60",
               )}
             >
-              <div className={cn("text-[10px] uppercase", selected ? "text-primary-foreground/80" : "text-muted-foreground")}>
+              <div className={cn("text-(length:--text-nano) uppercase", selected ? "text-primary-foreground/80" : "text-muted-foreground")}>
                 {date.toLocaleDateString(undefined, { weekday: "short" })}
               </div>
               <div className="text-base font-semibold">{date.getDate()}</div>

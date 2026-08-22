@@ -252,7 +252,7 @@ export function Schedule() {
       <div className="flex flex-col gap-4 md:flex-row">
         <aside className="w-full shrink-0 space-y-2 md:w-64">
           <h2 className="text-sm font-semibold text-foreground">Unscheduled</h2>
-          <div className="max-h-[70vh] space-y-1.5 overflow-y-auto pr-1">
+          <div className="max-h-(--sz-70vh) space-y-1.5 overflow-y-auto pr-1">
             {unscheduledIssues.length === 0 ? (
               <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
                 Nothing waiting to be scheduled.

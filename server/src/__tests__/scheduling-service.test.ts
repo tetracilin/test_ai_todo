@@ -4,6 +4,7 @@ import {
   activityLog,
   agents,
   companies,
+  companyMemberships,
   createDb,
   executionWorkspaces,
   issueScheduling,
@@ -46,6 +47,7 @@ describeEmbeddedPostgres("scheduling service", () => {
     await db.delete(projectWorkspaces);
     await db.delete(projects);
     await db.delete(agents);
+    await db.delete(companyMemberships);
     await db.delete(companies);
   });
 
@@ -157,6 +159,60 @@ describeEmbeddedPostgres("scheduling service", () => {
     const deleted = await svc.deleteRoutine(companyId, routine.id);
     expect(deleted).toBe(true);
     await expect(svc.getRoutine(companyId, routine.id)).rejects.toThrow();
+  });
+
+  it("rejects cross-company references when creating a scheduling routine", async () => {
+    const { companyId, svc } = await seedFixture();
+    const other = await seedFixture();
+    const projectId = randomUUID();
+    const userId = randomUUID();
+    await db.insert(projects).values({ id: projectId, companyId: other.companyId, name: "Other project" });
+    await db.insert(companyMemberships).values({
+      companyId: other.companyId,
+      principalType: "user",
+      principalId: userId,
+      status: "active",
+    });
+
+    const base = { title: "Cross-company routine", recurrenceRule: { kind: "daily" } as const };
+    await expect(svc.createRoutine(companyId, { ...base, projectId }, {})).rejects.toThrow(
+      "Project must belong to same company",
+    );
+    await expect(svc.createRoutine(companyId, { ...base, assigneeAgentId: other.agentId }, {})).rejects.toThrow(
+      "Assignee must belong to same company",
+    );
+    await expect(svc.createRoutine(companyId, { ...base, assigneeUserId: userId }, {})).rejects.toThrow(
+      "Assignee user not found",
+    );
+  });
+
+  it("rejects cross-company references when updating a scheduling routine", async () => {
+    const { companyId, svc } = await seedFixture();
+    const other = await seedFixture();
+    const projectId = randomUUID();
+    const userId = randomUUID();
+    await db.insert(projects).values({ id: projectId, companyId: other.companyId, name: "Other project" });
+    await db.insert(companyMemberships).values({
+      companyId: other.companyId,
+      principalType: "user",
+      principalId: userId,
+      status: "active",
+    });
+    const routine = await svc.createRoutine(
+      companyId,
+      { title: "Company routine", recurrenceRule: { kind: "daily" } },
+      {},
+    );
+
+    await expect(svc.updateRoutine(companyId, routine.id, { projectId })).rejects.toThrow(
+      "Project must belong to same company",
+    );
+    await expect(svc.updateRoutine(companyId, routine.id, { assigneeAgentId: other.agentId })).rejects.toThrow(
+      "Assignee must belong to same company",
+    );
+    await expect(svc.updateRoutine(companyId, routine.id, { assigneeUserId: userId })).rejects.toThrow(
+      "Assignee user not found",
+    );
   });
 
   it("materializes issues for a weekly routine going forward, is idempotent, and catches up after a gap", async () => {

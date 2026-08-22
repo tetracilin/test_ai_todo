@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { issueScheduling, issues, schedulingRoutines } from "@paperclipai/db";
+import { companyMemberships, issueScheduling, issues, projects, schedulingRoutines } from "@paperclipai/db";
 import type {
   CreateSchedulingRoutine,
   GenerateSchedulingRoutineIssues,
@@ -15,6 +15,7 @@ import type {
   SchedulingRoutine,
 } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
+import { assertAssignableAgent } from "./agent-assignability.js";
 import { issueService } from "./issues.js";
 
 type IssueSchedulingRow = typeof issueScheduling.$inferSelect;
@@ -80,6 +81,45 @@ function assertSingleAssignee(assigneeAgentId?: string | null, assigneeUserId?: 
 
 export function schedulingService(db: Db) {
   const issuesSvc = issueService(db);
+
+  async function assertRoutineReferences(
+    companyId: string,
+    references: {
+      projectId?: string | null;
+      assigneeAgentId?: string | null;
+      assigneeUserId?: string | null;
+    },
+  ) {
+    if (references.projectId) {
+      const project = await db
+        .select({ companyId: projects.companyId })
+        .from(projects)
+        .where(eq(projects.id, references.projectId))
+        .then((rows) => rows[0] ?? null);
+      if (!project) throw notFound("Project not found");
+      if (project.companyId !== companyId) {
+        throw unprocessable("Project must belong to same company");
+      }
+    }
+    if (references.assigneeAgentId) {
+      await assertAssignableAgent(db, companyId, references.assigneeAgentId, { kind: "routine" });
+    }
+    if (references.assigneeUserId) {
+      const membership = await db
+        .select({ id: companyMemberships.id })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, references.assigneeUserId),
+            eq(companyMemberships.status, "active"),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!membership) throw notFound("Assignee user not found");
+    }
+  }
 
   async function getIssueRowInCompany(companyId: string, issueId: string) {
     const row = await db
@@ -199,6 +239,7 @@ export function schedulingService(db: Db) {
     actor: { agentId?: string | null; userId?: string | null },
   ): Promise<SchedulingRoutine> {
     assertSingleAssignee(input.assigneeAgentId, input.assigneeUserId);
+    await assertRoutineReferences(companyId, input);
     const row = await db
       .insert(schedulingRoutines)
       .values({
@@ -229,11 +270,17 @@ export function schedulingService(db: Db) {
     if (!existing) throw notFound("Scheduling routine not found");
     const nextAssigneeAgentId = patch.assigneeAgentId === undefined ? existing.assigneeAgentId : patch.assigneeAgentId;
     const nextAssigneeUserId = patch.assigneeUserId === undefined ? existing.assigneeUserId : patch.assigneeUserId;
+    const nextProjectId = patch.projectId === undefined ? existing.projectId : patch.projectId;
     assertSingleAssignee(nextAssigneeAgentId, nextAssigneeUserId);
+    await assertRoutineReferences(companyId, {
+      projectId: nextProjectId,
+      assigneeAgentId: nextAssigneeAgentId,
+      assigneeUserId: nextAssigneeUserId,
+    });
     const row = await db
       .update(schedulingRoutines)
       .set({
-        projectId: patch.projectId === undefined ? existing.projectId : patch.projectId,
+        projectId: nextProjectId,
         title: patch.title ?? existing.title,
         description: patch.description === undefined ? existing.description : patch.description,
         assigneeAgentId: nextAssigneeAgentId,

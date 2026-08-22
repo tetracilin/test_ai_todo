@@ -102,7 +102,7 @@ export function SchedulingRoutineModal({ open, routine, onClose, onSave, saving 
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-(--sz-85vh) max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{routine ? "Edit routine" : "New routine"}</DialogTitle>
         </DialogHeader>

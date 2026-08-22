@@ -98,21 +98,15 @@ export function ScheduleAgendaGrid({
     [pixelsPerHour, onResizeItem],
   );
 
-  useEffect(() => {
-    const onUp = () => {
-      resizeState.current = null;
-      window.removeEventListener("mousemove", handleResizeMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", handleResizeMove);
-      window.removeEventListener("touchend", onUp);
-    };
-    return () => {
-      window.removeEventListener("mousemove", handleResizeMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", handleResizeMove);
-      window.removeEventListener("touchend", onUp);
-    };
+  const finishResize = useCallback(() => {
+    resizeState.current = null;
+    window.removeEventListener("mousemove", handleResizeMove);
+    window.removeEventListener("mouseup", finishResize);
+    window.removeEventListener("touchmove", handleResizeMove);
+    window.removeEventListener("touchend", finishResize);
   }, [handleResizeMove]);
+
+  useEffect(() => finishResize, [finishResize]);
 
   const startResize = (e: React.MouseEvent | React.TouchEvent, item: AgendaItem) => {
     if (!onResizeItem) return;
@@ -125,20 +119,16 @@ export function ScheduleAgendaGrid({
       initialMinutes: item.scheduledDurationMinutes ?? 30,
     };
     window.addEventListener("mousemove", handleResizeMove);
-    window.addEventListener("mouseup", () => {
-      resizeState.current = null;
-    }, { once: true });
+    window.addEventListener("mouseup", finishResize);
     window.addEventListener("touchmove", handleResizeMove, { passive: false });
-    window.addEventListener("touchend", () => {
-      resizeState.current = null;
-    }, { once: true });
+    window.addEventListener("touchend", finishResize);
   };
 
   return (
     <div className="flex">
       <div className="w-14 shrink-0 pr-2 pt-1 text-right">
         {hours.map((hour) => (
-          <div key={hour} className="text-[11px] text-muted-foreground" style={{ height: `${pixelsPerHour}px` }}>
+          <div key={hour} className="text-(length:--text-micro) text-muted-foreground" style={{ height: `${pixelsPerHour}px` }}>
             {formatHourLabel(hour)}
           </div>
         ))}
@@ -195,12 +185,12 @@ export function ScheduleAgendaGrid({
                 <div className="min-w-0">
                   <p className="truncate font-medium text-foreground">{item.title}</p>
                   {item.identifier && (
-                    <p className="truncate text-[10px] text-muted-foreground">{item.identifier}</p>
+                    <p className="truncate text-(length:--text-nano) text-muted-foreground">{item.identifier}</p>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-1">
                   <IssueStatusBadge status={item.status} />
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-(length:--text-nano) text-muted-foreground">
                     {itemDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                   </span>
                 </div>
