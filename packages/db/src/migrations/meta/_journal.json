@@ -1583,6 +1583,13 @@
       "when": 1787338394230,
       "tag": "0227_nappy_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1787382361755,
+      "tag": "0228_mature_namora",
+      "breakpoints": true
     }
   ]
 }

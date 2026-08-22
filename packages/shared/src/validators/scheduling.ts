@@ -33,6 +33,7 @@ export const createSchedulingRoutineSchema = z.object({
   assigneeUserId: z.string().trim().min(1).nullable().optional(),
   priority: z.enum(ISSUE_PRIORITIES).optional(),
   recurrenceRule: schedulingRecurrenceRuleSchema,
+  timezone: z.string().trim().min(1).max(100).optional(),
   scheduledTime: schedulingTimeOfDaySchema.nullable().optional(),
   estimateMinutes: z.number().int().min(1).max(24 * 60).nullable().optional(),
 }).refine((value) => !(value.assigneeAgentId && value.assigneeUserId), {
@@ -49,6 +50,7 @@ export const updateSchedulingRoutineSchema = z
     priority: z.enum(ISSUE_PRIORITIES).optional(),
     status: schedulingRoutineStatusSchema.optional(),
     recurrenceRule: schedulingRecurrenceRuleSchema.optional(),
+    timezone: z.string().trim().min(1).max(100).optional(),
     scheduledTime: schedulingTimeOfDaySchema.nullable().optional(),
     estimateMinutes: z.number().int().min(1).max(24 * 60).nullable().optional(),
   })

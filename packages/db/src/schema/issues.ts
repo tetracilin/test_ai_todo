@@ -107,6 +107,7 @@ export const issues = pgTable(
       )
       .where(sql`${table.hiddenAt} is null and ${table.status} not in ('done', 'cancelled')`),
     companyPriorityIdx: index("issues_company_priority_idx").on(table.companyId, table.priority),
+    companyIdUniqueIdx: uniqueIndex("issues_company_id_unique_idx").on(table.companyId, table.id),
     identifierIdx: uniqueIndex("issues_identifier_idx").on(table.identifier),
     titleSearchIdx: index("issues_title_search_idx").using("gin", table.title.op("gin_trgm_ops")),
     identifierSearchIdx: index("issues_identifier_search_idx").using("gin", table.identifier.op("gin_trgm_ops")),

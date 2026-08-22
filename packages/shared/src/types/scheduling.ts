@@ -44,6 +44,7 @@ export interface SchedulingRoutine {
   priority: string;
   status: SchedulingRoutineStatus;
   recurrenceRule: SchedulingRecurrenceRule;
+  timezone: string;
   scheduledTime: string | null;
   estimateMinutes: number | null;
   lastGeneratedForDate: string | null;
@@ -61,6 +62,7 @@ export interface CreateSchedulingRoutineRequest {
   assigneeUserId?: string | null;
   priority?: string;
   recurrenceRule: SchedulingRecurrenceRule;
+  timezone?: string;
   scheduledTime?: string | null;
   estimateMinutes?: number | null;
 }
@@ -74,6 +76,7 @@ export interface UpdateSchedulingRoutineRequest {
   priority?: string;
   status?: SchedulingRoutineStatus;
   recurrenceRule?: SchedulingRecurrenceRule;
+  timezone?: string;
   scheduledTime?: string | null;
   estimateMinutes?: number | null;
 }
