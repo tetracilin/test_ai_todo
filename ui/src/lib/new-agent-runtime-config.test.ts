@@ -5,15 +5,21 @@ import { buildNewAgentRuntimeConfig } from "./new-agent-runtime-config";
 
 describe("buildNewAgentRuntimeConfig", () => {
   it("defaults new agents to no timer heartbeat", () => {
-    expect(buildNewAgentRuntimeConfig()).toEqual({
+    expect(buildNewAgentRuntimeConfig({ adapterType: "hermes_gateway" })).toEqual({
       heartbeat: {
         enabled: false,
         intervalSec: 300,
         wakeOnDemand: true,
         skipTimerWhenNoActionableWork: true,
         cooldownSec: 10,
-        maxConcurrentRuns: AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+        maxConcurrentRuns: 1,
       },
+    });
+  });
+
+  it("keeps the general concurrency default for existing non-gateway callers", () => {
+    expect(buildNewAgentRuntimeConfig()).toMatchObject({
+      heartbeat: { maxConcurrentRuns: AGENT_DEFAULT_MAX_CONCURRENT_RUNS },
     });
   });
 

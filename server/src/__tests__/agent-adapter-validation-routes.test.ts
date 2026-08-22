@@ -298,7 +298,7 @@ describe("agent routes adapter validation", () => {
     await unregisterTestAdapter(missingAdapterType);
   });
 
-  it("creates agents for dynamically registered external adapter types", async () => {
+  it("rejects dynamically registered external adapter types from new selection", async () => {
     const { registerServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter(externalAdapter);
 
@@ -312,11 +312,54 @@ describe("agent routes adapter validation", () => {
         }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(res.body.adapterType).toBe("external_test");
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain(
+      'Adapter "external_test" is not available on this instance',
+    );
+    expect(String(res.body.error ?? "")).toContain("Available adapters: hermes_gateway");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("does not inject CODEX_HOME or OPENAI_API_KEY when creating a keyless codex_local agent", async () => {
+  it("defaults new Hermes Gateway agents to one concurrent run", async () => {
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl)
+        .post("/api/companies/company-1/agents")
+        .send({
+          name: "Hermes Gateway",
+          adapterType: "hermes_gateway",
+          adapterConfig: {
+            apiBaseUrl: "http://127.0.0.1:8642",
+            apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+          },
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(createInput.runtimeConfig).toMatchObject({
+      heartbeat: { maxConcurrentRuns: 1 },
+    });
+  });
+
+  it("rejects Hermes Gateway agents without server-owned connection config", async () => {
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl)
+        .post("/api/companies/company-1/agents")
+        .send({
+          name: "Incomplete Hermes Gateway",
+          adapterType: "hermes_gateway",
+          adapterConfig: {},
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("apiBaseUrl and secret-backed apiKey");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects creating a codex_local agent because Hermes Gateway is sole", async () => {
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)
@@ -328,12 +371,9 @@ describe("agent routes adapter validation", () => {
         }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = (adapterConfig.env as Record<string, unknown> | undefined) ?? {};
-    expect(env.OPENAI_API_KEY).toBeUndefined();
-    expect(env.CODEX_HOME).toBeUndefined();
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("Available adapters: hermes_gateway");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
   it("does not re-inject CODEX_HOME or OPENAI_API_KEY when updating a keyless codex_local agent", async () => {
@@ -354,7 +394,7 @@ describe("agent routes adapter validation", () => {
     expect(env.CODEX_HOME).toBeUndefined();
   });
 
-  it("forwards a claude_local→process adapter move that drops the OAuth binding to the service unchanged", async () => {
+  it("rejects switching an existing agent to process because Hermes Gateway is sole", async () => {
     // The agent has the fixed Claude Code OAuth binding on the claude_local
     // adapter. A PATCH moves the agent to the process adapter and sends an empty
     // env in the same request. The route must forward the new adapter type and
@@ -395,15 +435,9 @@ describe("agent routes adapter validation", () => {
         }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    const patch = mockAgentService.update.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    // The route forwards the requested adapter type, so the service can see the
-    // adapter move.
-    expect(patch.adapterType).toBe("process");
-    // The route does not re-inject the fixed binding from the prior config, so
-    // the service invariant sees the removal.
-    const env = ((patch.adapterConfig as Record<string, unknown>).env as Record<string, unknown> | undefined) ?? {};
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("Available adapters: hermes_gateway");
+    expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
   it("isolates CODEX_HOME when updating a codex_local agent to set its own OPENAI_API_KEY", async () => {
@@ -429,7 +463,7 @@ describe("agent routes adapter validation", () => {
     expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
   });
 
-  it("allows codex_local agents to share the host Codex home", async () => {
+  it("rejects creating codex_local agents with a shared host Codex home", async () => {
     const app = await createApp();
     const sharedHome = path.join(os.homedir(), ".codex");
     const res = await requestApp(app, (baseUrl) =>
@@ -446,14 +480,11 @@ describe("agent routes adapter validation", () => {
         }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, unknown>;
-    expect(env.CODEX_HOME).toBe(sharedHome);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("isolates CODEX_HOME when a codex_local agent sets its own OPENAI_API_KEY", async () => {
+  it("rejects creating codex_local agents with an OPENAI_API_KEY", async () => {
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)
@@ -469,13 +500,8 @@ describe("agent routes adapter validation", () => {
         }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const agentId = String(createInput.id);
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, unknown>;
-    expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
   it("rejects unknown adapter types even when schema accepts arbitrary strings", async () => {
@@ -536,7 +562,7 @@ describe("agent routes adapter validation", () => {
     expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
-  it("still lets an agent already on a disabled adapter be edited", async () => {
+  it("still lets an agent already on a disabled adapter be edited without reselecting it", async () => {
     // Disabling an adapter must not make the agents that already use it
     // uneditable — only NEW selections of it are refused.
     mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["codex_local"]);
@@ -545,13 +571,13 @@ describe("agent routes adapter validation", () => {
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)
         .patch("/api/agents/11111111-1111-4111-8111-111111111111")
-        .send({ adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } }),
+        .send({ adapterConfig: { model: "gpt-5.4" } }),
     );
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
   });
 
-  it("still creates an agent on an adapter that is registered and enabled", async () => {
+  it("rejects a registered external adapter outside the sole selection", async () => {
     const { registerServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter(externalAdapter);
     mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["some_other_adapter"]);
@@ -563,6 +589,8 @@ describe("agent routes adapter validation", () => {
         .send({ name: "Enabled Harness", adapterType: "external_test" }),
     );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("Available adapters: hermes_gateway");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 });

@@ -694,6 +694,11 @@ export function listServerAdapters(): ServerAdapterModule[] {
   return Array.from(adaptersByType.values());
 }
 
+export function listSelectableServerAdapters(): ServerAdapterModule[] {
+  const hermesGateway = findActiveServerAdapter("hermes_gateway");
+  return hermesGateway ? [hermesGateway] : [];
+}
+
 /**
  * List adapters excluding those that are disabled in settings.
  * Used for menus and agent creation flows — disabled adapters remain

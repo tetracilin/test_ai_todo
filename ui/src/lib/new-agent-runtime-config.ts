@@ -2,6 +2,7 @@ import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS } from "@paperclipai/shared";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 
 export function buildNewAgentRuntimeConfig(input?: {
+  adapterType?: string;
   heartbeatEnabled?: boolean;
   intervalSec?: number;
   cheapModel?: string;
@@ -14,7 +15,8 @@ export function buildNewAgentRuntimeConfig(input?: {
       wakeOnDemand: true,
       skipTimerWhenNoActionableWork: true,
       cooldownSec: 10,
-      maxConcurrentRuns: AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+      maxConcurrentRuns:
+        input?.adapterType === "hermes_gateway" ? 1 : AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
     },
   };
 

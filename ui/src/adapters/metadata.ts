@@ -40,8 +40,7 @@ export function isEnabledAdapterType(type: string): boolean {
  * any non-"coming soon" adapter from the display registry.
  */
 export function isValidAdapterType(type: string): boolean {
-  if (getAdapterDisplay(type).comingSoon) return false;
-  return true;
+  return type === "hermes_gateway" && !getAdapterDisplay(type).comingSoon;
 }
 
 /**
@@ -69,6 +68,15 @@ export function listAdapterOptions(
     hidden: isAdapterTypeHidden(adapter.type),
     experimental: !!getAdapterDisplay(adapter.type).experimental,
   }));
+}
+
+export function listSelectableAdapterOptions(
+  labelFor?: (type: string) => string,
+  adapters: UIAdapterModule[] = listUIAdapters(),
+): AdapterOptionMetadata[] {
+  return listAdapterOptions(labelFor, adapters).filter(
+    (option) => option.value === "hermes_gateway",
+  );
 }
 
 /**

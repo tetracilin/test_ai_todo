@@ -10,6 +10,7 @@ import {
   listAdapterModelProfiles,
   registerServerAdapter,
   requireServerAdapter,
+  listSelectableServerAdapters,
   unregisterServerAdapter,
 } from "../adapters/index.js";
 import {
@@ -64,6 +65,10 @@ describe("server adapter registry", () => {
 
   it("does not register the removed Google adapter", () => {
     expect(findServerAdapter("gemini_local")).toBeNull();
+  });
+
+  it("offers Hermes Gateway as the sole built-in AI adapter", () => {
+    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
   });
 
   it("exposes adapter model profiles when adapters declare them", async () => {

@@ -63,7 +63,7 @@ import { AgentSecretAccessEditor } from "./AgentSecretAccessEditor";
 import { useProposalReview } from "../pages/secrets/proposal-review";
 import { AGENT_ACCESS_CONFIG_PATH_PREFIX } from "../lib/secret-delivery";
 import { shouldShowLegacyWorkingDirectoryField } from "../lib/legacy-agent-config";
-import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
+import { listSelectableAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
 import { getAdapterDisplay, getAdapterLabel } from "../adapters/adapter-display-registry";
 import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
 import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
@@ -2792,7 +2792,7 @@ export function AdapterTypeDropdown({
   const selectedDisplay = getAdapterDisplay(value);
   const adapterList = useMemo(
     () =>
-      listAdapterOptions((type) => adapterLabels[type] ?? getAdapterLabel(type)).filter(
+      listSelectableAdapterOptions((type) => adapterLabels[type] ?? getAdapterLabel(type)).filter(
         (item) => !disabledTypes.has(item.value),
       ),
     [disabledTypes],

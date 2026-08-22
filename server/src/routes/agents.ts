@@ -86,7 +86,7 @@ import {
   detectAdapterModel,
   findActiveServerAdapter,
   findServerAdapter,
-  listServerAdapters,
+  listSelectableServerAdapters,
   listAdapterModels,
   listAdapterModelProfiles,
   refreshAdapterModels,
@@ -1465,8 +1465,9 @@ export function agentRoutes(
   function assertSelectableAdapterType(type: string | null | undefined): string {
     const adapterType = assertKnownAdapterType(type);
     const disabled = new Set(getDisabledAdapterTypes());
-    if (!disabled.has(adapterType)) return adapterType;
-    const available = listServerAdapters()
+    const selectable = new Set(listSelectableServerAdapters().map((adapter) => adapter.type));
+    if (!disabled.has(adapterType) && selectable.has(adapterType)) return adapterType;
+    const available = listSelectableServerAdapters()
       .map((a) => a.type)
       .filter((t) => !disabled.has(t))
       .sort();
@@ -1663,7 +1664,8 @@ export function agentRoutes(
       heartbeat.enabled = false;
     }
     if (parseNumberLike(heartbeat.maxConcurrentRuns) == null) {
-      heartbeat.maxConcurrentRuns = AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
+      heartbeat.maxConcurrentRuns =
+        adapterType === "hermes_gateway" ? 1 : AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
     }
 
     normalizedRuntimeConfig.heartbeat = heartbeat;
@@ -1865,6 +1867,16 @@ export function agentRoutes(
     adapterType: string | null | undefined,
     adapterConfig: Record<string, unknown>,
   ) {
+    if (adapterType === "hermes_gateway") {
+      const apiBaseUrl = asNonEmptyString(adapterConfig.apiBaseUrl);
+      const apiKey = asRecord(adapterConfig.apiKey);
+      if (!apiBaseUrl || apiKey?.type !== "secret_ref") {
+        throw unprocessable(
+          "Invalid hermes_gateway adapterConfig: apiBaseUrl and secret-backed apiKey are required",
+        );
+      }
+      return;
+    }
     if (adapterType !== "opencode_local") return;
     try {
       requireOpenCodeModelId(adapterConfig.model);

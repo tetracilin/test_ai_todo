@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
 import { execute, mapFinalResultForTest, parseSseFramesForTest, resolveSessionKey } from "./execute.js";
+import { getConfigSchema } from "./config-schema.js";
 import { testEnvironment } from "./test.js";
 
 function makeCtx(config: Record<string, unknown>): AdapterExecutionContext {
@@ -43,6 +44,17 @@ function sseStream(text: string): ReadableStream<Uint8Array> {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("Hermes Gateway config", () => {
+  it("requires server-owned connection fields and uses safe run defaults", () => {
+    const fields = new Map(getConfigSchema().fields.map((field) => [field.key, field]));
+
+    expect(fields.get("apiBaseUrl")).toMatchObject({ required: true });
+    expect(fields.get("apiKey")).toMatchObject({ required: true, meta: { secret: true } });
+    expect(fields.get("sessionKeyStrategy")).toMatchObject({ default: "issue" });
+    expect(fields.get("timeoutSec")).toMatchObject({ default: 1800 });
+  });
 });
 
 describe("resolveSessionKey", () => {

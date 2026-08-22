@@ -4,6 +4,7 @@ import {
   isValidAdapterType,
   isVisualAdapterChoice,
   listAdapterOptions,
+  listSelectableAdapterOptions,
 } from "./metadata";
 import type { UIAdapterModule } from "./types";
 
@@ -30,6 +31,19 @@ describe("adapter metadata", () => {
         experimental: false,
       },
     ]);
+  });
+
+  it("offers Hermes Gateway as the sole agent AI option", () => {
+    expect(
+      listSelectableAdapterOptions((type) => type, [
+        externalAdapter,
+        { ...externalAdapter, type: "claude_local" },
+        { ...externalAdapter, type: "hermes_gateway" },
+      ]).map((option) => option.value),
+    ).toEqual(["hermes_gateway"]);
+    expect(isValidAdapterType("hermes_gateway")).toBe(true);
+    expect(isValidAdapterType("claude_local")).toBe(false);
+    expect(isValidAdapterType("external_test")).toBe(false);
   });
 
   it("keeps intentionally withheld built-in adapters marked as coming soon", () => {

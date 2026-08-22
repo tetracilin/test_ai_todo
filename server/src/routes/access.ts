@@ -135,6 +135,13 @@ function createClaimSecret() {
   return `pcp_claim_${randomBytes(24).toString("hex")}`;
 }
 
+export function requireSoleAgentAdapterType(adapterType: string | null): "hermes_gateway" {
+  if (adapterType !== "hermes_gateway") {
+    throw badRequest("Hermes Gateway is the only available agent adapter");
+  }
+  return adapterType;
+}
+
 export function companyInviteExpiresAt(nowMs: number = Date.now()) {
   return new Date(nowMs + COMPANY_INVITE_TTL_MS);
 }
@@ -3759,6 +3766,9 @@ export function accessRoutes(
           })
         );
       const adapterType = req.body.adapterType ?? null;
+      if (requestType === "agent") {
+        requireSoleAgentAdapterType(adapterType);
+      }
       if (
         inviteAlreadyAccepted &&
         !canReplayHumanInviteAccept &&

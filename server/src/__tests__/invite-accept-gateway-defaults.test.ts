@@ -17,6 +17,7 @@ import {
   buildJoinDefaultsPayloadForAccept,
   normalizeAgentDefaultsForJoin,
   prepareAgentDefaultsPayloadForJoinPersistence,
+  requireSoleAgentAdapterType,
 } from "../routes/access.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -98,6 +99,15 @@ describe("buildJoinDefaultsPayloadForAccept (openclaw_gateway)", () => {
         "x-openclaw-token": "gateway-token-1234567890",
       },
     });
+  });
+});
+
+describe("requireSoleAgentAdapterType", () => {
+  it("accepts Hermes Gateway and rejects every other agent adapter", () => {
+    expect(requireSoleAgentAdapterType("hermes_gateway")).toBe("hermes_gateway");
+    expect(() => requireSoleAgentAdapterType("openclaw_gateway")).toThrow(
+      "Hermes Gateway is the only available agent adapter",
+    );
   });
 });
 
