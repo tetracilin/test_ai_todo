@@ -20,6 +20,7 @@ read_secret() {
 }
 
 read_secret POSTGRES_PASSWORD
+read_secret BETTER_AUTH_SECRET
 
 : "${POSTGRES_HOST:=db}"
 : "${POSTGRES_PORT:=5432}"

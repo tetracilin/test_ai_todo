@@ -47,6 +47,7 @@
     "scan:client-bundle": "node scripts/scan-client-bundle.mjs ui/dist",
     "test:scan-client-bundle": "node --test scripts/scan-client-bundle.test.mjs",
     "test:install-sh-docker": "./scripts/test-install-sh-docker.sh",
+    "test:deploy-entrypoint": "./deploy/scripts/test-container-entrypoint.sh",
     "test:hermes-gateway-smoke": "node --test scripts/smoke/hermes-gateway-smoke.test.mjs",
     "docs:dev": "cd docs && npx mintlify dev",
     "smoke:hermes-gateway-join": "./scripts/smoke/hermes-gateway-join.sh",
