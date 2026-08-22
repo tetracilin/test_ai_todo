@@ -5,6 +5,8 @@ node_modules/
 dist/
 ui/storybook-static/
 .env
+deploy/secrets/
+deploy/backups/
 *.tsbuildinfo
 drizzle/meta/
 .vite/

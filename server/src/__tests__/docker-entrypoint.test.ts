@@ -84,6 +84,38 @@ describe("docker-entrypoint.sh", () => {
     expect(calls).not.toContain("chown");
   });
 
+  it("loads BETTER_AUTH_SECRET from a readable Docker secret file", async () => {
+    installStubs({ uid: 1000, gid: 1000 });
+    const secretFile = join(stubDir, "better-auth-secret");
+    writeFileSync(secretFile, "test-session-secret\n", { mode: 0o600 });
+
+    const result = await execFileAsync("sh", [ENTRYPOINT, "sh", "-c", "printf %s \"$BETTER_AUTH_SECRET\""], {
+      env: {
+        PATH: `${stubDir}:${process.env.PATH}`,
+        USER_UID: "1000",
+        USER_GID: "1000",
+        BETTER_AUTH_SECRET_FILE: secretFile,
+      },
+    });
+
+    expect(result.stdout).toBe("test-session-secret");
+  });
+
+  it("fails closed when BETTER_AUTH_SECRET_FILE is unreadable", async () => {
+    installStubs({ uid: 1000, gid: 1000 });
+
+    await expect(
+      execFileAsync("sh", [ENTRYPOINT, "echo", "must-not-run"], {
+        env: {
+          PATH: `${stubDir}:${process.env.PATH}`,
+          USER_UID: "1000",
+          USER_GID: "1000",
+          BETTER_AUTH_SECRET_FILE: join(stubDir, "missing"),
+        },
+      }),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("BETTER_AUTH_SECRET_FILE is not readable") });
+  });
+
   it("remaps the node user and chowns /paperclip before gosu when root requests a different UID/GID", async () => {
     // The stubbed node uid stays 1000 while the stat probe reports the old
     // ownership, modelling the post-remap mismatch that must trigger chown.

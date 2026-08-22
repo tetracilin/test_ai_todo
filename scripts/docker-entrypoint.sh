@@ -1,6 +1,22 @@
 #!/bin/sh
 set -e
 
+# Compose/Kubernetes secrets use conventional VAR_FILE contract. Deployment
+# wrappers may resolve other files before constructing derived environment.
+if [ -n "${BETTER_AUTH_SECRET_FILE:-}" ]; then
+    if [ ! -r "$BETTER_AUTH_SECRET_FILE" ]; then
+        echo "docker-entrypoint.sh: BETTER_AUTH_SECRET_FILE is not readable" >&2
+        exit 1
+    fi
+    BETTER_AUTH_SECRET=$(cat "$BETTER_AUTH_SECRET_FILE")
+    if [ -z "$BETTER_AUTH_SECRET" ]; then
+        echo "docker-entrypoint.sh: BETTER_AUTH_SECRET_FILE is empty" >&2
+        exit 1
+    fi
+    export BETTER_AUTH_SECRET
+    unset BETTER_AUTH_SECRET_FILE
+fi
+
 # Capture runtime UID/GID from environment variables, defaulting to 1000
 PUID=${USER_UID:-1000}
 PGID=${USER_GID:-1000}
