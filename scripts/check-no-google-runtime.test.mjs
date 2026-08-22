@@ -117,15 +117,15 @@ test("JSON report preserves machine-readable mode and path inventory", () => {
   assert.deepEqual(decoded.forbidden.map((hit) => hit.path), ["src/firebase.ts"]);
 });
 
-test("current repository reports known Google runtime paths without blocking", () => {
+test("current repository no longer reports removed backend runtime paths", () => {
   const repoRoot = path.resolve(import.meta.dirname, "..");
   const logs = [];
   const result = runCheck({ repoRoot, log: (line) => logs.push(line), error: () => {} });
   const forbiddenPaths = new Set(result.report.forbidden.map((hit) => hit.path));
 
   assert.equal(result.exitCode, 0);
-  assert.ok(forbiddenPaths.has("packages/adapters/gemini-local/package.json"));
-  assert.ok(forbiddenPaths.has("packages/google-sheets-mcp-server/package.json"));
-  assert.ok(forbiddenPaths.has("docker/agent-runtime/Dockerfile.gemini"));
+  assert.ok(!forbiddenPaths.has("packages/adapters/gemini-local/package.json"));
+  assert.ok(!forbiddenPaths.has("packages/google-sheets-mcp-server/package.json"));
+  assert.ok(!forbiddenPaths.has("docker/agent-runtime/Dockerfile.gemini"));
   assert.ok(result.report.allowed.some((hit) => hit.path.startsWith("releases/")));
 });

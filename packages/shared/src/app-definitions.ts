@@ -8,7 +8,7 @@ const CONNECTABLE_APP_SLUGS = new Set([
   "slack",
   "notion",
   "linear",
-  "google-sheets",
+
   "context7",
 ]);
 

@@ -6,8 +6,8 @@ function shellSingleQuote(value: string): string {
 // default exe.dev VM image has sshd + a normal user homedir but no Node
 // toolchain). We install a portable Node tarball into $HOME/.local rather
 // than using apt-get because the distro-packaged Node is often old enough to
-// reject modern JS syntax (regex /v flag, etc.) used by adapter CLIs like
-// @google/gemini-cli. The bootstrap also sets PAPERCLIP_NPM_BOOTSTRAPPED=1
+// reject modern JS syntax used by current adapter CLIs. Bootstrap also sets
+// PAPERCLIP_NPM_BOOTSTRAPPED=1
 // so the install step knows to skip sudo — sudo would reset PATH via
 // secure_path and lose visibility of the freshly-installed npm in
 // $HOME/.local/bin.

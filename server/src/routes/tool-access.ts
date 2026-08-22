@@ -43,10 +43,10 @@ import {
 import { validate } from "../middleware/validate.js";
 import { getActorInfo, assertBoard, assertCompanyAccess, getAccessibleResource, hasCompanyAccess } from "./authz.js";
 import { badRequest, forbidden, unprocessable } from "../errors.js";
-import { accessService, googleSheetsRobotEmailFromEnv, logActivity, toolAccessPolicyService, toolAccessService } from "../services/index.js";
+import { accessService, logActivity, toolAccessPolicyService, toolAccessService } from "../services/index.js";
 import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
 
-/** Allowlist (e.g. Google Sheets allowed spreadsheet ids) lives in connection config. */
+/** Resource allowlist lives in connection config. */
 function allowlistIds(config: Record<string, unknown> | null | undefined): string[] {
   const raw = config?.allowedSpreadsheetIds;
   if (!Array.isArray(raw)) return [];
@@ -236,19 +236,11 @@ export function toolAccessRoutes(
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const googleSheetsAvailability = googleSheetsRobotEmailFromEnv();
     res.json({
-      apps: CONNECTABLE_APP_DEFINITIONS.map((app) =>
-        app.slug === "google-sheets"
-          ? {
-              ...app,
-              ownershipAvailability: DEFAULT_OWNERSHIP_AVAILABILITY,
-              availability: googleSheetsAvailability.available
-                ? { available: true, robotEmail: googleSheetsAvailability.robotEmail }
-                : { available: false, reason: googleSheetsAvailability.reason },
-            }
-          : { ...app, ownershipAvailability: DEFAULT_OWNERSHIP_AVAILABILITY },
-      ),
+      apps: CONNECTABLE_APP_DEFINITIONS.map((app) => ({
+        ...app,
+        ownershipAvailability: DEFAULT_OWNERSHIP_AVAILABILITY,
+      })),
     });
   });
 

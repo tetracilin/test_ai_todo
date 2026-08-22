@@ -29,9 +29,7 @@ import {
   buildAcpxRunSummary,
   createAcpxEngineExecutor,
   findAncestorBin,
-  geminiVersionSupportsNativeAcpFlag,
-  parseGeminiVersionParts,
-  rewriteGeminiAcpFlagForVersion,
+
   summarizeAcpxTurnUsage,
   type AcpxEngineExecutorOptions,
 } from "./execute.js";
@@ -502,22 +500,13 @@ describe("shared ACPX engine runtime behavior", () => {
     });
   });
 
-  it("keeps Claude startup model handling and Gemini session config handling unchanged", async () => {
+  it("keeps Claude startup model handling unchanged", async () => {
     const claude = await runExecutor({ agent: "claude", model: "claude-opus-4-7" });
     expect((claude.meta[0]?.env as Record<string, string>).ANTHROPIC_MODEL).toBe(
       "claude-opus-4-7",
     );
     expect(claude.configOptions).toEqual([]);
 
-    const gemini = await runExecutor({
-      agent: "gemini",
-      model: "gemini-2.5-pro",
-      thinkingEffort: "high",
-    });
-    expect(gemini.configOptions).toEqual([
-      { key: "model", value: "gemini-2.5-pro" },
-      { key: "effort", value: "high" },
-    ]);
   });
 
   it("does not inject CODEX_CONFIG or session config when Codex overrides are absent", async () => {
@@ -2157,56 +2146,7 @@ describe("findAncestorBin", () => {
   });
 });
 
-describe("gemini ACP flag selection", () => {
-  it("parses semantic version parts from gemini --version output", () => {
-    expect(parseGeminiVersionParts("0.30.0")).toEqual([0, 30, 0]);
-    expect(parseGeminiVersionParts("gemini-cli v1.2.3\n")).toEqual([1, 2, 3]);
-    expect(parseGeminiVersionParts("no version here")).toBeNull();
-    expect(parseGeminiVersionParts(null)).toBeNull();
-  });
-
-  it("keeps --acp for gemini >= 0.33.0 and unknown versions", () => {
-    expect(geminiVersionSupportsNativeAcpFlag([0, 33, 0])).toBe(true);
-    expect(geminiVersionSupportsNativeAcpFlag([0, 34, 1])).toBe(true);
-    expect(geminiVersionSupportsNativeAcpFlag([1, 0, 0])).toBe(true);
-    expect(geminiVersionSupportsNativeAcpFlag(null)).toBe(true);
-    expect(rewriteGeminiAcpFlagForVersion("gemini --acp", [0, 33, 0])).toBe("gemini --acp");
-  });
-
-  it("downgrades --acp to --experimental-acp for gemini < 0.33.0", () => {
-    expect(geminiVersionSupportsNativeAcpFlag([0, 30, 0])).toBe(false);
-    expect(geminiVersionSupportsNativeAcpFlag([0, 32, 9])).toBe(false);
-    expect(rewriteGeminiAcpFlagForVersion("gemini --acp", [0, 30, 0])).toBe("gemini --experimental-acp");
-    expect(rewriteGeminiAcpFlagForVersion("/opt/bin/gemini --acp", [0, 30, 0])).toBe(
-      "/opt/bin/gemini --experimental-acp",
-    );
-  });
-
-  async function writeFakeGemini(binDir: string, version: string) {
-    await fs.mkdir(binDir, { recursive: true });
-    const binPath = path.join(binDir, "gemini");
-    await fs.writeFile(binPath, `#!/bin/sh\necho "${version}"\n`, { mode: 0o755 });
-  }
-
-  function pathWithFakeBin(binDir: string): string {
-    return [binDir, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter);
-  }
-
-  it("registers the gemini multi-word command directly", async () => {
-    const root = await makeTempRoot();
-    const binDir = path.join(root, "bin");
-    await writeFakeGemini(binDir, "0.33.0");
-    const { runtimeOptions } = await runExecutor({ agent: "gemini", stateDir: path.join(root, "state"), env: { HOME: path.join(root, "home"), PATH: pathWithFakeBin(binDir) } });
-    expect((runtimeOptions[0]!.agentRegistry as { resolve(name: string): string }).resolve("gemini")).toBe("gemini --acp");
-  });
-
-  it("downgrades the registered gemini command when the local CLI predates --acp", async () => {
-    const root = await makeTempRoot();
-    const binDir = path.join(root, "bin");
-    await writeFakeGemini(binDir, "0.30.0");
-    const { runtimeOptions } = await runExecutor({ agent: "gemini", stateDir: path.join(root, "state"), env: { HOME: path.join(root, "home"), PATH: pathWithFakeBin(binDir) } });
-    expect((runtimeOptions[0]!.agentRegistry as { resolve(name: string): string }).resolve("gemini")).toBe("gemini --experimental-acp");
-  });
+describe("ACPX execution timeouts", () => {
 
   it("applies the 4h sandbox backstop when timeoutSec is unset on a sandbox execution target", async () => {
     const root = await makeTempRoot();

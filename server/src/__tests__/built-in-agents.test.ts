@@ -65,6 +65,12 @@ if (!embeddedPostgresSupport.supported) {
 }
 
 describe("built-in agent asset loading", () => {
+  it("does not offer the removed Google adapter", () => {
+    for (const definition of listBuiltInAgentDefinitions()) {
+      expect(definition.allowedAdapterTypes).not.toContain("gemini_local");
+    }
+  });
+
   it("uses the first readable candidate path", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "paperclip-built-in-agent-"));
     try {
@@ -419,7 +425,7 @@ describeEmbeddedPostgres("built-in agents", () => {
       details: {
         code: "built_in_agent_adapter_not_allowed",
         key: "briefs",
-        allowedAdapterTypes: ["codex_local", "claude_local", "gemini_local", "opencode_local", "process"],
+        allowedAdapterTypes: ["codex_local", "claude_local", "opencode_local", "process"],
       },
     });
   });

@@ -470,7 +470,6 @@ const GIT_SENSITIVE_LOCAL_ADAPTER_TYPES = new Set([
   "claude_local",
   "codex_local",
   "cursor",
-  "gemini_local",
   "grok_local",
   "hermes_local",
   "kimi_local",
@@ -772,7 +771,6 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "claude_local",
   "codex_local",
   "cursor",
-  "gemini_local",
   "hermes_local",
   "kimi_local",
   "opencode_local",
@@ -10318,7 +10316,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     if (context.processTopology === "detached" || context.executionEngine === "cli") {
       return false;
     }
-    if (!["claude_local", "codex_local", "gemini_local"].includes(input.adapterType)) {
+    if (!["claude_local", "codex_local"].includes(input.adapterType)) {
       return false;
     }
     return readNonEmptyString(parseObject(input.adapterConfig).engine) !== "cli";

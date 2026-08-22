@@ -64,19 +64,7 @@ import {
   testEnvironment as cursorCloudTestEnvironment,
 } from "@paperclipai/adapter-cursor-cloud/server";
 import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@paperclipai/adapter-cursor-cloud";
-import {
-  execute as geminiExecute,
-  listGeminiSkills,
-  syncGeminiSkills,
-  testEnvironment as geminiTestEnvironment,
-  sessionCodec as geminiSessionCodec,
-  getConfigSchema as getGeminiConfigSchema,
-} from "@paperclipai/adapter-gemini-local/server";
-import {
-  agentConfigurationDoc as geminiAgentConfigurationDoc,
-  models as geminiModels,
-  modelProfiles as geminiModelProfiles,
-} from "@paperclipai/adapter-gemini-local";
+
 import {
   execute as grokExecute,
   listGrokSkills,
@@ -374,33 +362,6 @@ const cursorCloudAdapter: ServerAdapterModule = {
   getConfigSchema: getCursorCloudConfigSchema,
 };
 
-const geminiLocalAdapter: ServerAdapterModule = {
-  type: "gemini_local",
-  execute: geminiExecute,
-  testEnvironment: geminiTestEnvironment,
-  acp: {
-    agentId: "gemini",
-    skillsMode: "ephemeral",
-    prerequisites: {
-      nodeRange: ">=20.0.0",
-      packages: ["@google/gemini-cli"],
-    },
-  },
-  listSkills: listGeminiSkills,
-  syncSkills: syncGeminiSkills,
-  sessionCodec: geminiSessionCodec,
-  sessionManagement: getAdapterSessionManagement("gemini_local") ?? undefined,
-  models: geminiModels,
-  modelProfiles: geminiModelProfiles,
-  supportsLocalAgentJwt: true,
-  supportsInstructionsBundle: true,
-  instructionsPathKey: "instructionsFilePath",
-  requiresMaterializedRuntimeSkills: true,
-  getRuntimeCommandSpec: (config) =>
-    buildNpmRuntimeCommandSpec(config, "gemini", "@google/gemini-cli"),
-  agentConfigurationDoc: geminiAgentConfigurationDoc,
-  getConfigSchema: getGeminiConfigSchema,
-};
 
 const grokLocalAdapter: ServerAdapterModule = {
   type: "grok_local",
@@ -523,7 +484,7 @@ function registerBuiltInAdapters() {
     piLocalAdapter,
     cursorCloudAdapter,
     cursorLocalAdapter,
-    geminiLocalAdapter,
+
     grokLocalAdapter,
     kimiLocalAdapter,
     hermesGatewayAdapter,

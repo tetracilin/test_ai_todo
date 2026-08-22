@@ -409,7 +409,7 @@ export interface AdapterRuntimeCommandSpec {
 }
 
 export interface AcpTargetDescriptor {
-  agentId: "claude" | "codex" | "gemini" | "custom" | (string & {});
+  agentId: "claude" | "codex" | "custom" | (string & {});
   skillsMode: "ephemeral" | "unsupported";
   prerequisites: {
     nodeRange?: string;
@@ -572,12 +572,7 @@ export interface CreateConfigValues {
   codexAcpNonInteractivePermissions?: "deny" | "fail";
   codexAcpStateDir?: string;
   codexAcpWarmHandleIdleMs?: number;
-  geminiEngine?: "auto" | "cli" | "acp";
-  geminiAcpAgentCommand?: string;
-  geminiAcpMode?: "persistent" | "oneshot";
-  geminiAcpNonInteractivePermissions?: "deny" | "fail";
-  geminiAcpStateDir?: string;
-  geminiAcpWarmHandleIdleMs?: number;
+
   search: boolean;
   fastMode: boolean;
   dangerouslyBypassSandbox: boolean;

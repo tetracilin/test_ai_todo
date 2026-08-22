@@ -9,7 +9,7 @@ import type { ComponentType } from "react";
 import {
   Bot,
   Code,
-  Gem,
+
   Moon,
   MousePointer2,
   Sparkles,
@@ -80,11 +80,7 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     icon: Code,
     recommended: true,
   },
-  gemini_local: {
-    label: "Gemini CLI",
-    description: "Gemini CLI harness",
-    icon: Gem,
-  },
+
   grok_local: {
     label: "Grok Build",
     description: "Grok Build harness",

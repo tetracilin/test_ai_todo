@@ -20,7 +20,7 @@ import { secretsApi } from "../api/secrets";
 import { assetsApi } from "../api/assets";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
+
 import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
 import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import {
@@ -1123,7 +1123,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         : adapterType === "opencode_local"
           ? eff("adapterConfig", "variant", String(config.variant ?? ""))
           : eff("adapterConfig", "effort", String(config.effort ?? ""));
-  const showThinkingEffort = adapterType !== "gemini_local" && adapterType !== "cursor_cloud";
+  const showThinkingEffort = adapterType !== "cursor_cloud";
   const codexSearchEnabled = adapterType === "codex_local"
     ? (isCreate ? Boolean(val!.search) : eff("adapterConfig", "search", Boolean(config.search)))
     : false;
@@ -1462,8 +1462,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     if (t === "codex_local") {
                       nextValues.dangerouslyBypassSandbox =
                         DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
-                    } else if (t === "gemini_local") {
-                      nextValues.model = DEFAULT_GEMINI_LOCAL_MODEL;
                     } else if (t === "kimi_local") {
                       nextValues.model = DEFAULT_KIMI_LOCAL_MODEL;
                     } else if (t === "cursor") {
@@ -1481,9 +1479,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       modelProfiles: { cheap: { cleared: true } },
                       adapterConfig: {
                         model:
-                          t === "gemini_local"
-                            ? DEFAULT_GEMINI_LOCAL_MODEL
-                            : t === "kimi_local"
+                          t === "kimi_local"
                               ? DEFAULT_KIMI_LOCAL_MODEL
                             : t === "opencode_local"
                               ? DEFAULT_OPENCODE_LOCAL_MODEL
@@ -1598,7 +1594,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     ({
                       claude_local: "claude",
                       codex_local: "codex",
-                      gemini_local: "gemini",
+
                       kimi_local: "kimi",
                       pi_local: "pi",
                       cursor: "agent",

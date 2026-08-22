@@ -80,7 +80,7 @@ const MAX_SESSION_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
 // When a human approves a parked write, the server carries it out on their
 // behalf with no interactive caller left to raise `timeoutMs`. Remote write
-// providers (e.g. Zapier Google Sheets `add_row`) routinely take longer than
+// providers (for example, Zapier write actions) routinely take longer than
 // the 10s interactive default, so an approved action would otherwise abort with
 // `tool_timeout` even though the approval succeeded. Give approved executions
 // the full permitted headroom instead.
@@ -268,15 +268,7 @@ type LocalStdioRuntimeTemplate = {
 };
 
 const BUILTIN_LOCAL_STDIO_RUNTIME_TEMPLATES: Record<string, Omit<LocalStdioRuntimeTemplate, "templateId">> = {
-  "paperclip.google-sheets": {
-    command: "paperclip-google-sheets-mcp-server",
-    args: [],
-    envKeys: [
-      "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON",
-      "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_PATH",
-      "GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS",
-    ],
-  },
+
   "paperclip.echo-calculator-time": {
     command: null,
     args: [],

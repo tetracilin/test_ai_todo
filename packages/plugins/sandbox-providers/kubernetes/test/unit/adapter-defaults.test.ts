@@ -33,7 +33,7 @@ describe("adapter-defaults (built-in)", () => {
       new Set([
         "claude_local",
         "codex_local",
-        "gemini_local",
+
         "cursor_local",
         "opencode_local",
         "pi_local",

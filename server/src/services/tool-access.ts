@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+
 import { and, asc, desc, eq, gte, inArray, lt, max, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -182,55 +182,6 @@ export type McpToolDescriptor = {
   annotations?: Record<string, unknown>;
 };
 
-const GOOGLE_SHEETS_SPREADSHEET_SCHEMA = {
-  type: "object",
-  properties: {
-    spreadsheetId: { type: "string", minLength: 1 },
-  },
-  required: ["spreadsheetId"],
-};
-
-const GOOGLE_SHEETS_RANGE_SCHEMA = {
-  type: "object",
-  properties: {
-    spreadsheetId: { type: "string", minLength: 1 },
-    range: { type: "string", minLength: 1, maxLength: 500 },
-  },
-  required: ["spreadsheetId", "range"],
-};
-
-const GOOGLE_SHEETS_VALUE_ROWS_SCHEMA = {
-  type: "array",
-  minItems: 1,
-  items: {
-    type: "array",
-    items: {
-      anyOf: [
-        { type: "string" },
-        { type: "number" },
-        { type: "boolean" },
-        { type: "null" },
-      ],
-    },
-  },
-};
-
-const GOOGLE_SHEETS_WRITE_VALUES_SCHEMA = {
-  type: "object",
-  properties: {
-    spreadsheetId: { type: "string", minLength: 1 },
-    range: { type: "string", minLength: 1, maxLength: 500 },
-    values: GOOGLE_SHEETS_VALUE_ROWS_SCHEMA,
-    valueInputOption: { type: "string", enum: ["RAW", "USER_ENTERED"], default: "RAW" },
-  },
-  required: ["spreadsheetId", "range", "values"],
-};
-
-function schemaHasInputProperties(schema: unknown): boolean {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return false;
-  const properties = (schema as Record<string, unknown>).properties;
-  return Boolean(properties && typeof properties === "object" && !Array.isArray(properties) && Object.keys(properties).length > 0);
-}
 
 const APPROVED_STDIO_TEMPLATES: Record<string, {
   name: string;
@@ -291,105 +242,7 @@ const APPROVED_STDIO_TEMPLATES: Record<string, {
       { name: "set_value", description: "Write a synthetic KV value.", annotations: { readOnlyHint: false } },
     ],
   },
-  "paperclip.google-sheets": {
-    name: "Google Sheets",
-    command: "paperclip-google-sheets-mcp-server",
-    args: [],
-    envKeys: [
-      "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON",
-      "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_PATH",
-      "GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS",
-    ],
-    tools: [
-      {
-        name: "list_spreadsheets",
-        description: "List the Google Sheets spreadsheets configured in this connection allowlist.",
-        inputSchema: { type: "object", properties: {} },
-        annotations: { readOnlyHint: true },
-      },
-      {
-        name: "get_spreadsheet_info",
-        description: "Get spreadsheet metadata and sheet tab information for an allowlisted spreadsheet.",
-        inputSchema: GOOGLE_SHEETS_SPREADSHEET_SCHEMA,
-        annotations: { readOnlyHint: true },
-      },
-      {
-        name: "read_values",
-        description: "Read cell values from an allowlisted spreadsheet range.",
-        inputSchema: GOOGLE_SHEETS_RANGE_SCHEMA,
-        annotations: { readOnlyHint: true },
-      },
-      {
-        name: "search_rows",
-        description: "Search rows in an allowlisted spreadsheet range.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            spreadsheetId: { type: "string", minLength: 1 },
-            range: { type: "string", minLength: 1, maxLength: 500 },
-            query: { type: "string", minLength: 1 },
-            caseSensitive: { type: "boolean", default: false },
-            maxResults: { type: "integer", minimum: 1, maximum: 500, default: 50 },
-          },
-          required: ["spreadsheetId", "range", "query"],
-        },
-        annotations: { readOnlyHint: true },
-      },
-      {
-        name: "append_rows",
-        description: "Append rows to an allowlisted spreadsheet range.",
-        inputSchema: GOOGLE_SHEETS_WRITE_VALUES_SCHEMA,
-        annotations: { readOnlyHint: false },
-      },
-      {
-        name: "update_values",
-        description: "Update values in an allowlisted spreadsheet range.",
-        inputSchema: GOOGLE_SHEETS_WRITE_VALUES_SCHEMA,
-        annotations: { readOnlyHint: false },
-      },
-      {
-        name: "add_sheet_tab",
-        description: "Add a sheet tab to an allowlisted spreadsheet.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            spreadsheetId: { type: "string", minLength: 1 },
-            title: { type: "string", minLength: 1, maxLength: 100 },
-            rowCount: { type: "integer", minimum: 1, maximum: 1000000 },
-            columnCount: { type: "integer", minimum: 1, maximum: 18278 },
-          },
-          required: ["spreadsheetId", "title"],
-        },
-        annotations: { readOnlyHint: false },
-      },
-      {
-        name: "clear_values",
-        description: "Clear values in an allowlisted spreadsheet range.",
-        inputSchema: GOOGLE_SHEETS_RANGE_SCHEMA,
-        annotations: { destructiveHint: true },
-      },
-      {
-        name: "delete_rows",
-        description: "Delete rows from an allowlisted spreadsheet tab.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            spreadsheetId: { type: "string", minLength: 1 },
-            sheetId: { type: "integer", minimum: 0 },
-            startIndex: { type: "integer", minimum: 0 },
-            endIndex: { type: "integer", minimum: 1 },
-          },
-          required: ["spreadsheetId", "sheetId", "startIndex", "endIndex"],
-        },
-        annotations: { destructiveHint: true },
-      },
-    ],
-  },
 };
-
-const GOOGLE_SHEETS_GALLERY_KEY = "google-sheets";
-const GOOGLE_SHEETS_TEMPLATE_ID = "paperclip.google-sheets";
-const GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS_ENV = "GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS";
 const CONNECTION_TOKEN_MINT_TOOL_NAME = "connection_token.mint";
 
 type ToolExampleDefinition = {
@@ -427,30 +280,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
-export function googleSheetsRobotEmailFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): { available: true; robotEmail: string } | { available: false; reason: string } {
-  const inlineOrPath = env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON?.trim();
-  const explicitPath = env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_PATH?.trim();
-  if (!inlineOrPath && !explicitPath) {
-    return { available: false, reason: "Google Sheets is not available on this instance yet." };
-  }
-
-  try {
-    const raw = explicitPath
-      ? readFileSync(explicitPath, "utf8")
-      : inlineOrPath!.startsWith("{")
-        ? inlineOrPath!
-        : readFileSync(inlineOrPath!, "utf8");
-    const parsed = JSON.parse(raw) as { client_email?: unknown };
-    if (typeof parsed.client_email === "string" && parsed.client_email.trim()) {
-      return { available: true, robotEmail: parsed.client_email.trim() };
-    }
-  } catch {
-    return { available: false, reason: "Google Sheets is not available on this instance yet." };
-  }
-  return { available: false, reason: "Google Sheets is not available on this instance yet." };
-}
 
 function connectionMethodFor(app: AppDefinition) {
   const method = getAvailableConnectionMethod(app);
@@ -471,31 +300,6 @@ function credentialFieldsFor(app: AppDefinition) {
   }));
 }
 
-function googleSheetsAllowedSpreadsheetIds(configValues: Record<string, unknown> | undefined): string[] {
-  const raw = configValues?.allowedSpreadsheetIds;
-  const values = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[\n,]/g) : [];
-  return Array.from(new Set(values.map((value) => String(value).trim()).filter(Boolean)));
-}
-
-function isGoogleSheetsConnectionConfig(configValues: Record<string, unknown> | undefined): boolean {
-  return configValues?.sourceTemplateKey === GOOGLE_SHEETS_GALLERY_KEY || configValues?.templateId === GOOGLE_SHEETS_TEMPLATE_ID;
-}
-
-function normalizeGoogleSheetsConnectionConfig(configValues: Record<string, unknown>): Record<string, unknown> {
-  if (!isGoogleSheetsConnectionConfig(configValues)) return configValues;
-  const allowedSpreadsheetIds = googleSheetsAllowedSpreadsheetIds(configValues);
-  if (allowedSpreadsheetIds.length === 0) {
-    throw badRequest("Paste at least one Google Sheets link.");
-  }
-  return {
-    ...configValues,
-    allowedSpreadsheetIds,
-    env: {
-      ...asRecord(configValues.env),
-      [GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS_ENV]: allowedSpreadsheetIds.join(","),
-    },
-  };
-}
 
 // Detects a Postgres foreign_key_violation (SQLSTATE 23503) raised by the
 // tool_connections.application_id constraint — i.e. an application delete that lost the race to
@@ -715,20 +519,9 @@ function toCatalogEntry(row: typeof toolCatalogEntries.$inferSelect): ToolCatalo
 
 function toCatalogEntryForConnection(
   row: typeof toolCatalogEntries.$inferSelect,
-  connection: typeof toolConnections.$inferSelect,
+  _connection: typeof toolConnections.$inferSelect,
 ): ToolCatalogEntry {
-  const catalogEntry = toCatalogEntry(row);
-  if (
-    connection.transport === "local_stdio"
-    && asRecord(connection.config).templateId === GOOGLE_SHEETS_TEMPLATE_ID
-    && !schemaHasInputProperties(catalogEntry.inputSchema)
-  ) {
-    const templateTool = APPROVED_STDIO_TEMPLATES[GOOGLE_SHEETS_TEMPLATE_ID].tools.find((tool) => tool.name === row.toolName);
-    if (schemaHasInputProperties(templateTool?.inputSchema)) {
-      return { ...catalogEntry, inputSchema: templateTool!.inputSchema! };
-    }
-  }
-  return catalogEntry;
+  return toCatalogEntry(row);
 }
 
 function toRuntimeSlot(row: typeof toolRuntimeSlots.$inferSelect): ToolRuntimeSlot {
@@ -2339,40 +2132,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     }
   }
 
-  async function assertGoogleSheetsSpreadsheetOwnership(
-    companyId: string,
-    config: Record<string, unknown>,
-    options: { excludeConnectionId?: string } = {},
-  ) {
-    if (!isGoogleSheetsConnectionConfig(config)) return;
-    const allowedSpreadsheetIds = googleSheetsAllowedSpreadsheetIds(config);
-    if (allowedSpreadsheetIds.length === 0) return;
-    const allowed = new Set(allowedSpreadsheetIds);
-    const rows = await db
-      .select({
-        id: toolConnections.id,
-        companyId: toolConnections.companyId,
-        config: toolConnections.config,
-      })
-      .from(toolConnections)
-      .where(ne(toolConnections.status, "archived"));
-
-    const conflictingSpreadsheetIds = new Set<string>();
-    for (const row of rows) {
-      if (row.id === options.excludeConnectionId || row.companyId === companyId) continue;
-      if (!isGoogleSheetsConnectionConfig(row.config)) continue;
-      for (const spreadsheetId of googleSheetsAllowedSpreadsheetIds(row.config)) {
-        if (allowed.has(spreadsheetId)) conflictingSpreadsheetIds.add(spreadsheetId);
-      }
-    }
-
-    if (conflictingSpreadsheetIds.size > 0) {
-      throw conflict("Google Sheets spreadsheet is already connected to another company.", {
-        code: "google_sheets_spreadsheet_already_bound",
-        spreadsheetIds: Array.from(conflictingSpreadsheetIds).sort(),
-      });
-    }
-  }
 
   async function assertCatalogEntry(companyId: string, catalogEntryId: string | null | undefined) {
     if (!catalogEntryId) return;
@@ -4844,26 +4603,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     const baseConfig = transport === "mcp_remote"
       ? { url: method?.defaults?.serverUrl ?? input.link ?? "" }
       : { templateId: method?.defaults?.templateKey };
-    let config: Record<string, unknown> = galleryEntry
+    const config: Record<string, unknown> = galleryEntry
       ? { ...baseConfig, sourceTemplateKey: galleryEntry.slug, quarantineNewEntries: true }
       : { ...baseConfig, quarantineNewEntries: true };
-    if (galleryEntry?.slug === GOOGLE_SHEETS_GALLERY_KEY) {
-      const availability = googleSheetsRobotEmailFromEnv();
-      if (!availability.available) {
-        throw unprocessable(availability.reason, { code: "google_sheets_unavailable" });
-      }
-      const allowedSpreadsheetIds = googleSheetsAllowedSpreadsheetIds(input.configValues);
-      if (allowedSpreadsheetIds.length === 0) {
-        throw badRequest("Paste at least one Google Sheets link.");
-      }
-      config.allowedSpreadsheetIds = allowedSpreadsheetIds;
-      config.robotEmail = availability.robotEmail;
-      config.env = {
-        [GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS_ENV]: allowedSpreadsheetIds.join(","),
-      };
-      config = normalizeGoogleSheetsConnectionConfig(config);
-      await assertGoogleSheetsSpreadsheetOwnership(companyId, config);
-    }
     if (transport === "mcp_remote") await assertRemoteEndpointAllowed(config);
     if (transport === "local_stdio") await stdioTemplateId(companyId, config);
     assertLocalStdioCanBeEnabled(transport, false);
@@ -6311,11 +6053,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       let applicationNamespace = input.applicationName ?? input.name;
       const transport = input.transport;
       if (!transport) throw badRequest("Tool connection transport is required");
-      const config = normalizeGoogleSheetsConnectionConfig(input.config ?? input.transportConfig ?? {});
+      const config = input.config ?? input.transportConfig ?? {};
       if (transport === "mcp_remote") await assertRemoteEndpointAllowed(config);
       if (transport === "local_stdio") await stdioTemplateId(companyId, config);
       assertLocalStdioCanBeEnabled(transport, input.enabled ?? false);
-      await assertGoogleSheetsSpreadsheetOwnership(companyId, config);
+
       if (applicationId) {
         const app = await assertApplication(companyId, applicationId);
         applicationNamespace = app.applicationKey ?? app.name;
@@ -6348,7 +6090,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         status: input.status ?? "draft",
         enabled: input.enabled ?? false,
         config,
-        transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
+        transportConfig: input.transportConfig ?? config,
         credentialRefs: input.credentialRefs ?? [],
         credentialSecretRefs: input.credentialSecretRefs ?? [],
       }).returning();
@@ -6547,11 +6289,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
 
     updateConnection: async (connectionId: string, input: UpdateToolConnection): Promise<ToolConnection> => {
       const existing = await getConnectionRow(connectionId);
-      const config = normalizeGoogleSheetsConnectionConfig(input.config ?? input.transportConfig ?? existing.config);
+      const config = input.config ?? input.transportConfig ?? existing.config;
       if (existing.transport === "mcp_remote") await assertRemoteEndpointAllowed(config);
       if (existing.transport === "local_stdio") await stdioTemplateId(existing.companyId, config);
       assertLocalStdioCanBeEnabled(existing.transport, input.enabled ?? existing.enabled);
-      await assertGoogleSheetsSpreadsheetOwnership(existing.companyId, config, { excludeConnectionId: existing.id });
+
       await assertSecretRefs(existing.companyId, [...(input.credentialRefs ?? existing.credentialRefs), ...(input.credentialSecretRefs ?? existing.credentialSecretRefs)]);
       const [row] = await db
         .update(toolConnections)
@@ -6560,7 +6302,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           status: input.status ?? existing.status,
           enabled: input.enabled ?? existing.enabled,
           config,
-          transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
+          transportConfig: input.transportConfig ?? config,
           credentialRefs: input.credentialRefs ?? existing.credentialRefs,
           credentialSecretRefs: input.credentialSecretRefs ?? existing.credentialSecretRefs,
           updatedAt: new Date(),

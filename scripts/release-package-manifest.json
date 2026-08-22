@@ -24,11 +24,7 @@
     "name": "@paperclipai/adapter-cursor-local",
     "publishFromCi": true
   },
-  {
-    "dir": "packages/adapters/gemini-local",
-    "name": "@paperclipai/adapter-gemini-local",
-    "publishFromCi": true
-  },
+
   {
     "dir": "packages/adapters/grok-local",
     "name": "@paperclipai/adapter-grok-local",
@@ -109,11 +105,7 @@
     "name": "@paperclipai/mcp-server",
     "publishFromCi": true
   },
-  {
-    "dir": "packages/google-sheets-mcp-server",
-    "name": "@paperclipai/google-sheets-mcp-server",
-    "publishFromCi": false
-  },
+
   {
     "dir": "packages/kv-demo-mcp-server",
     "name": "@paperclipai/kv-demo-mcp-server",

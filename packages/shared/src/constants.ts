@@ -33,7 +33,7 @@ export const AGENT_ADAPTER_TYPES = [
   "claude_local",
   "codex_local",
   "cursor_cloud",
-  "gemini_local",
+
   "grok_local",
   "hermes_gateway",
   "hermes_local",

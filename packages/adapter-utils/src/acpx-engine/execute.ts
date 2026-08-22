@@ -2,8 +2,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type {
@@ -238,9 +237,9 @@ export interface AcpxEngineBillingIdentity {
 
 /**
  * Per-adapter remote managed-home seed seam, injected by each adapter's ACP
- * wiring ({codex,claude,gemini}-local `acp.ts`). The adapter-specific
+ * wiring ({codex,claude}-local `acp.ts`). The adapter-specific
  * credential/home helpers (`copyBackCodexAuth`, `stageCodexHomeForSync`,
- * `prepareClaudeConfigSeed`, the Gemini skills stager, …) live in the adapter
+ * `prepareClaudeConfigSeed`, and related helpers live in adapter
  * packages, and the shared engine — which lives *inside*
  * `@paperclipai/adapter-utils`, a dependency of those packages — cannot import
  * them without a circular dependency. So the engine exposes this seam and each
@@ -258,8 +257,8 @@ export interface AcpxEngineBillingIdentity {
  * This context is deliberately adapter-agnostic: it carries only generic inputs
  * (the resolved run `env`, the target, the host workspace dir, the `stage`
  * callback, …) so that nothing adapter-specific leaks across the boundary. A
- * seam derives every adapter-specific path it needs — the Gemini skills dir, the
- * Codex home, the Claude config dir — from `config`/`env` on its own side, the
+ * seam derives every adapter-specific path it needs — Codex home or Claude
+ * config dir — from `config`/`env` on its own side, the
  * same way the adapter's CLI lane does. No field here is named after or scoped
  * to a single adapter.
  */
@@ -636,12 +635,9 @@ async function resolveBuiltInAgentCommand(input: {
   executionTargetIsRemote: boolean;
 }): Promise<BuiltInAgentCommand | null> {
   const { agent, packageRootDir, executionTargetIsRemote } = input;
-  if (agent === "gemini") {
-    return { command: "gemini --acp", shellCommand: "gemini --acp" };
-  }
   if (agent === "kimi") {
     // Kimi Code exposes its ACP server via the `kimi acp` subcommand (stdio),
-    // rather than a flag (gemini) or a dedicated bin (claude/codex).
+    // rather than a dedicated bin (claude/codex).
     return { command: "kimi acp", shellCommand: "kimi acp" };
   }
   const binName = agent === "claude" ? "claude-agent-acp" : agent === "codex" ? "codex-acp" : null;
@@ -653,62 +649,6 @@ async function resolveBuiltInAgentCommand(input: {
   return { command: resolved, shellCommand: shellQuote(resolved) };
 }
 
-const execFileAsync = promisify(execFile);
-// Gemini CLI renamed --experimental-acp to --acp in 0.33.0. acpx normally
-// rewrites the flag itself, but the agent wrapper script hides the gemini
-// command from acpx's detection, so the engine must downgrade it here.
-const GEMINI_NATIVE_ACP_FLAG_MIN_VERSION = [0, 33, 0] as const;
-const GEMINI_VERSION_PROBE_TIMEOUT_MS = 2000;
-
-export function parseGeminiVersionParts(output: string | null | undefined): number[] | null {
-  const match = output?.match(/(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-export function geminiVersionSupportsNativeAcpFlag(parts: number[] | null): boolean {
-  if (!parts) return true;
-  for (let index = 0; index < GEMINI_NATIVE_ACP_FLAG_MIN_VERSION.length; index += 1) {
-    const diff = (parts[index] ?? 0) - GEMINI_NATIVE_ACP_FLAG_MIN_VERSION[index];
-    if (diff !== 0) return diff > 0;
-  }
-  return true;
-}
-
-export function rewriteGeminiAcpFlagForVersion(commandShell: string, versionParts: number[] | null): string {
-  if (geminiVersionSupportsNativeAcpFlag(versionParts)) return commandShell;
-  return commandShell
-    .trim()
-    .split(/\s+/)
-    .map((token) => (token === "--acp" ? "--experimental-acp" : token))
-    .join(" ");
-}
-
-function geminiAcpCommandTokens(commandShell: string): string[] | null {
-  const tokens = commandShell.trim().split(/\s+/);
-  const bin = tokens[0];
-  if (!bin || bin.startsWith("'") || bin.startsWith('"')) return null;
-  if (path.basename(bin) !== "gemini") return null;
-  if (!tokens.includes("--acp")) return null;
-  return tokens;
-}
-
-async function normalizeGeminiAcpCommandShell(commandShell: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const tokens = geminiAcpCommandTokens(commandShell);
-  if (!tokens) return commandShell;
-  let versionParts: number[] | null = null;
-  try {
-    const { stdout } = await execFileAsync(tokens[0], ["--version"], {
-      timeout: GEMINI_VERSION_PROBE_TIMEOUT_MS,
-      encoding: "utf8",
-      env,
-    });
-    versionParts = parseGeminiVersionParts(stdout);
-  } catch {
-    return commandShell;
-  }
-  return rewriteGeminiAcpFlagForVersion(commandShell, versionParts);
-}
 
 function normalizeAgent(config: Record<string, unknown>): string {
   const agent = asString(config.agent, DEFAULT_ACP_ENGINE_AGENT).trim();
@@ -1104,70 +1044,6 @@ async function prepareCodexSkillRuntime(input: {
   };
 }
 
-function resolveGeminiSkillsHome(config: Record<string, unknown>): string {
-  const envConfig = parseObject(config.env);
-  const configuredHome =
-    typeof envConfig.HOME === "string" && envConfig.HOME.trim().length > 0
-      ? path.resolve(envConfig.HOME.trim())
-      : os.homedir();
-  return path.join(configuredHome, ".gemini", "skills");
-}
-
-async function prepareGeminiSkillRuntime(input: {
-  config: Record<string, unknown>;
-  moduleDir: string;
-  onLog: AdapterExecutionContext["onLog"];
-}): Promise<{ identity: Record<string, unknown>; commandNotes: string[] }> {
-  const { selectedSkills, desiredSkillNames } = await resolveSelectedRuntimeSkills(input.config, input.moduleDir);
-  const skillSetKey = await buildSkillSetKey({ skills: selectedSkills, label: "gemini" });
-  const skillsHome = resolveGeminiSkillsHome(input.config);
-  await fs.mkdir(skillsHome, { recursive: true });
-
-  const allowedSkillNames = selectedSkills.map((entry) => entry.runtimeName);
-  const removedSkills = await removeMaintainerOnlySkillSymlinks(skillsHome, allowedSkillNames);
-  for (const skillName of removedSkills) {
-    await input.onLog("stdout", `[paperclip] Removed maintainer-only ACPX Gemini skill "${skillName}" from ${skillsHome}\n`);
-  }
-
-  for (const entry of selectedSkills) {
-    const target = path.join(skillsHome, entry.runtimeName);
-    try {
-      const result = await ensurePaperclipSkillSymlink(entry.source, target);
-      if (result === "created" || result === "repaired") {
-        await input.onLog(
-          "stdout",
-          `[paperclip] ${result === "repaired" ? "Repaired" : "Linked"} ACPX Gemini skill "${entry.runtimeName}" into ${skillsHome}\n`,
-        );
-      }
-    } catch (err) {
-      if (isErrnoException(err, "EPERM")) {
-        const result = await materializePaperclipSkillCopy(entry.source, target);
-        await input.onLog(
-          "stdout",
-          `[paperclip] Copied ACPX Gemini skill "${entry.runtimeName}" into ${skillsHome} because symlinks are unavailable.${result.skippedSymlinks.length > 0 ? ` Skipped ${result.skippedSymlinks.length} nested symlink(s).` : ""}\n`,
-        );
-        continue;
-      }
-      await input.onLog(
-        "stderr",
-        `[paperclip] Failed to link ACPX Gemini skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-    }
-  }
-
-  return {
-    identity: {
-      mode: "gemini",
-      skillSetKey,
-      desiredSkillNames,
-      selectedSkills: selectedSkills.map((entry) => entry.runtimeName).sort(),
-      skillsHome,
-    },
-    commandNotes: selectedSkills.length > 0
-      ? [`Prepared ${selectedSkills.length} ACPX Gemini skill(s) at ${skillsHome}.`]
-      : [],
-  };
-}
 
 function normalizeMode(config: Record<string, unknown>): "persistent" | "oneshot" {
   return asString(config.mode, DEFAULT_ACP_ENGINE_MODE) === "oneshot" ? "oneshot" : "persistent";
@@ -1377,8 +1253,8 @@ async function writePaperclipClaudeSettings(input: {
 // workspace (and, in PR 2, the per-adapter managed-home `assets`) into the
 // sandbox and obtain the in-sandbox `workspaceRemoteDir` plus the non-null
 // `runtimeRootDir`/`assetDirs` the bridges and the home remap consume. This is
-// the shared-engine mirror of the CLI lanes (codex/claude/gemini
-// `*-local/execute.ts`). PR 1 shipped the workspace + cwd only; PR 2 threads
+// the shared-engine mirror of local CLI lanes. PR 1 shipped workspace + cwd
+// only; PR 2 threads
 // the home `assets` (built by the per-adapter `prepareRemoteManagedHome` seam,
 // carrying the codex `provision`/`restore` auth seams) through `assets` here so
 // `assetDirs.<key>` resolves to the seeded in-sandbox home. The returned
@@ -1776,14 +1652,6 @@ async function buildRuntime(input: {
     );
     skillsIdentity = preparedSkills.identity;
     skillCommandNotes.push(...preparedSkills.commandNotes);
-  } else if (acpxAgent === "gemini") {
-    const preparedSkills = await prepareGeminiSkillRuntime({
-      config,
-      moduleDir: input.engine.moduleDir,
-      onLog: input.ctx.onLog,
-    });
-    skillsIdentity = preparedSkills.identity;
-    skillCommandNotes.push(...preparedSkills.commandNotes);
   } else {
     const desired = resolvePaperclipDesiredSkillNames(
       config,
@@ -1801,18 +1669,8 @@ async function buildRuntime(input: {
     packageRootDir: input.engine.packageRootDir,
     executionTargetIsRemote,
   });
-  let agentCommand = configuredCommand || builtInCommand?.command || null;
-  let agentCommandShell = configuredCommand || builtInCommand?.shellCommand || "";
-  if (acpxAgent === "gemini" && agentCommandShell) {
-    const normalized = await normalizeGeminiAcpCommandShell(
-      agentCommandShell,
-      ensurePathInEnv({ ...process.env, ...env }),
-    );
-    if (normalized !== agentCommandShell) {
-      agentCommandShell = normalized;
-      agentCommand = normalized;
-    }
-  }
+  const agentCommand = configuredCommand || builtInCommand?.command || null;
+  const agentCommandShell = configuredCommand || builtInCommand?.shellCommand || "";
   const childStderrDir = path.join(stateDir, "run-stderr");
   const childStderrLogPath = agentCommand ? path.join(childStderrDir, `${runId}.log`) : null;
   // A runner-backed remote sandbox is the only lane that crosses the staging

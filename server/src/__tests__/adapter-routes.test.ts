@@ -190,23 +190,7 @@ describe("adapter routes", () => {
     expect(cursorAdapter.capabilities.supportsInstructionsBundle).toBe(true);
     expect(cursorAdapter.capabilities.supportsAcp).toBe(false);
 
-    const geminiAdapter = res.body.find((a: any) => a.type === "gemini_local");
-    expect(geminiAdapter).toBeDefined();
-    expect(geminiAdapter.capabilities).toMatchObject({
-      supportsInstructionsBundle: true,
-      supportsSkills: true,
-      supportsLocalAgentJwt: true,
-      requiresMaterializedRuntimeSkills: true,
-      supportsAcp: true,
-    });
-    expect(geminiAdapter.acp).toMatchObject({
-      agentId: "gemini",
-      skillsMode: "ephemeral",
-      prerequisites: {
-        nodeRange: ">=20.0.0",
-        packages: ["@google/gemini-cli"],
-      },
-    });
+    expect(res.body.find((a: any) => a.type === "gemini_local")).toBeUndefined();
 
     const grokAdapter = res.body.find((a: any) => a.type === "grok_local");
     expect(grokAdapter).toBeDefined();
@@ -374,34 +358,6 @@ describe("adapter routes", () => {
     );
   });
 
-  it("serves the built-in gemini_local ACP engine config schema", async () => {
-    const app = createApp();
-
-    const res = await request(app).get("/api/adapters/gemini_local/config-schema");
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.fields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          key: "engine",
-          default: "auto",
-          options: expect.arrayContaining([
-            expect.objectContaining({ value: "auto" }),
-            expect.objectContaining({ value: "cli" }),
-            expect.objectContaining({ value: "acp" }),
-          ]),
-        }),
-        expect.objectContaining({
-          key: "agentCommand",
-          meta: { visibleWhen: { key: "engine", values: ["acp"] } },
-        }),
-        expect.objectContaining({
-          key: "warmHandleIdleMs",
-          default: 0,
-        }),
-      ]),
-    );
-  });
 
   it("serves built-in Hermes config schemas", async () => {
     const app = createApp();
