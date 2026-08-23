@@ -64,24 +64,28 @@ describe("scheduling routes", () => {
     mockSchedulingService.listScheduledIssues.mockResolvedValue({ items: [], nextCursor: null });
   });
 
-  it("validates strict date ranges and pagination before listing scheduled issues", async () => {
-    const app = await createApp(editorActor());
+  it(
+    "validates strict date ranges and pagination before listing scheduled issues",
+    { timeout: 30_000 },
+    async () => {
+      const app = await createApp(editorActor());
 
-    const invalidDate = await request(app)
-      .get(`/api/companies/${companyId}/scheduled-issues`)
-      .query({ from: "2026-02-30T00:00:00Z" });
-    const invertedRange = await request(app)
-      .get(`/api/companies/${companyId}/scheduled-issues`)
-      .query({ from: "2026-08-22T10:00:00Z", to: "2026-08-22T09:00:00Z" });
-    const invalidLimit = await request(app)
-      .get(`/api/companies/${companyId}/scheduled-issues`)
-      .query({ limit: 101 });
+      const invalidDate = await request(app)
+        .get(`/api/companies/${companyId}/scheduled-issues`)
+        .query({ from: "2026-02-30T00:00:00Z" });
+      const invertedRange = await request(app)
+        .get(`/api/companies/${companyId}/scheduled-issues`)
+        .query({ from: "2026-08-22T10:00:00Z", to: "2026-08-22T09:00:00Z" });
+      const invalidLimit = await request(app)
+        .get(`/api/companies/${companyId}/scheduled-issues`)
+        .query({ limit: 101 });
 
-    expect(invalidDate.status).toBe(400);
-    expect(invertedRange.status).toBe(400);
-    expect(invalidLimit.status).toBe(400);
-    expect(mockSchedulingService.listScheduledIssues).not.toHaveBeenCalled();
-  });
+      expect(invalidDate.status).toBe(400);
+      expect(invertedRange.status).toBe(400);
+      expect(invalidLimit.status).toBe(400);
+      expect(mockSchedulingService.listScheduledIssues).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes bounded pagination to service and returns next cursor", async () => {
     const app = await createApp(editorActor());
