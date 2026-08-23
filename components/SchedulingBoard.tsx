@@ -5,10 +5,18 @@ import {
     isPermissionDenied,
     ApiError,
     ScheduledIssuesFilters,
+    SchedulingRoutineDto,
+    CreateSchedulingRoutineRequest,
+    UpdateSchedulingRoutineRequest,
 } from '../services/schedulingApi';
-import { groupScheduledIssuesByDay, formatInstantInZone, describeRoutineCadence, toDateKey, addDays } from '../services/schedulingUtils';
-import { Routine, RecurrenceFrequency } from '../types';
-import { useTasks } from '../context/TaskContext';
+import {
+    groupScheduledIssuesByDay,
+    formatInstantInZone,
+    describeRoutineCadence,
+    toDateKey,
+    addDays,
+} from '../services/schedulingUtils';
+import { SchedulingRoutineModal } from './SchedulingRoutineModal';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { EditIcon } from './icons/EditIcon';
@@ -31,14 +39,8 @@ type Tab = 'today' | 'schedule' | 'routines';
 
 const DEMO_COMPANY_ID = 'demo-company';
 
-// Deterministic in-memory routines for E2E/offline mode: the K8 API is not
-// reachable from the static preview server, so E2E runs against local state
-// while exercising exactly the same component code paths.
-const demoRoutines: Routine[] = [];
-
 export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'today' }) => {
     const { currentUserId } = useAuth();
-    const { getRoutines, upsertRoutine, deleteRoutine } = useTasks();
 
     const [tab, setTab] = useState<Tab>(initialTab);
     const [issues, setIssues] = useState<Awaited<ReturnType<typeof schedulingApi.listScheduledIssues>>['items']>([]);
@@ -48,19 +50,24 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
     const [busyRoutineId, setBusyRoutineId] = useState<string | null>(null);
     const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
+    // Routine state — loaded from K8 /scheduling-routines API, NOT from legacy Firestore.
+    const [routines, setRoutines] = useState<SchedulingRoutineDto[]>([]);
+    const [routinesLoading, setRoutinesLoading] = useState(false);
+    const [routinesError, setRoutinesError] = useState<string | null>(null);
+    const [showRoutineModal, setShowRoutineModal] = useState(false);
+    const [editingRoutine, setEditingRoutine] = useState<SchedulingRoutineDto | null>(null);
+
     // --- Data loading -------------------------------------------------------
-    const load = useCallback(async () => {
+    const loadIssues = useCallback(async () => {
         setLoading(true);
         setError(null);
         setPermissionDenied(false);
         try {
-            const todayKey = toDateKey(new Date());
             const filters: ScheduledIssuesFilters = {
                 from: toDateKey(addDays(new Date(), -7)),
                 to: toDateKey(addDays(new Date(), 14)),
                 limit: 100,
             };
-            void todayKey;
             const page = await schedulingApi.listScheduledIssues(DEMO_COMPANY_ID, filters);
             setIssues(page.items);
         } catch (err) {
@@ -75,6 +82,28 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
             setLoading(false);
         }
     }, []);
+
+    const loadRoutines = useCallback(async () => {
+        setRoutinesLoading(true);
+        setRoutinesError(null);
+        try {
+            const result = await schedulingApi.listRoutines(DEMO_COMPANY_ID);
+            setRoutines(result.routines);
+        } catch (err) {
+            // Network error means API is unreachable (expected in E2E / static preview).
+            if (err instanceof ApiError && err.status === 0) {
+                setRoutinesError('Cannot reach the scheduling service.');
+            } else if (!isPermissionDenied(err)) {
+                setRoutinesError(err instanceof Error ? err.message : 'Failed to load routines.');
+            }
+        } finally {
+            setRoutinesLoading(false);
+        }
+    }, []);
+
+    const load = useCallback(async () => {
+        await Promise.all([loadIssues(), loadRoutines()]);
+    }, [loadIssues, loadRoutines]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -92,7 +121,6 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
         () => Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)),
         [],
     );
-    const routines = getRoutines();
 
     // --- Handlers -----------------------------------------------------------
     const handleDragStart = (e: React.DragEvent, issueId: string) => {
@@ -138,7 +166,7 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
         }
     };
 
-    const handleGenerate = async (routine: Routine) => {
+    const handleGenerate = async (routine: SchedulingRoutineDto) => {
         if (!currentUserId) return;
         setBusyRoutineId(routine.id);
         try {
@@ -147,14 +175,14 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
                 routine.id,
                 { asOf: toDateKey(new Date()) },
             );
-            // Idempotency contract: same routine+day never duplicates. Reflect
-            // the server-confirmed generation date locally.
-            upsertRoutine({
-                id: routine.id,
-                lastGeneratedForDate: result.lastGeneratedForDate ?? toDateKey(new Date()),
-            }, currentUserId);
+            // Update the server-confirmed lastGeneratedForDate in local state.
+            setRoutines(prev => prev.map(r =>
+                r.id === routine.id
+                    ? { ...r, lastGeneratedForDate: result.lastGeneratedForDate ?? toDateKey(new Date()) }
+                    : r,
+            ));
             setToast({ kind: 'ok', text: `Generated ${result.createdIssueIds.length} task(s) from "${routine.title}".` });
-            load();
+            loadIssues();
         } catch (err) {
             setToast({
                 kind: 'err',
@@ -167,13 +195,13 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
         }
     };
 
-    const handleDeleteRoutine = async (routine: Routine) => {
+    const handleDeleteRoutine = async (routine: SchedulingRoutineDto) => {
         if (!currentUserId) return;
         if (!window.confirm(`Delete routine "${routine.title}"? This cannot be undone.`)) return;
         setBusyRoutineId(routine.id);
         try {
             await schedulingApi.deleteRoutine(DEMO_COMPANY_ID, routine.id);
-            deleteRoutine(routine.id, currentUserId);
+            setRoutines(prev => prev.filter(r => r.id !== routine.id));
             setToast({ kind: 'ok', text: `Deleted "${routine.title}".` });
         } catch (err) {
             setToast({
@@ -185,6 +213,50 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
         } finally {
             setBusyRoutineId(null);
         }
+    };
+
+    const handleCreateRoutine = async (data: CreateSchedulingRoutineRequest) => {
+        try {
+            const created = await schedulingApi.createRoutine(DEMO_COMPANY_ID, data);
+            setRoutines(prev => [...prev, created]);
+            setToast({ kind: 'ok', text: `Created routine "${created.title}".` });
+            setShowRoutineModal(false);
+            setEditingRoutine(null);
+        } catch (err) {
+            setToast({
+                kind: 'err',
+                text: isPermissionDenied(err)
+                    ? 'You need the tasks:assign permission to create routines.'
+                    : err instanceof Error ? err.message : 'Create failed.',
+            });
+        }
+    };
+
+    const handleUpdateRoutine = async (id: string, data: UpdateSchedulingRoutineRequest) => {
+        try {
+            const updated = await schedulingApi.updateRoutine(DEMO_COMPANY_ID, id, data);
+            setRoutines(prev => prev.map(r => r.id === id ? updated : r));
+            setToast({ kind: 'ok', text: `Updated routine "${updated.title}".` });
+            setShowRoutineModal(false);
+            setEditingRoutine(null);
+        } catch (err) {
+            setToast({
+                kind: 'err',
+                text: isPermissionDenied(err)
+                    ? 'You need the tasks:assign permission to update routines.'
+                    : err instanceof Error ? err.message : 'Update failed.',
+            });
+        }
+    };
+
+    const openNewRoutineModal = () => {
+        setEditingRoutine(null);
+        setShowRoutineModal(true);
+    };
+
+    const openEditRoutineModal = (routine: SchedulingRoutineDto) => {
+        setEditingRoutine(routine);
+        setShowRoutineModal(true);
     };
 
     // --- Render helpers -----------------------------------------------------
@@ -302,58 +374,135 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
             );
         }
 
-        // routines tab
-        return (
-            <div className="space-y-3" data-testid="routine-list">
-                {routines.length === 0 && <EmptyState message="No routines yet. Create one to automate recurring work." />}
-                {routines.map(routine => (
-                    <div
-                        key={routine.id}
-                        data-testid="routine-row"
-                        onKeyDown={(e) => {
-                            // Keyboard support: Enter generates, Delete removes.
-                            if (e.key === 'Enter') { e.preventDefault(); handleGenerate(routine); }
-                        }}
-                        tabIndex={0}
-                        role="listitem"
-                        aria-label={`Routine ${routine.title}`}
-                        className="p-3 bg-surface dark:bg-surface-dark rounded-lg border border-border-light dark:border-border-dark flex flex-col sm:flex-row sm:items-center justify-between gap-3 focus-within:ring-2 focus-within:ring-primary"
-                    >
-                        <div className="min-w-0">
-                            <p className="font-medium text-sm truncate">{routine.title}</p>
-                            <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">
-                                {describeRoutineCadence({
-                                    recurrenceRule: routine.recurrenceRule.frequency === RecurrenceFrequency.Weekly
-                                        ? { kind: 'weekly', daysOfWeek: routine.recurrenceRule.daysOfWeek ?? [] }
-                                        : { kind: 'daily' },
-                                    scheduledTime: null,
-                                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-                                })}
-                                {routine.lastGeneratedForDate ? ` · last generated ${routine.lastGeneratedForDate}` : ''}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                                onClick={() => handleGenerate(routine)}
-                                disabled={busyRoutineId === routine.id}
-                                className="flex items-center px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-green-500"
-                                data-testid="generate-routine"
-                            >
-                                <PlayIcon className="w-3.5 h-3.5 mr-1" /> Generate now
-                            </button>
-                            <button
-                                onClick={() => handleDeleteRoutine(routine)}
-                                disabled={busyRoutineId === routine.id}
-                                aria-label={`Delete routine ${routine.title}`}
-                                className="p-2 text-text-secondary hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-400"
-                            >
-                                <TrashIcon className="w-4 h-4" />
-                            </button>
-                        </div>
+        // routines tab — K8 API-driven
+        if (tab === 'routines') {
+            if (routinesLoading) {
+                return (
+                    <div className="py-16 flex flex-col items-center gap-3" role="status" aria-live="polite" data-testid="routines-loading-state">
+                        <svg className="animate-spin h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        <span className="text-sm text-text-secondary dark:text-text-secondary-dark">Loading routines...</span>
                     </div>
-                ))}
-            </div>
-        );
+                );
+            }
+            if (routinesError && routines.length === 0) {
+                return (
+                    <div className="py-16 text-center" data-testid="error-state">
+                        <p className="font-semibold text-red-500">Could not load routines</p>
+                        <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary-dark">{routinesError}</p>
+                        <button onClick={loadRoutines} className="mt-4 px-4 py-2 text-sm font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary">Retry</button>
+                    </div>
+                );
+            }
+            return (
+                <div className="space-y-3" data-testid="routine-list">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark">
+                            {routines.length} routine{routines.length !== 1 ? 's' : ''}
+                        </h3>
+                        <button
+                            onClick={openNewRoutineModal}
+                            className="flex items-center px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary"
+                            data-testid="new-routine-btn"
+                        >
+                            <PlusIcon className="w-3.5 h-3.5 mr-1" /> New Routine
+                        </button>
+                    </div>
+                    {routines.length === 0 && <EmptyState message="No routines yet. Create one to automate recurring work." />}
+                    {routines.map(routine => (
+                        <div
+                            key={routine.id}
+                            data-testid="routine-row"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') { e.preventDefault(); handleGenerate(routine); }
+                            }}
+                            tabIndex={0}
+                            role="listitem"
+                            aria-label={`Routine ${routine.title}`}
+                            className="p-3 bg-surface dark:bg-surface-dark rounded-lg border border-border-light dark:border-border-dark flex flex-col sm:flex-row sm:items-center justify-between gap-3 focus-within:ring-2 focus-within:ring-primary"
+                        >
+                            <div className="min-w-0">
+                                <p className="font-medium text-sm truncate">{routine.title}</p>
+                                <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">
+                                    {describeRoutineCadence({
+                                        recurrenceRule: routine.recurrenceRule,
+                                        scheduledTime: routine.scheduledTime,
+                                        timezone: routine.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                                    })}
+                                    {routine.lastGeneratedForDate ? ` - last generated ${routine.lastGeneratedForDate}` : ''}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                    onClick={() => handleGenerate(routine)}
+                                    disabled={busyRoutineId === routine.id}
+                                    className="flex items-center px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    data-testid="generate-routine"
+                                >
+                                    <PlayIcon className="w-3.5 h-3.5 mr-1" /> Generate now
+                                </button>
+                                <button
+                                    onClick={() => openEditRoutineModal(routine)}
+                                    disabled={busyRoutineId === routine.id}
+                                    aria-label={`Edit routine ${routine.title}`}
+                                    className="p-2 text-text-secondary hover:text-primary rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary"
+                                >
+                                    <EditIcon className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteRoutine(routine)}
+                                    disabled={busyRoutineId === routine.id}
+                                    aria-label={`Delete routine ${routine.title}`}
+                                    className="p-2 text-text-secondary hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+                                >
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        if (tab === 'today') {
+            return todayItems.length > 0
+                ? <div className="space-y-2">{todayItems.map(i => <IssueCard key={i.issueId} issue={i} />)}</div>
+                : <EmptyState message="Nothing scheduled for today. Enjoy the focus time." />;
+        }
+
+        if (tab === 'schedule') {
+            return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+                    {weekDays.map(day => {
+                        const key = toDateKey(day);
+                        const items = byDay.get(key) ?? [];
+                        return (
+                            <div
+                                key={key}
+                                data-testid={`schedule-day-${key}`}
+                                onDrop={(e) => handleDropOnDay(e, day)}
+                                onDragOver={(e) => e.preventDefault()}
+                                className="min-h-28 p-2 rounded-lg border border-dashed border-border-light dark:border-border-dark bg-gray-50/50 dark:bg-gray-900/30"
+                            >
+                                <p className="text-xs font-semibold mb-2 text-text-secondary dark:text-text-secondary-dark">
+                                    {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    {key === todayKey ? ' · Today' : ''}
+                                </p>
+                                <div className="space-y-2">
+                                    {items.length > 0
+                                        ? items.map(i => <IssueCard key={i.issueId} issue={i} draggable />)
+                                        : <p className="text-xs text-text-secondary dark:text-text-secondary-dark">No items</p>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        return null;
     };
 
     return (
@@ -399,8 +548,16 @@ export const SchedulingBoard: React.FC<{ initialTab?: Tab }> = ({ initialTab = '
 
             {/* Hidden live region so screen readers announce state changes */}
             <span className="sr-only" aria-live="polite">{toast?.text}</span>
-            <EditIcon className="hidden w-0 h-0" />
-            <PlusIcon className="hidden w-0 h-0" />
+
+            {/* Routine create/edit modal */}
+            {showRoutineModal && (
+                <SchedulingRoutineModal
+                    routine={editingRoutine}
+                    onClose={() => { setShowRoutineModal(false); setEditingRoutine(null); }}
+                    onSaveCreate={handleCreateRoutine}
+                    onSaveUpdate={handleUpdateRoutine}
+                />
+            )}
         </div>
     );
 };
