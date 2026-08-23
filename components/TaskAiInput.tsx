@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { orchestrateTaskWithGemini } from '../services/geminiService';
+import { orchestrateTask } from '../services/aiService';
 import { useAuth } from '../context/AuthContext';
 import { useTasks } from '../context/TaskContext';
 import { Item, ItemStatus, ItemType, Task, WorkPackage, WorkPackageType } from '../types';
@@ -18,7 +18,7 @@ export const TaskAiInput = () => {
 
         setIsLoading(true);
         try {
-            const result = await orchestrateTaskWithGemini(prompt);
+            const result = await orchestrateTask(prompt);
             
             const newItems: Omit<Item, 'id' | 'createdAt' | 'updatedAt'>[] = [];
             let workPackageId = getInbox()?.id || null;

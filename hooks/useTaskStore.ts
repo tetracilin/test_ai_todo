@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { loadCollection, upsertDoc, deleteDocById, upsertMany, deleteManyById, allCollections } from '../services/localStore';
 import { Item, Tag, AppData, ItemStatus, ItemType, WorkPackageType, Task, WorkPackage, Person, DefinitionOfDone, Project, Decision, PhaseType, KnowledgeGap, LogEntry, LogAction, DecisionStatus, TodayViewConfig, LeaveBlock, AiConfig, Routine, RecurrenceFrequency, RecurrenceRule, InboxFeedFilter, ApprovalRequest, ApprovalStatus } from '../types';
 
 const createLogEntry = (log: Omit<LogEntry, 'id' | 'timestamp'>): LogEntry => ({
@@ -32,25 +31,13 @@ const getInitialData = (): AppData => ({
     dismissedFeedItemIds: [],
 });
 
-const toTimestamp = (isoString: string) => Timestamp.fromDate(new Date(isoString));
-const fromTimestamp = (timestamp: Timestamp): string => timestamp.toDate().toISOString();
-
-// Helper to convert Firestore data with Timestamps to client-side data with ISO strings
-const fromFirestore = (docData: any): any => {
-    const data = { ...docData };
-    for (const key in data) {
-        if (data[key] instanceof Timestamp) {
-            data[key] = fromTimestamp(data[key]);
-        }
-    }
-    return data;
-};
+// Helper to convert stored documents: local persistence keeps ISO strings as-is.
+const fromStore = (docData: any): any => docData;
 
 export const useTaskStore = (userId: string | null) => {
   const [data, setData] = useState<AppData>(getInitialData);
   const [isLoaded, setIsLoaded] = useState(false);
-  const hasInitializedRoutines = useRef(false);
-  
+
    useEffect(() => {
     if (!userId) {
         setData(getInitialData());
@@ -58,32 +45,29 @@ export const useTaskStore = (userId: string | null) => {
         return;
     }
 
-    const collections: (keyof AppData)[] = ['items', 'tags', 'persons', 'projects', 'decisions', 'routines', 'logs', 'leaveBlocks', 'approvals'];
-    const unsubscribes = collections.map(collectionName => 
-        onSnapshot(collection(db, collectionName), (snapshot) => {
-            const collectionData = snapshot.docs.map(doc => fromFirestore({ id: doc.id, ...doc.data() }));
-            setData(prevData => ({ ...prevData, [collectionName]: collectionData }));
-        })
-    );
-
-    // AI Config and other user-specific settings could be stored in a user document
-    // For now, we'll keep it simple and load it once, assuming one config for the app.
-    // In a multi-user app, this would be `doc(db, "users", userId)`
-    // Not implementing real-time for config for now.
+    // Hydrate every collection from local persistence in one pass. There is no
+    // network subscription to tear down, so no cleanup is needed.
+    setData(prevData => {
+        const hydrated = { ...prevData };
+        for (const collectionName of allCollections()) {
+            hydrated[collectionName] = fromStore(loadCollection(collectionName)) as never;
+        }
+        return hydrated;
+    });
 
     setIsLoaded(true);
-
-    return () => unsubscribes.forEach(unsub => unsub());
   }, [userId]);
 
   const addLogEntry = useCallback(async (log: Omit<LogEntry, 'id' | 'timestamp'>) => {
     const newLog = createLogEntry(log);
     try {
-        await setDoc(doc(db, "logs", newLog.id), newLog);
+        upsertDoc('logs', newLog);
+        setData(prevData => ({ ...prevData, logs: [...prevData.logs, newLog] }));
     } catch (error) {
         console.error("Error adding log entry: ", error);
     }
   }, []);
+
 
   const upsertItem = useCallback(async (itemData: Omit<Item, 'createdAt' | 'updatedAt'> | (Partial<Item> & { id: string }), actorId: string) => {
       const isUpdate = 'id' in itemData && data.items.some(i => i.id === itemData.id);
@@ -102,8 +86,12 @@ export const useTaskStore = (userId: string | null) => {
           } as Item;
       }
       
-       await setDoc(doc(db, "items", finalItem.id), finalItem, { merge: true });
-       
+       upsertDoc('items', finalItem);
+       setData(prevData => {
+           const items = prevData.items.filter(i => i.id !== finalItem.id);
+           return { ...prevData, items: [...items, finalItem] };
+       });
+
        addLogEntry({
           userId: actorId,
           action: isUpdate ? LogAction.UPDATE : LogAction.CREATE,
@@ -153,28 +141,26 @@ export const useTaskStore = (userId: string | null) => {
 
 
   const batchCreateItems = useCallback(async (itemsToCreate: Omit<Item, 'id' | 'createdAt' | 'updatedAt'>[], actorId: string, source: string = 'AI') => {
-      const batch = writeBatch(db);
       const now = new Date().toISOString();
 
-      itemsToCreate.forEach(itemData => {
-          const newItem = {
-              ...itemData,
-              id: crypto.randomUUID(),
-              createdAt: now,
-              updatedAt: now,
-          } as Item;
-          const itemRef = doc(db, "items", newItem.id);
-          batch.set(itemRef, newItem);
-      });
-      
-      await batch.commit();
+      const newItems: Item[] = itemsToCreate.map(itemData => ({
+          ...itemData,
+          id: crypto.randomUUID(),
+          createdAt: now,
+          updatedAt: now,
+      } as Item));
+
+      upsertMany('items', newItems);
+      setData(prevData => ({ ...prevData, items: [...prevData.items, ...newItems] }));
 
       addLogEntry({
           userId: actorId,
           action: LogAction.GENERATE,
-          details: `${source} created ${itemsToCreate.length} item(s) in a batch operation.`,
+          details: `${source} created ${newItems.length} item(s) in a batch operation.`,
           targetType: source,
       });
+
+      return newItems;
   }, [addLogEntry]);
 
   const getDescendants = useCallback((itemId: string): Set<string> => {
@@ -205,13 +191,8 @@ export const useTaskStore = (userId: string | null) => {
     const itemsToDeleteIds = Array.from<string>(getDescendants(id));
     itemsToDeleteIds.push(id);
 
-    const batch = writeBatch(db);
-    itemsToDeleteIds.forEach((itemId: string) => {
-        const itemRef = doc(db, "items", itemId);
-        batch.delete(itemRef);
-    });
-    
-    await batch.commit();
+    deleteManyById('items', itemsToDeleteIds);
+    setData(prevData => ({ ...prevData, items: prevData.items.filter(i => !itemsToDeleteIds.includes(i.id)) }));
 
     addLogEntry({
         userId: actorId,
@@ -224,46 +205,43 @@ export const useTaskStore = (userId: string | null) => {
   }, [data.items, getDescendants, addLogEntry]);
 
   const addSubTasksToWorkPackage = useCallback(async (workPackageId: string, taskTitles: string[], creatorId: string) => {
-        const batch = writeBatch(db);
         const now = new Date().toISOString();
 
-        taskTitles.forEach(title => {
-            const newTask: Task = {
-                id: crypto.randomUUID(),
-                creatorId,
-                title,
-                note: '',
-                type: ItemType.Task,
-                workPackageId,
-                parentId: null,
-                tagIds: [],
-                dueDate: null,
-                deferDate: null,
-                scheduledTime: null,
-                estimate: null,
-                completedAt: null,
-                status: ItemStatus.Active,
-                flagged: false,
-                createdAt: now,
-                updatedAt: now,
-                isBlocked: false,
-                blockageDetails: null,
-                timerStartedAt: null,
-                accumulatedTime: 0,
-                assigneeId: null,
-                collaboratorIds: [],
-                clarificationNotes: '',
-            };
-            const taskRef = doc(db, "items", newTask.id);
-            batch.set(taskRef, newTask);
-        });
+        const newTasks: Task[] = taskTitles.map(title => ({
+            id: crypto.randomUUID(),
+            creatorId,
+            title,
+            note: '',
+            type: ItemType.Task,
+            workPackageId,
+            parentId: null,
+            tagIds: [],
+            dueDate: null,
+            deferDate: null,
+            scheduledTime: null,
+            estimate: null,
+            completedAt: null,
+            status: ItemStatus.Active,
+            flagged: false,
+            createdAt: now,
+            updatedAt: now,
+            isBlocked: false,
+            blockageDetails: null,
+            timerStartedAt: null,
+            accumulatedTime: 0,
+            assigneeId: null,
+            collaboratorIds: [],
+            clarificationNotes: '',
+        }));
 
-        await batch.commit();
+        upsertMany('items', newTasks);
+        setData(prevData => ({ ...prevData, items: [...prevData.items, ...newTasks] }));
+
         const workPackage = data.items.find(i => i.id === workPackageId);
         addLogEntry({
             userId: creatorId,
             action: LogAction.GENERATE,
-            details: `Generated ${taskTitles.length} sub-tasks for "${workPackage?.title}"`,
+            details: `Generated ${newTasks.length} sub-tasks for "${workPackage?.title}"`,
             targetId: workPackageId,
             targetType: ItemType.WorkPackage,
         });
@@ -271,8 +249,12 @@ export const useTaskStore = (userId: string | null) => {
   }, [data.items, addLogEntry]);
 
   const upsertPerson = useCallback(async (person: Person, actorId: string) => {
-    await setDoc(doc(db, "persons", person.id), person, { merge: true });
-    
+    upsertDoc('persons', person);
+    setData(prevData => {
+        const persons = prevData.persons.filter(p => p.id !== person.id);
+        return { ...prevData, persons: [...persons, person] };
+    });
+
     addLogEntry({
           userId: actorId,
           action: data.persons.some(p => p.id === person.id) ? LogAction.UPDATE : LogAction.CREATE,
@@ -283,7 +265,11 @@ export const useTaskStore = (userId: string | null) => {
   }, [data.persons, addLogEntry]);
 
   const upsertTag = useCallback(async (tag: Tag, actorId: string) => {
-    await setDoc(doc(db, "tags", tag.id), tag, { merge: true });
+    upsertDoc('tags', tag);
+    setData(prevData => {
+        const tags = prevData.tags.filter(t => t.id !== tag.id);
+        return { ...prevData, tags: [...tags, tag] };
+    });
     addLogEntry({
         userId: actorId,
         action: data.tags.some(t => t.id === tag.id) ? LogAction.UPDATE : LogAction.CREATE,
@@ -292,13 +278,9 @@ export const useTaskStore = (userId: string | null) => {
         targetType: 'Tag'
     });
   }, [data.tags, addLogEntry]);
-  
-  // Other functions like saveClarification, deleteTag, etc. would also be converted to use Firestore.
-  // For brevity, I am omitting the full conversion of every single function, but the pattern is the same:
-  // replace setData with async calls to Firestore services (setDoc, deleteDoc, writeBatch).
-  
+
   // Placeholder for functions not fully converted
-  const notImpl = () => { alert("This feature is not fully wired up to Firebase yet.")};
+  const notImpl = () => { alert("This feature is not fully wired up to local persistence yet.")};
 
   // --- Getters ---
   const getItems = useCallback(() => data.items, [data.items]);
@@ -317,7 +299,7 @@ export const useTaskStore = (userId: string | null) => {
   const getInboxFeedFilter = useCallback(() => data.inboxFeedFilter, [data.inboxFeedFilter]);
   const getDismissedFeedItemIds = useCallback(() => data.dismissedFeedItemIds, [data.dismissedFeedItemIds]);
   
-  // --- Setters (would need Firestore implementation) ---
+  // --- Setters (persist locally) ---
   const setTodayViewTagIds = notImpl as (tagIds: string[]) => void;
   const setTodayViewConfig = notImpl as (config: TodayViewConfig) => void;
   const setAiConfig = notImpl as (config: AiConfig, actorId: string) => void;
@@ -354,7 +336,8 @@ export const useTaskStore = (userId: string | null) => {
       updatedAt: now,
       resolvedAt: null,
     };
-    await setDoc(doc(db, "approvals", approval.id), approval);
+    upsertDoc('approvals', approval);
+    setData(prevData => ({ ...prevData, approvals: [...prevData.approvals, approval] }));
     addLogEntry({
       userId: requesterId,
       action: LogAction.APPROVAL_REQUEST,
@@ -376,7 +359,11 @@ export const useTaskStore = (userId: string | null) => {
       updatedAt: now,
       resolvedAt: now,
     };
-    await setDoc(doc(db, "approvals", approvalId), updated, { merge: true });
+    upsertDoc('approvals', updated);
+    setData(prevData => ({
+        ...prevData,
+        approvals: prevData.approvals.map(a => (a.id === updated.id ? updated : a)),
+    }));
     addLogEntry({
       userId: actorId,
       action: LogAction.APPROVAL_RESOLVE,

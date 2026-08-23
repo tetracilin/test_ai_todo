@@ -4,7 +4,6 @@ import { Item, ItemStatus, ItemType, Task, WorkPackage, Tag, Person } from '../t
 import { useTasks } from '../context/TaskContext';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
-import { generateSubTasks, generateTaskSteps } from '../services/geminiService';
 import { FlagIcon } from './icons/FlagIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
@@ -84,15 +83,11 @@ export const ItemDetail: React.FC<{
   onDelete: (id: string) => void;
   onSelectItem: (id: string) => void;
 }> = ({ itemId, onClose, onDelete, onSelectItem }) => {
-  const { getItem, getItems, getTags, getPersons, upsertItem, upsertTag, addSubTasksToWorkPackage, getDescendants, getAiConfig } = useTasks();
+  const { getItem, getItems, getTags, getPersons, upsertItem, upsertTag, getDescendants } = useTasks();
   const { currentUserId } = useAuth();
   const { canEditItem } = usePermissions();
   const [item, setItem] = useState<Item | null>(null);
   const [canEdit, setCanEdit] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
-  const [aiStepsError, setAiStepsError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [isClarificationModalOpen, setIsClarificationModalOpen] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
@@ -103,7 +98,6 @@ export const ItemDetail: React.FC<{
   const allWorkPackages = useMemo(() => allItems.filter(i => i.type === ItemType.WorkPackage) as WorkPackage[], [allItems]);
   const allTags = getTags();
   const allPersons = getPersons();
-  const aiConfig = getAiConfig();
 
   const subTasks = useMemo(() => {
     if (!item) return [];
@@ -145,8 +139,6 @@ export const ItemDetail: React.FC<{
       setItem(null);
       setCanEdit(false);
     }
-    setAiError(null);
-    setAiStepsError(null);
     setTagInput('');
   }, [itemId, getItem, currentUserId, canEditItem, allItems]);
 
@@ -180,53 +172,6 @@ export const ItemDetail: React.FC<{
       }
   };
 
-  const handleGenerateSubtasks = async () => {
-    if (!item || item.type !== ItemType.WorkPackage || !currentUserId || !canEdit) return;
-    setIsGenerating(true);
-    setAiError(null);
-    try {
-      const subTasks = await generateSubTasks(aiConfig.workPackageSubtaskGenerationMasterPrompt, item.title);
-      addSubTasksToWorkPackage(item.id, subTasks, currentUserId);
-    } catch (error) {
-        if (error instanceof Error) {
-            setAiError(error.message);
-        } else {
-            setAiError("An unknown error occurred.");
-        }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleGenerateSteps = async () => {
-    if (!taskItem || !currentUserId || !canEdit) return;
-
-    setIsGeneratingSteps(true);
-    setAiStepsError(null);
-
-    try {
-        const currentUser = allPersons.find(p => p.id === currentUserId);
-        const userPrompt = currentUser?.aiPrompt || 'a professional';
-        
-        const generatedText = await generateTaskSteps(aiConfig.taskGenerationMasterPrompt, taskItem.title, userPrompt);
-        
-        const existingNotes = taskItem.clarificationNotes || '';
-        const separator = existingNotes ? '\n\n---\n\n' : '';
-        const newClarificationNotes = existingNotes + separator + generatedText;
-
-        handleUpdate({ clarificationNotes: newClarificationNotes });
-
-    } catch (error) {
-        if (error instanceof Error) {
-            setAiStepsError(error.message);
-        } else {
-            setAiStepsError("An unknown error occurred.");
-        }
-    } finally {
-        setIsGeneratingSteps(false);
-    }
-  };
-  
   const handleAddSubtask = () => {
     if (!item || !currentUserId || !newSubtaskTitle.trim() || item.type !== ItemType.Task) return;
 
@@ -510,21 +455,10 @@ export const ItemDetail: React.FC<{
             <div className="pt-4 border-t border-border-light dark:border-border-dark">
                 <div className="flex justify-between items-center mb-1">
                     <h3 className="text-base font-semibold text-text-primary dark:text-text-primary-dark">Clarification</h3>
-                    {canEdit && (
-                        <button
-                            onClick={handleGenerateSteps}
-                            disabled={isGeneratingSteps}
-                            className="flex items-center text-sm px-3 py-1.5 rounded-md text-primary bg-primary/10 hover:bg-primary/20 disabled:opacity-50 disabled:cursor-wait"
-                        >
-                            <SparklesIcon className="w-4 h-4 mr-2"/>
-                            {isGeneratingSteps ? 'Generating...' : 'Generate Steps'}
-                        </button>
-                    )}
                 </div>
                 <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1 mb-2">
-                    Use this space for notes on steps, outcomes, or other details. This will be used by AI for assistance later.
+                    Use this space for notes on steps, outcomes, or other details.
                 </p>
-                {aiStepsError && <p className="my-2 text-sm text-red-600 dark:text-red-400">{aiStepsError}</p>}
                 <textarea
                     value={taskItem.clarificationNotes || ''}
                     onChange={(e) => handleUpdate({ clarificationNotes: e.target.value })}
@@ -558,11 +492,6 @@ export const ItemDetail: React.FC<{
                     Define Clarification
                 </button>
              )}
-            <button onClick={handleGenerateSubtasks} disabled={isGenerating || !canEdit} className="w-full flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed">
-              <SparklesIcon className="mr-2 -ml-1 h-5 w-5" />
-              {isGenerating ? 'Generating...' : 'Generate Sub-tasks with AI'}
-            </button>
-            {aiError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{aiError}</p>}
           </div>
         )}
       </div>

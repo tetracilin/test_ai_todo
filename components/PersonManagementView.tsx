@@ -61,7 +61,7 @@ export const PersonManagementView: React.FC = () => {
     };
 
     const handleDelete = (personId: string) => {
-       alert("User deletion should be handled from your Firebase Authentication console for security reasons.");
+       alert("User deletion should be handled by an administrator for security reasons.");
     };
     
     const resetForm = () => {

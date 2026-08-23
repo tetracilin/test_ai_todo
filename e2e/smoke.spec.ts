@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// Unauthenticated golden path: the app must never require real Firebase/Gemini
-// credentials to boot and show its shell (the login screen).
+// Unauthenticated golden path: the app must never require external AI or
+// identity credentials to boot and show its shell (the login screen).
 test.describe('app shell', () => {
   test('loads and renders the login shell with no console errors', async ({ page }) => {
     const consoleErrors: string[] = [];

@@ -76,11 +76,15 @@ jobs:
           max_attempts: 3
           command: npx playwright install --with-deps chromium
 
+      - name: No-Google client gate (blocking)
+        run: |
+          npm run check:no-google-client
+          npm run test:check-no-google-client
+
       - name: Run e2e suite
         run: npm run test:e2e
         env:
           CI: true
-          GEMINI_API_KEY: dummy-e2e-key
 
       - name: Upload Playwright report
         if: always()
@@ -108,8 +112,12 @@ jobs:
       - name: Build frontend
         run: npm run build
         env:
-          GEMINI_API_KEY: dummy-build-key
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: Client bundle scan (blocking)
+        run: |
+          npm run scan:client-bundle -- dist
+          npm run check:no-google-client
 
       - name: Install discord-bridge dependencies
         working-directory: discord-bridge

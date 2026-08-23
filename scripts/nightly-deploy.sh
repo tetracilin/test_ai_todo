@@ -28,7 +28,7 @@ log "now at $(git rev-parse --short HEAD), installing deps"
 npm ci --include=dev
 
 log "building dist/"
-GEMINI_API_KEY="${GEMINI_API_KEY:-dummy-deploy-key}" VITE_BASE_PATH="${VITE_BASE_PATH:-/}" npm run build
+VITE_BASE_PATH="${VITE_BASE_PATH:-/}" npm run build
 
 log "restarting server.cjs on port $PORT"
 # Scan /proc rather than trust only the PID file: this environment has no

@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Task Manager",
-  "description": "A personal task manager designed to help busy professionals organize and manage their tasks efficiently. It uses Gemini AI to help break down large projects into smaller, manageable tasks.",
+  "name": "T3 Task Manager",
+  "description": "A team task manager for organizing projects, work packages, and tasks. AI assistance runs through the Hermes Gateway — the client never holds model credentials.",
   "requestFramePermissions": [
     "camera"
   ],

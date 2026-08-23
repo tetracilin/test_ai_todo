@@ -1,5 +1,5 @@
 {
-  "name": "gemini-task-manager",
+  "name": "t3-task-manager",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,13 +12,14 @@
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
-    "check-tests": "node scripts/check-tests.mjs"
+    "check-tests": "node scripts/check-tests.mjs",
+    "scan:client-bundle": "node scripts/scan-client-bundle.mjs dist",
+    "check:no-google-client": "node scripts/check-no-google-client.mjs",
+    "test:check-no-google-client": "node --test scripts/check-no-google-client.test.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "@google/genai": "^1.11.0",
-    "firebase": "^12.2.1"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// The app gates all task/work-package data behind Firebase auth (see
+// The app gates all task/work-package data behind local authentication (see
 // hooks/useTaskStore.ts — it never fetches without a signed-in userId), so
 // there is no local-state task journey to exercise pre-login. The golden
 // path we can drive without real credentials is the auth form itself:

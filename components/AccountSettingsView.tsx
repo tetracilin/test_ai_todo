@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Person } from '../types';
 
 export const AccountSettingsView: React.FC = () => {
-    const { currentUser, showMainApp, changePassword, firebaseUser } = useAuth();
+    const { currentUser, showMainApp, changePassword } = useAuth();
 
     // State for password change form
     const [newPassword, setNewPassword] = useState('');

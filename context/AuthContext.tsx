@@ -1,26 +1,19 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { 
-    onAuthStateChanged, 
-    createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, 
-    signOut, 
-    sendPasswordResetEmail, 
-    updatePassword,
-    setPersistence,
-    browserLocalPersistence,
-    browserSessionPersistence,
-    User as FirebaseUser 
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { Person, LogAction } from '../types';
-import { auth, db } from '../services/firebase';
-import taskStoreBridge from './taskStoreBridge';
-
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { Person } from '../types';
+import {
+    getSessionUser,
+    clearSession,
+    signInLocally,
+    signUpLocally,
+    sendPasswordResetLocally,
+    changePasswordLocally,
+    SessionUser,
+} from '../services/localAuth';
 
 interface AuthContextType {
   currentUser: Person | null;
   currentUserId: string | null;
-  firebaseUser: FirebaseUser | null;
+  sessionUser: SessionUser | null;
   login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -37,96 +30,76 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [appView, setAppView] = useState<'main' | 'account-settings'>('main');
 
+  // Restore a persisted session on boot. Profiles are loaded by TaskProvider
+  // once the task store hydrates; here we only re-establish the identity.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (user) {
-        setCurrentUserId(user.uid);
-        // Fetch user profile from Firestore
-        const userDocRef = doc(db, "persons", user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-            setCurrentUser({ id: userDocSnap.id, ...userDocSnap.data() } as Person);
-        } else {
-            // This might happen if Firestore doc creation failed during signup
-            // Or if user was created directly in Firebase console
-            console.warn("No profile document found for authenticated user:", user.uid);
-            setCurrentUser(null);
-        }
-      } else {
-        setCurrentUserId(null);
-        setCurrentUser(null);
-      }
-      setIsReady(true);
-    });
-    return unsubscribe;
-  }, []);
-  
-  const login = async (email: string, password: string, rememberMe: boolean): Promise<void> => {
-    const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
-    await setPersistence(auth, persistence);
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    taskStoreBridge.current?.addLogEntry({
-        userId: userCredential.user.uid,
-        action: LogAction.LOGIN,
-        details: `User logged in.`
-    });
-  };
-  
-  const signup = async (name: string, email: string, password: string): Promise<void> => {
-      if (!taskStoreBridge.current) {
-          throw new Error('Task store is not ready yet. Please try again in a moment.');
-      }
-
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const { user } = userCredential;
-
-      const newUserProfile: Person = {
-          id: user.uid,
-          name,
-          email: user.email!,
-          mobile: '',
-          avatarUrl: '',
-          aiPrompt: `A busy professional named ${name}.`,
-      };
-
-      // Use the existing upsertPerson which now talks to Firestore
-      await taskStoreBridge.current.upsertPerson(newUserProfile, user.uid);
-      setCurrentUser(newUserProfile);
-  };
-
-  const logout = async () => {
-    await signOut(auth);
-  };
-  
-  const sendPasswordReset = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
-  };
-  
-  const changePassword = async (newPassword: string) => {
-    if (!auth.currentUser) {
-        throw new Error("You must be logged in to change your password.");
+    const session = getSessionUser();
+    if (session) {
+      setSessionUser(session);
+      setCurrentUserId(session.uid);
     }
-    await updatePassword(auth.currentUser, newPassword);
+    setIsReady(true);
+  }, []);
+
+  const login = async (email: string, password: string, _rememberMe: boolean): Promise<void> => {
+    // rememberMe is kept for UI compatibility; sessions are always local and
+    // persist across browser restarts.
+    const session = await signInLocally(email, password);
+    setSessionUser(session);
+    setCurrentUserId(session.uid);
+    setCurrentUser(null);
   };
-  
+
+  const signup = async (name: string, email: string, password: string): Promise<void> => {
+    const session = await signUpLocally(name, email, password);
+    setSessionUser(session);
+    setCurrentUserId(session.uid);
+    setCurrentUser({
+      id: session.uid,
+      name,
+      email: session.email,
+      mobile: '',
+      avatarUrl: '',
+      aiPrompt: `A busy professional named ${name}.`,
+    });
+  };
+
+  const logout = () => {
+    clearSession();
+    setSessionUser(null);
+    setCurrentUserId(null);
+    setCurrentUser(null);
+    setAppView('main');
+  };
+
+  const sendPasswordReset = async (email: string) => {
+    await sendPasswordResetLocally(email);
+  };
+
+  const changePassword = async (newPassword: string) => {
+    if (!currentUserId) {
+      throw new Error("You must be logged in to change your password.");
+    }
+    await changePasswordLocally(currentUserId, newPassword);
+  };
+
   const showAccountSettings = () => setAppView('account-settings');
   const showMainApp = () => setAppView('main');
 
-  const value = { 
-      currentUser, 
+  const value: AuthContextType = {
+      currentUser,
       currentUserId,
-      firebaseUser,
-      login, 
-      signup, 
-      logout, 
+      sessionUser,
+      login,
+      signup,
+      logout,
       isReady,
-      appView, 
-      showAccountSettings, 
+      appView,
+      showAccountSettings,
       showMainApp,
       sendPasswordReset,
       changePassword,

@@ -2,11 +2,11 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# T3 Task Manager
 
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/drive/1YgTJ-8fwfcXfkGzDjY_U5DdtqTYxuGdq
+A team task manager (React 19 + Vite + TypeScript) with a static file server.
+AI assistance runs through the Hermes Gateway via the app server — the client
+never holds model credentials, and no third-party AI or identity SDKs are used.
 
 ## Live build
 
@@ -20,9 +20,17 @@ See the `deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 **Prerequisites:**  Node.js
 
-
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Run the app:
    `npm run dev`
+
+## Supply-chain guarantees
+
+CI enforces two blocking gates against legacy AI-provider contamination:
+
+- `npm run check:no-google-client` — scans all tracked sources for banned
+  provider references, secret shapes, and model-credential env wiring. Any
+  hit fails the build. Self-test: `npm run test:check-no-google-client`.
+- `npm run scan:client-bundle -- dist` — scans the built bundle for the same
+  forbidden content after every build. Any hit fails the build.

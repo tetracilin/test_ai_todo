@@ -55,7 +55,7 @@ export const LoginView: React.FC = () => {
             }
         } catch (err) {
             if (err instanceof Error) {
-                // Firebase provides user-friendly error messages
+                // Local auth returns plain Error messages from the auth service
                 setError(err.message);
             } else {
                 setError("An unknown error occurred.");

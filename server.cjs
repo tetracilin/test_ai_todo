@@ -56,7 +56,7 @@ function createServer(options = {}) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        app: 'gemini-task-manager',
+        app: 't3-task-manager',
         version: '0.0.0',
         time: new Date().toISOString(),
       }));
@@ -78,7 +78,7 @@ module.exports = { createServer, DIST_DIR };
 if (require.main === module) {
   const server = createServer();
   server.listen(PORT, () => {
-    console.log(`Gemini Task Manager running on http://localhost:${PORT}`);
+    console.log(`T3 Task Manager running on http://localhost:${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
   });
 }

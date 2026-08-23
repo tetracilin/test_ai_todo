@@ -37,7 +37,7 @@ describe('server.cjs', () => {
 
   beforeAll(async () => {
     distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'server-test-dist-'));
-    fs.writeFileSync(path.join(distDir, 'index.html'), '<html><body>Gemini Task Manager</body></html>');
+    fs.writeFileSync(path.join(distDir, 'index.html'), '<html><body>T3 Task Manager</body></html>');
     fs.mkdirSync(path.join(distDir, 'assets'));
     fs.writeFileSync(path.join(distDir, 'assets', 'app.js'), 'console.log("app");');
     server = createServer({ distDir });
@@ -54,7 +54,7 @@ describe('server.cjs', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('application/json');
     expect(res.body.status).toBe('ok');
-    expect(res.body.app).toBe('gemini-task-manager');
+    expect(res.body.app).toBe('t3-task-manager');
   });
 
   it('unknown /api/* route returns 404 JSON', async () => {
@@ -68,7 +68,7 @@ describe('server.cjs', () => {
     const res = await request(server).get('/');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
-    expect(res.text).toContain('Gemini Task Manager');
+    expect(res.text).toContain('T3 Task Manager');
   });
 
   it('serves a static asset with the correct mime type', async () => {
@@ -82,7 +82,7 @@ describe('server.cjs', () => {
     const res = await request(server).get('/inbox/today');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
-    expect(res.text).toContain('Gemini Task Manager');
+    expect(res.text).toContain('T3 Task Manager');
   });
 
   it('blocks path traversal outside the dist directory', async () => {

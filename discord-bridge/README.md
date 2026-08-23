@@ -12,7 +12,7 @@ Discord users to Paperclip users, which is bridge-owned, not a Paperclip schema 
 
 The design doc's open question 2 asked whether this should live inside the Paperclip fork's
 monorepo or as a standalone service. This repo (`test_ai_todo`) does not currently contain a
-Paperclip fork — it contains the reference-only "Gemini Task Manager" app. Since there is no
+Paperclip fork — it contains the reference-only T3 Task Manager app. Since there is no
 monorepo to live inside, and the design doc already leaned toward standalone ("matches the 'thin
 adapter' framing and avoids coupling to Paperclip's internal build"), the bridge is built as an
 independent Node/TypeScript project under `discord-bridge/`, deployable on its own, with zero
