@@ -19,6 +19,7 @@ import { TodayView } from './components/TodayView';
 import { AdminConfigurationView } from './components/AdminConfigurationView';
 import { DataManagementView } from './components/DataManagementView';
 import { RoutineManagementView } from './components/RoutineManagementView';
+import { SchedulingBoard } from './components/SchedulingBoard';
 import { InboxView } from './components/InboxView';
 import { LoginView } from './components/LoginView';
 import { AccountSettingsView } from './components/AccountSettingsView';
@@ -27,8 +28,8 @@ const AppContent: React.FC = () => {
     const { getItems, getInbox, upsertItem, deleteItem, getDescendants, getPersons, upsertDecision, deleteDecision } = useTasks();
     const { currentUserId } = useAuth();
     const { getVisibleItemsForUser, canEditItem } = usePermissions();
-    
-    const [activeView, setActiveView] = useState<string>(Perspective.Inbox);
+
+    const [activeView, setActiveView] = useState<string>(Perspective.Today);
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [isDetailVisible, setIsDetailVisible] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -340,14 +341,21 @@ const AppContent: React.FC = () => {
                     <LogView />
                 </>;
             case Perspective.Today:
-                return <TodayView onSelectItem={handleSelectItem} onToggleSidebar={() => setIsSidebarOpen(true)} />;
+                return <>
+                    <TodayView onSelectItem={handleSelectItem} onToggleSidebar={() => setIsSidebarOpen(true)} />
+                    <SchedulingBoard initialTab="today" />
+                </>;
             case Perspective.Routines:
                 return <>
                     <MainHeader title={viewTitle} onToggleSidebar={() => setIsSidebarOpen(true)} />
                     <RoutineManagementView />
+                    <SchedulingBoard initialTab="routines" />
                 </>;
             case Perspective.Schedule:
-                return <ScheduleView onSelectItem={handleSelectItem} selectedItemId={selectedItemId} onToggleSidebar={() => setIsSidebarOpen(true)} />;
+                return <>
+                    <ScheduleView onSelectItem={handleSelectItem} selectedItemId={selectedItemId} onToggleSidebar={() => setIsSidebarOpen(true)} />
+                    <SchedulingBoard initialTab="schedule" />
+                </>;
             case Perspective.Team:
                 return <>
                     <MainHeader title={viewTitle} onToggleSidebar={() => setIsSidebarOpen(true)} />

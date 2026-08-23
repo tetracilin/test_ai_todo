@@ -5,7 +5,20 @@ if (!process.env.API_KEY) {
   console.warn("API_KEY environment variable not set. AI features will be disabled.");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+// The GenAI client is created lazily: instantiating it at module scope throws
+// when no API key was injected at build time, which crashed the entire app on
+// boot for deployments without AI credentials. Now the app boots fine and only
+// actual AI calls report the missing configuration.
+let ai: GoogleGenAI | null = null;
+function getAi(): GoogleGenAI {
+    if (!process.env.API_KEY) {
+        throw new Error("Gemini API key is not configured.");
+    }
+    if (!ai) {
+        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
+    return ai;
+}
 
 const subtaskSchema = {
   type: Type.OBJECT,
@@ -30,7 +43,7 @@ export const generateSubTasks = async (masterPrompt: string, workPackageTitle: s
   try {
     const prompt = `${masterPrompt}\n\nWork Package Title: "${workPackageTitle}"`;
 
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
@@ -70,7 +83,7 @@ export const generateTaskSteps = async (masterPrompt: string, taskTitle: string,
       .replace('{taskName}', `"${taskTitle}"`)
       .replace('{userPrompt}', userPrompt);
 
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
     });
@@ -172,7 +185,7 @@ High-level policy:
 `;
     
     try {
-        const response = await ai.models.generateContent({
+        const response = await getAi().models.generateContent({
             model: 'gemini-2.5-flash',
             contents: userPrompt,
             config: {

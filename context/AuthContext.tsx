@@ -14,6 +14,7 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { Person, LogAction } from '../types';
 import { auth, db } from '../services/firebase';
+import { isE2EMode, E2E_DEMO_USER_ID } from '../services/runtimeMode';
 import taskStoreBridge from './taskStoreBridge';
 
 
@@ -42,6 +43,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [appView, setAppView] = useState<'main' | 'account-settings'>('main');
 
   useEffect(() => {
+    if (isE2EMode) {
+      // E2E mode: skip Firebase entirely. The Playwright suite gets a
+      // deterministic signed-in demo user with zero network dependencies.
+      setCurrentUserId(E2E_DEMO_USER_ID);
+      setCurrentUser({
+          id: E2E_DEMO_USER_ID,
+          name: 'E2E Demo User',
+          email: 'e2e@example.com',
+          mobile: '',
+          avatarUrl: '',
+          aiPrompt: '',
+      });
+      setIsReady(true);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {

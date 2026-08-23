@@ -238,6 +238,23 @@ export interface RecurrenceRule {
     daysOfWeek?: number[]; // 0 for Sunday, 6 for Saturday. Only for 'Weekly'.
 }
 
+// --- Server-side scheduling contract (K8 hardened API) ----------------------
+// Shapes returned by /api/companies/:companyId/scheduled-issues and
+// /api/companies/:companyId/scheduling-routines (see services/schedulingApi.ts).
+
+export interface ScheduledIssueListItem {
+    issueId: string;
+    identifier: string | null;
+    title: string;
+    status: string;
+    priority: 'critical' | 'high' | 'medium' | 'low';
+    assigneeAgentId: string | null;
+    assigneeUserId: string | null;
+    scheduledAt: string | null; // ISO 8601 instant
+    deferUntil: string | null;
+    scheduledDurationMinutes: number | null;
+}
+
 export interface Routine {
     id: string;
     creatorId: string;

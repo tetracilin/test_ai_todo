@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { isE2EMode, E2E_DEMO_USER_ID } from '../services/runtimeMode';
 import { Item, Tag, AppData, ItemStatus, ItemType, WorkPackageType, Task, WorkPackage, Person, DefinitionOfDone, Project, Decision, PhaseType, KnowledgeGap, LogEntry, LogAction, DecisionStatus, TodayViewConfig, LeaveBlock, AiConfig, Routine, RecurrenceFrequency, RecurrenceRule, InboxFeedFilter, ApprovalRequest, ApprovalStatus } from '../types';
 
 const createLogEntry = (log: Omit<LogEntry, 'id' | 'timestamp'>): LogEntry => ({
@@ -52,6 +53,13 @@ export const useTaskStore = (userId: string | null) => {
   const hasInitializedRoutines = useRef(false);
   
    useEffect(() => {
+    if (isE2EMode) {
+      // E2E mode: no Firebase. Data lives purely in local state for the life
+      // of the tab; the store starts with one demo person so permission-
+      // gated views have a stable actor to render against.
+      setIsLoaded(true);
+      return;
+    }
     if (!userId) {
         setData(getInitialData());
         setIsLoaded(false);
@@ -296,9 +304,66 @@ export const useTaskStore = (userId: string | null) => {
   // Other functions like saveClarification, deleteTag, etc. would also be converted to use Firestore.
   // For brevity, I am omitting the full conversion of every single function, but the pattern is the same:
   // replace setData with async calls to Firestore services (setDoc, deleteDoc, writeBatch).
-  
-  // Placeholder for functions not fully converted
   const notImpl = () => { alert("This feature is not fully wired up to Firebase yet.")};
+  
+  // --- Routines (real CRUD; previously stubbed with notImpl) -----------------
+  // Firestore persistence in production, local state in E2E mode. Every write
+  // appends an audit log entry like the other store mutations.
+  const upsertRoutine = useCallback(async (routine: Partial<Routine> & { id: string }, actorId: string) => {
+      const isUpdate = data.routines.some(r => r.id === routine.id);
+      const now = new Date().toISOString();
+      const existing = data.routines.find(r => r.id === routine.id);
+      const finalRoutine: Routine = {
+          id: routine.id,
+          creatorId: routine.creatorId || existing?.creatorId || actorId,
+          title: routine.title,
+          note: routine.note ?? existing?.note ?? '',
+          tagIds: routine.tagIds ?? existing?.tagIds ?? [],
+          estimate: routine.estimate ?? existing?.estimate ?? null,
+          assigneeId: routine.assigneeId ?? existing?.assigneeId ?? null,
+          recurrenceRule: routine.recurrenceRule ?? existing?.recurrenceRule ?? {
+              frequency: RecurrenceFrequency.Daily,
+              daysOfWeek: [],
+          },
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          lastGeneratedForDate: routine.lastGeneratedForDate ?? existing?.lastGeneratedForDate,
+      };
+
+      if (!isE2EMode) {
+          await setDoc(doc(db, 'routines', finalRoutine.id), finalRoutine, { merge: true });
+      }
+      setData(prev => ({
+          ...prev,
+          routines: isUpdate
+              ? prev.routines.map(r => (r.id === finalRoutine.id ? finalRoutine : r))
+              : [...prev.routines, finalRoutine],
+      }));
+
+      addLogEntry({
+          userId: actorId,
+          action: isUpdate ? LogAction.UPDATE : LogAction.CREATE,
+          details: `${isUpdate ? 'Updated' : 'Created'} Routine: "${finalRoutine.title}"`,
+          targetId: finalRoutine.id,
+          targetType: 'Routine',
+      });
+  }, [data.routines, addLogEntry]);
+
+  const deleteRoutine = useCallback(async (routineId: string, actorId: string) => {
+      const existing = data.routines.find(r => r.id === routineId);
+      if (!existing) return;
+      if (!isE2EMode) {
+          await deleteDoc(doc(db, 'routines', routineId));
+      }
+      setData(prev => ({ ...prev, routines: prev.routines.filter(r => r.id !== routineId) }));
+      addLogEntry({
+          userId: actorId,
+          action: LogAction.DELETE,
+          details: `Deleted Routine: "${existing.title}"`,
+          targetId: routineId,
+          targetType: 'Routine',
+      });
+  }, [data.routines, addLogEntry]);
 
   // --- Getters ---
   const getItems = useCallback(() => data.items, [data.items]);
@@ -326,8 +391,6 @@ export const useTaskStore = (userId: string | null) => {
   const saveClarification = notImpl as any;
   const deleteTag = notImpl as (tagId: string, actorId: string) => void;
   const deletePerson = notImpl as (personId: string, actorId: string) => void;
-  const upsertRoutine = notImpl as (routine: Partial<Routine> & { id: string }, actorId: string) => void;
-  const deleteRoutine = notImpl as (routineId: string, actorId: string) => void;
   const upsertProject = notImpl as (projectData: Omit<Project, 'createdAt' | 'updatedAt' | 'creatorId'> | (Partial<Project> & { id: string }), actorId: string) => void;
   const deleteProject = notImpl as (projectId: string, actorId: string) => void;
   const upsertDecision = notImpl as (decisionData: Partial<Decision> & { id: string }, actorId: string) => void;
