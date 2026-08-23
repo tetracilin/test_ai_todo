@@ -60,10 +60,15 @@ vi.mock("../api/adapters", () => ({
 }));
 
 vi.mock("../adapters", () => ({
-  listUIAdapters: () => [{ type: "claude_local" }, { type: "openclaw_gateway" }],
+  listUIAdapters: () => [
+    { type: "claude_local" },
+    { type: "hermes_gateway" },
+    { type: "openclaw_gateway" },
+  ],
 }));
 
 vi.mock("../adapters/metadata", () => ({
+  isValidAdapterType: (type: string) => type === "hermes_gateway",
   isVisualAdapterChoice: (type: string) => type !== "openclaw_gateway",
 }));
 
@@ -202,6 +207,53 @@ describe("NewAgentDialog", () => {
 
     expect(container.textContent).toContain("Optional message for the agent");
     expect(container.textContent).toContain("Generate onboarding prompt");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("offers Hermes Gateway as the sole manually configured runtime", async () => {
+    listAdaptersMock.mockResolvedValue([
+      {
+        type: "hermes_gateway",
+        label: "Hermes Gateway",
+        disabled: false,
+      },
+    ]);
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NewAgentDialog />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const configureButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Configure a runtime manually"),
+    );
+    await act(async () => {
+      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Hermes Gateway");
+    expect(container.textContent).not.toContain("Claude");
+    expect(container.textContent).not.toContain("OpenClaw Gateway");
+
+    const hermesButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Hermes Gateway"),
+    );
+    await act(async () => {
+      hermesButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(navigateMock).toHaveBeenCalledWith("/agents/new?adapterType=hermes_gateway");
 
     await act(async () => {
       root.unmount();

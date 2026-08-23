@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { buildAgentOnboardingPrompt } from "@/lib/agent-onboarding-prompt";
 import { listUIAdapters } from "../adapters";
-import { isVisualAdapterChoice } from "../adapters/metadata";
+import { isValidAdapterType, isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
 import { useToast } from "../context/ToastContext";
@@ -86,11 +86,16 @@ export function NewAgentDialog() {
   const ceoAgent = (agents ?? []).find((a) => a.role === "ceo");
   const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", 5);
 
-  // Build the adapter grid from the UI registry merged with display metadata.
-  // This automatically includes external/plugin adapters.
+  // Build the adapter grid from the server-advertised agent adapter contract.
   const adapterGrid = useMemo(() => {
+    const offeredTypes = new Set(
+      (serverAdapters ?? [])
+        .filter((adapter) => !adapter.disabled && isValidAdapterType(adapter.type))
+        .map((adapter) => adapter.type),
+    );
     const registered = listUIAdapters()
       .filter((a) =>
+        offeredTypes.has(a.type) &&
         isAgentAdapterType(a.type) &&
         !disabledTypes.has(a.type) &&
         isVisualAdapterChoice(a.type)

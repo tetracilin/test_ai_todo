@@ -30,8 +30,7 @@ import {
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { buildFixedClaudeOAuthBinding } from "../components/environment-variables-editor/model";
 import type { EnvBinding } from "@paperclipai/shared";
-import { getUIAdapter, listUIAdapters } from "../adapters";
-import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
+import { getUIAdapter } from "../adapters";
 import { isValidAdapterType } from "../adapters/metadata";
 import { ReportsToPicker } from "../components/ReportsToPicker";
 import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";

@@ -23,6 +23,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { normalizeRuntimeConfigForNewAgent } from "../services/agents.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -108,6 +109,14 @@ describe("requireSoleAgentAdapterType", () => {
     expect(() => requireSoleAgentAdapterType("openclaw_gateway")).toThrow(
       "Hermes Gateway is the only available agent adapter",
     );
+  });
+});
+
+describe("Hermes Gateway agent runtime defaults", () => {
+  it("limits every newly created Hermes Gateway agent to one concurrent run", () => {
+    expect(normalizeRuntimeConfigForNewAgent({}, "hermes_gateway")).toEqual({
+      heartbeat: { maxConcurrentRuns: 1 },
+    });
   });
 });
 

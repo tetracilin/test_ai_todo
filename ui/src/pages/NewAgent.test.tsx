@@ -49,7 +49,7 @@ const navigateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   useNavigate: () => navigateMock,
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  useSearchParams: () => [new URLSearchParams("adapterType=claude_local"), vi.fn()],
 }));
 
 vi.mock("../context/CompanyContext", () => ({
@@ -222,16 +222,7 @@ async function renderNewAgent() {
   return { container, root };
 }
 
-// Complete the Claude subscription login on the page: run the environment test,
-// start the login, and let the panel reach the server `stored` state.
-async function completeClaudeLogin(container: HTMLElement) {
-  await clickByText(container, "Test Agent");
-  await flushUntil(() => Boolean(findButton(container, "Log in")));
-  await clickByText(container, "Log in");
-  await flushUntil(() => (container.textContent ?? "").includes("Authenticated"));
-}
-
-describe("NewAgent Claude subscription login", () => {
+describe("NewAgent Hermes Gateway selection", () => {
   let roots: Root[] = [];
 
   beforeEach(() => {
@@ -314,37 +305,12 @@ describe("NewAgent Claude subscription login", () => {
     vi.clearAllMocks();
   });
 
-  it("shows Log in for a Claude sandbox before Create agent", async () => {
+  it("ignores a legacy Claude deep link and creates a Hermes Gateway agent", async () => {
     const result = await renderNewAgent();
     roots.push(result.root);
 
-    // Before the test the page shows no login affordance.
+    expect(result.container.textContent).toContain("API base URL");
     expect(findButton(result.container, "Log in")).toBeFalsy();
-
-    await clickByText(result.container, "Test Agent");
-    await flushUntil(() => Boolean(findButton(result.container, "Log in")));
-
-    const loginButton = findButton(result.container, "Log in");
-    const createButton = findButton(result.container, "Create agent");
-    expect(loginButton).toBeTruthy();
-    expect(createButton).toBeTruthy();
-
-    // The login panel renders before the Create agent button in the document, so
-    // the user completes the subscription login before an agent exists.
-    const order = loginButton!.compareDocumentPosition(createButton!);
-    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("stores the secret and adds the fixed binding through the create request, with no token in the DOM", async () => {
-    const result = await renderNewAgent();
-    roots.push(result.root);
-
-    await completeClaudeLogin(result.container);
-
-    expect(mockAgentsApi.completeClaudeSetupTokenLogin).toHaveBeenCalledWith(
-      "company-1",
-      "claude-session-1",
-    );
 
     await clickByText(result.container, "Create agent");
     await flushUntil(() => mockAgentsApi.hire.mock.calls.length > 0);
@@ -355,53 +321,7 @@ describe("NewAgent Claude subscription login", () => {
       Record<string, unknown>,
     ];
     expect(companyId).toBe("company-1");
-
-    // The create request carries the non-secret stored-session claim, and the
-    // adapter config carries the fixed reference binding.
-    expect(payload.storedSessionId).toBe("stored-session-1");
-    const adapterConfig = payload.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, Record<string, unknown>>;
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toEqual({
-      type: "user_secret_ref",
-      key: "CLAUDE_CODE_OAUTH_TOKEN",
-      version: "latest",
-      required: true,
-    });
-    // The binding is a reference. It carries no token value.
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).not.toHaveProperty("value");
-
-    // The token never enters the Document Object Model, and no request payload
-    // carries a token value.
-    expect(result.container.textContent ?? "").not.toContain("sk-ant");
-    expect(JSON.stringify(payload)).not.toContain("sk-ant");
-  });
-
-  it("applies a stored token first and starts a replacement login with the captured version", async () => {
-    // The owner already has a stored Claude token. The panel reads the status,
-    // applies the stored token first, and shows a replace action. A replacement
-    // login carries the captured secret id and version, so the server rotates the
-    // stored value under a version-checked overwrite instead of a first write.
-    mockAgentsApi.getClaudeOAuthTokenStatus.mockResolvedValue({
-      secretId: "44444444-4444-4444-8444-444444444444",
-      latestVersion: 3,
-    });
-
-    const result = await renderNewAgent();
-    roots.push(result.root);
-
-    await clickByText(result.container, "Test Agent");
-    // The panel shows the replace action only after it reads the stored-token
-    // status, so the button label proves the panel captured the version.
-    await flushUntil(() => Boolean(findButton(result.container, "Log in to replace")));
-    await clickByText(result.container, "Log in to replace");
-    await flushUntil(() => mockAgentsApi.startClaudeSetupTokenLogin.mock.calls.length > 0);
-
-    expect(mockAgentsApi.startClaudeSetupTokenLogin).toHaveBeenCalledWith("company-1", {
-      environmentId: "sandbox-1",
-      overwrite: {
-        expectedSecretId: "44444444-4444-4444-8444-444444444444",
-        expectedLatestVersion: 3,
-      },
-    });
+    expect(payload.adapterType).toBe("hermes_gateway");
+    expect(payload).not.toHaveProperty("storedSessionId");
   });
 });
