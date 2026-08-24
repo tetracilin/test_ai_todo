@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companyMemberships, issueScheduling, issues, projects, schedulingRoutines } from "@paperclipai/db";
 import type {
@@ -14,7 +14,7 @@ import type {
   SchedulingRecurrenceRule,
   SchedulingRoutine,
 } from "@paperclipai/shared";
-import { notFound, unprocessable } from "../errors.js";
+import { badRequest, notFound, unprocessable } from "../errors.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { issueService } from "./issues.js";
 
@@ -22,6 +22,25 @@ type IssueSchedulingRow = typeof issueScheduling.$inferSelect;
 type SchedulingRoutineRow = typeof schedulingRoutines.$inferSelect;
 
 const MAX_GENERATE_LOOKBACK_DAYS = 14;
+
+type ScheduledIssuesCursor = { scheduledAt: string | null; issueId: string };
+
+function decodeScheduledIssuesCursor(cursor: string | undefined): ScheduledIssuesCursor | null {
+  if (!cursor) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Partial<ScheduledIssuesCursor>;
+    if (typeof decoded.issueId !== "string" || decoded.issueId.length === 0) throw new Error("invalid issue id");
+    if (decoded.scheduledAt !== null && typeof decoded.scheduledAt !== "string") throw new Error("invalid date");
+    if (decoded.scheduledAt && Number.isNaN(new Date(decoded.scheduledAt).getTime())) throw new Error("invalid date");
+    return { scheduledAt: decoded.scheduledAt ?? null, issueId: decoded.issueId };
+  } catch {
+    throw badRequest("cursor is invalid");
+  }
+}
+
+function encodeScheduledIssuesCursor(cursor: ScheduledIssuesCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
 
 function toIssueScheduling(row: IssueSchedulingRow): IssueScheduling {
   return {
@@ -47,6 +66,7 @@ function toSchedulingRoutine(row: SchedulingRoutineRow): SchedulingRoutine {
     priority: row.priority,
     status: row.status === "paused" ? "paused" : "active",
     recurrenceRule: row.recurrenceRule,
+    timezone: row.timezone,
     scheduledTime: row.scheduledTime ?? null,
     estimateMinutes: row.estimateMinutes ?? null,
     lastGeneratedForDate: row.lastGeneratedForDate ?? null,
@@ -59,6 +79,50 @@ function toSchedulingRoutine(row: SchedulingRoutineRow): SchedulingRoutine {
 
 function toDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function localDateKey(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function localDateTimeToUtc(dateKey: string, time: string, timezone: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const desired = Date.UTC(year, month - 1, day, hour, minute);
+  let candidate = desired;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value);
+    const observed = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
+    candidate += desired - observed;
+  }
+  const result = new Date(candidate);
+  const roundTripKey = localDateKey(result, timezone);
+  const roundTripTime = formatter
+    .formatToParts(result)
+    .filter((part) => part.type === "hour" || part.type === "minute")
+    .map((part) => part.value)
+    .join(":");
+  if (roundTripKey !== dateKey || roundTripTime !== time) {
+    throw unprocessable(`Scheduled local time does not exist in timezone ${timezone}`);
+  }
+  return result;
 }
 
 function addDays(dateKey: string, days: number): string {
@@ -80,8 +144,6 @@ function assertSingleAssignee(assigneeAgentId?: string | null, assigneeUserId?: 
 }
 
 export function schedulingService(db: Db) {
-  const issuesSvc = issueService(db);
-
   async function assertRoutineReferences(
     companyId: string,
     references: {
@@ -181,11 +243,24 @@ export function schedulingService(db: Db) {
 
   async function listScheduledIssues(
     companyId: string,
-    filters: { from?: Date; to?: Date } = {},
-  ): Promise<ScheduledIssueListItem[]> {
-    const conditions = [eq(issueScheduling.companyId, companyId)];
+    filters: { from?: Date; to?: Date; limit?: number; cursor?: string } = {},
+  ): Promise<{ items: ScheduledIssueListItem[]; nextCursor: string | null }> {
+    const limit = filters.limit ?? 50;
+    const cursor = decodeScheduledIssuesCursor(filters.cursor);
+    const conditions = [eq(issueScheduling.companyId, companyId), isNull(issues.hiddenAt)];
     if (filters.from) conditions.push(gte(issueScheduling.scheduledAt, filters.from));
     if (filters.to) conditions.push(lte(issueScheduling.scheduledAt, filters.to));
+    if (cursor) {
+      conditions.push(
+        cursor.scheduledAt
+          ? or(
+              gt(issueScheduling.scheduledAt, new Date(cursor.scheduledAt)),
+              and(eq(issueScheduling.scheduledAt, new Date(cursor.scheduledAt)), gt(issueScheduling.issueId, cursor.issueId)),
+              isNull(issueScheduling.scheduledAt),
+            )!
+          : and(isNull(issueScheduling.scheduledAt), gt(issueScheduling.issueId, cursor.issueId))!,
+      );
+    }
     const rows = await db
       .select({
         issueId: issues.id,
@@ -202,12 +277,23 @@ export function schedulingService(db: Db) {
       .from(issueScheduling)
       .innerJoin(issues, eq(issues.id, issueScheduling.issueId))
       .where(and(...conditions))
-      .orderBy(asc(issueScheduling.scheduledAt));
-    return rows.map((row) => ({
+      .orderBy(asc(issueScheduling.scheduledAt), asc(issueScheduling.issueId))
+      .limit(limit + 1);
+    const hasNextPage = rows.length > limit;
+    const items = rows.slice(0, limit).map((row) => ({
       ...row,
       scheduledAt: row.scheduledAt ? row.scheduledAt.toISOString() : null,
       deferUntil: row.deferUntil ? row.deferUntil.toISOString() : null,
     }));
+    return {
+      items,
+      nextCursor: hasNextPage && items.length > 0
+        ? encodeScheduledIssuesCursor({
+            scheduledAt: items.at(-1)!.scheduledAt,
+            issueId: items.at(-1)!.issueId,
+          })
+        : null,
+    };
   }
 
   async function listRoutines(companyId: string): Promise<SchedulingRoutine[]> {
@@ -251,6 +337,7 @@ export function schedulingService(db: Db) {
         assigneeUserId: input.assigneeUserId ?? null,
         priority: input.priority ?? "medium",
         recurrenceRule: input.recurrenceRule,
+        timezone: input.timezone ?? "UTC",
         scheduledTime: input.scheduledTime ?? null,
         estimateMinutes: input.estimateMinutes ?? null,
         createdByAgentId: actor.agentId ?? null,
@@ -288,6 +375,7 @@ export function schedulingService(db: Db) {
         priority: patch.priority ?? existing.priority,
         status: patch.status ?? existing.status,
         recurrenceRule: patch.recurrenceRule ?? existing.recurrenceRule,
+        timezone: patch.timezone ?? existing.timezone,
         scheduledTime: patch.scheduledTime === undefined ? existing.scheduledTime : patch.scheduledTime,
         estimateMinutes: patch.estimateMinutes === undefined ? existing.estimateMinutes : patch.estimateMinutes,
         updatedAt: new Date(),
@@ -311,61 +399,74 @@ export function schedulingService(db: Db) {
     routineId: string,
     options: GenerateSchedulingRoutineIssues = {},
   ): Promise<GenerateSchedulingRoutineIssuesResult> {
-    const routine = await getRoutineRow(companyId, routineId);
-    if (!routine) throw notFound("Scheduling routine not found");
-    if (routine.status !== "active") {
-      return { routineId, createdIssueIds: [], lastGeneratedForDate: routine.lastGeneratedForDate };
-    }
-    const asOf = options.asOf ?? new Date();
-    const asOfKey = toDateKey(asOf);
-    const maxDays = Math.min(options.maxDays ?? MAX_GENERATE_LOOKBACK_DAYS, MAX_GENERATE_LOOKBACK_DAYS);
-    const earliestKey = addDays(asOfKey, -(maxDays - 1));
-    let startKey = routine.lastGeneratedForDate ? addDays(routine.lastGeneratedForDate, 1) : asOfKey;
-    if (startKey < earliestKey) startKey = earliestKey;
-
-    const createdIssueIds: string[] = [];
-    let cursorKey = routine.lastGeneratedForDate;
-    for (let dateKey = startKey; dateKey <= asOfKey; dateKey = addDays(dateKey, 1)) {
-      if (matchesRecurrence(routine.recurrenceRule, dateKey)) {
-        const scheduledAt = routine.scheduledTime
-          ? new Date(`${dateKey}T${routine.scheduledTime}:00.000Z`)
-          : new Date(`${dateKey}T00:00:00.000Z`);
-        const created = await issuesSvc.create(companyId, {
-          title: routine.title,
-          description: routine.description,
-          projectId: routine.projectId,
-          assigneeAgentId: routine.assigneeAgentId,
-          assigneeUserId: routine.assigneeUserId,
-          priority: routine.priority,
-          status: "todo",
-          originKind: "scheduling_routine_instance",
-          originId: routine.id,
-          originFingerprint: dateKey,
-          idempotencyKey: `scheduling-routine:${routine.id}:${dateKey}`,
-        });
-        await db
-          .insert(issueScheduling)
-          .values({
-            issueId: created.id,
-            companyId,
-            scheduledAt,
-            scheduledDurationMinutes: routine.estimateMinutes ?? null,
-          })
-          .onConflictDoUpdate({
-            target: issueScheduling.issueId,
-            set: { scheduledAt, scheduledDurationMinutes: routine.estimateMinutes ?? null, updatedAt: new Date() },
-          });
-        createdIssueIds.push(created.id);
+    return db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`scheduling-routine:${companyId}:${routineId}`}, 0))`,
+      );
+      const routine = await tx
+        .select()
+        .from(schedulingRoutines)
+        .where(and(eq(schedulingRoutines.companyId, companyId), eq(schedulingRoutines.id, routineId)))
+        .then((rows) => rows[0] ?? null);
+      if (!routine) throw notFound("Scheduling routine not found");
+      if (routine.status !== "active") {
+        return { routineId, createdIssueIds: [], lastGeneratedForDate: routine.lastGeneratedForDate };
       }
-      cursorKey = dateKey;
-    }
-    if (cursorKey && cursorKey !== routine.lastGeneratedForDate) {
-      await db
-        .update(schedulingRoutines)
-        .set({ lastGeneratedForDate: cursorKey, updatedAt: new Date() })
-        .where(and(eq(schedulingRoutines.companyId, companyId), eq(schedulingRoutines.id, routineId)));
-    }
-    return { routineId, createdIssueIds, lastGeneratedForDate: cursorKey };
+      await assertRoutineReferences(companyId, routine);
+      const asOf = options.asOf ?? new Date();
+      const asOfKey = localDateKey(asOf, routine.timezone);
+      const maxDays = Math.min(options.maxDays ?? MAX_GENERATE_LOOKBACK_DAYS, MAX_GENERATE_LOOKBACK_DAYS);
+      const earliestKey = addDays(asOfKey, -(maxDays - 1));
+      let startKey = routine.lastGeneratedForDate ? addDays(routine.lastGeneratedForDate, 1) : asOfKey;
+      if (startKey < earliestKey) startKey = earliestKey;
+
+      const createdIssueIds: string[] = [];
+      let cursorKey = routine.lastGeneratedForDate;
+      const transactionalIssues = issueService(tx as unknown as Db);
+      for (let dateKey = startKey; dateKey <= asOfKey; dateKey = addDays(dateKey, 1)) {
+        if (matchesRecurrence(routine.recurrenceRule, dateKey)) {
+          const scheduledAt = localDateTimeToUtc(dateKey, routine.scheduledTime ?? "00:00", routine.timezone);
+          let deduplicated = false;
+          const created = await transactionalIssues.create(companyId, {
+            title: routine.title,
+            description: routine.description,
+            projectId: routine.projectId,
+            assigneeAgentId: routine.assigneeAgentId,
+            assigneeUserId: routine.assigneeUserId,
+            priority: routine.priority,
+            status: "todo",
+            originKind: "scheduling_routine_instance",
+            originId: routine.id,
+            originFingerprint: dateKey,
+            idempotencyKey: `scheduling-routine:${routine.id}:${dateKey}`,
+            onDeduplicated: () => {
+              deduplicated = true;
+            },
+          });
+          await tx
+            .insert(issueScheduling)
+            .values({
+              issueId: created.id,
+              companyId,
+              scheduledAt,
+              scheduledDurationMinutes: routine.estimateMinutes ?? null,
+            })
+            .onConflictDoUpdate({
+              target: issueScheduling.issueId,
+              set: { scheduledAt, scheduledDurationMinutes: routine.estimateMinutes ?? null, updatedAt: new Date() },
+            });
+          if (!deduplicated) createdIssueIds.push(created.id);
+        }
+        cursorKey = dateKey;
+      }
+      if (cursorKey && cursorKey !== routine.lastGeneratedForDate) {
+        await tx
+          .update(schedulingRoutines)
+          .set({ lastGeneratedForDate: cursorKey, updatedAt: new Date() })
+          .where(and(eq(schedulingRoutines.companyId, companyId), eq(schedulingRoutines.id, routineId)));
+      }
+      return { routineId, createdIssueIds, lastGeneratedForDate: cursorKey };
+    });
   }
 
   async function generateDueIssues(
