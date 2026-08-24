@@ -27,8 +27,8 @@ and the non-loopback HTTP guard.
   The scripts print only `sha256=<prefix>` and length for secret identifiers.
 - Set at least one Hermes inference provider key on the host before running the
   Docker E2E smoke. The script passes through set values for
-  `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-  `GOOGLE_API_KEY`, and `MISTRAL_API_KEY`, and logs only the provider env var
+  `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and
+  `MISTRAL_API_KEY`, and logs only the provider env var
   names.
 - To pin the fresh Hermes container to a known non-secret model config, set
   `HERMES_SMOKE_MODEL_PROVIDER`, `HERMES_SMOKE_MODEL_DEFAULT`, and optionally

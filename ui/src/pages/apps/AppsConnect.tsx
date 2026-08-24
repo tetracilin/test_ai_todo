@@ -45,7 +45,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import { navigateTopLevel } from "@/lib/browserNavigation";
 import { AppLogo } from "./AppLogo";
 import { appSourceConnectHref, isMcpDirectOAuthConnectSlug } from "./app-connect-policy";
-import { parseGoogleSheetIds } from "./google-sheets";
+
 import { autoExtendNotice, INSTALL_ALL_WARNING, installInfoNotice, installPayload } from "@/lib/tool-installs";
 
 type Step = "gallery" | "key" | "actions" | "who" | "install" | "success";
@@ -89,9 +89,6 @@ function askFirstLevelsFrom(result: ConnectToolAppResult): string[] {
   return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : ["write", "destructive"];
 }
 
-function isGoogleSheetsEntry(entry: AppDefinition | null): boolean {
-  return entry?.slug === "google-sheets";
-}
 
 function appSourceSlug(application: ToolApplication): string | null {
   const metadata = application.metadata;
@@ -165,8 +162,7 @@ export function AppsConnect() {
   const [linkNeedsKey, setLinkNeedsKey] = useState(false);
   const [linkKey, setLinkKey] = useState("");
   const [credentials, setCredentials] = useState<Record<string, string>>({});
-  const [googleSheetsLinks, setGoogleSheetsLinks] = useState("");
-  const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
+
   const [connectResult, setConnectResult] = useState<ConnectToolAppResult | null>(null);
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [access, setAccess] = useState<"all" | "specific">("all");
@@ -186,8 +182,7 @@ export function AppsConnect() {
     setLinkNeedsKey(false);
     setLinkKey("");
     setCredentials({});
-    setGoogleSheetsLinks("");
-    setGoogleSheetsError(null);
+
     setConnectResult(null);
     setInstallMode("none");
     setInstallAgentIds(new Set());
@@ -270,13 +265,12 @@ export function AppsConnect() {
     mutationFn: (entryOverride?: AppDefinition) => {
       const connectEntry = entryOverride ?? entry;
       if (connectEntry) {
-        const sheetIds = isGoogleSheetsEntry(connectEntry) ? parseGoogleSheetIds(googleSheetsLinks).ids : [];
         const trimmedGalleryName = galleryName.trim();
         return toolsApi.connectApp(selectedCompanyId!, {
           galleryKey: connectEntry.slug,
           name: trimmedGalleryName || connectEntry.name,
           credentialValues: credentials,
-          configValues: isGoogleSheetsEntry(connectEntry) ? { allowedSpreadsheetIds: sheetIds } : undefined,
+
           applicationId: prefill.applicationId,
         });
       }
@@ -362,8 +356,6 @@ export function AppsConnect() {
       setLinkNeedsKey(false);
       setLinkKey("");
       setCredentials({});
-      setGoogleSheetsLinks("");
-      setGoogleSheetsError(null);
       setConnectResult(null);
     }
     setInstallMode("none");
@@ -505,11 +497,7 @@ export function AppsConnect() {
   const zapierEntry = zapierSource
     ? galleryQuery.data?.apps.find((app) => app.slug === "zapier") ?? null
     : null;
-  const stepLabels = zapierSource
-    ? ZAPIER_STEP_LABELS
-    : isGoogleSheetsEntry(entry)
-      ? ["Pick app", "Share sheet", "Choose actions", "Choose access", "Install tools"]
-      : STEP_LABELS;
+  const stepLabels = zapierSource ? ZAPIER_STEP_LABELS : STEP_LABELS;
   const stepIndex = zapierSource && step !== "gallery" && step !== "success"
     ? ZAPIER_STEP_INDEX[step]
     : step === "success"
@@ -558,8 +546,6 @@ export function AppsConnect() {
             setLinkNeedsKey(false);
             setLinkKey("");
             setCredentials({});
-            setGoogleSheetsLinks("");
-            setGoogleSheetsError(null);
             setConnectResult(null);
             setInstallMode("none");
             setInstallAgentIds(new Set());
@@ -575,8 +561,6 @@ export function AppsConnect() {
             setLinkNeedsKey(false);
             setLinkKey("");
             setCredentials({});
-            setGoogleSheetsLinks("");
-            setGoogleSheetsError(null);
             setInstallMode("none");
             setInstallAgentIds(new Set());
             setStep("key");
@@ -593,28 +577,9 @@ export function AppsConnect() {
           onNameChange={setGalleryName}
           values={credentials}
           onChange={setCredentials}
-          googleSheetsLinks={googleSheetsLinks}
-          googleSheetsError={googleSheetsError}
-          onGoogleSheetsLinksChange={(next) => {
-            setGoogleSheetsLinks(next);
-            setGoogleSheetsError(null);
-          }}
           submitting={connectMutation.isPending}
           onBack={openGallery}
-          onConnect={() => {
-            if (isGoogleSheetsEntry(entry)) {
-              const parsed = parseGoogleSheetIds(googleSheetsLinks);
-              if (parsed.invalidCount > 0) {
-                setGoogleSheetsError("That doesn't look like a Google Sheets link.");
-                return;
-              }
-              if (parsed.ids.length === 0) {
-                setGoogleSheetsError("Paste at least one Google Sheets link.");
-                return;
-              }
-            }
-            connectMutation.mutate(undefined);
-          }}
+          onConnect={() => connectMutation.mutate(undefined)}
         />
       )}
 
@@ -1336,9 +1301,6 @@ function KeyStep({
   onNameChange,
   values,
   onChange,
-  googleSheetsLinks,
-  googleSheetsError,
-  onGoogleSheetsLinksChange,
   submitting,
   onBack,
   onConnect,
@@ -1348,9 +1310,6 @@ function KeyStep({
   onNameChange: (next: string) => void;
   values: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
-  googleSheetsLinks: string;
-  googleSheetsError: string | null;
-  onGoogleSheetsLinksChange: (next: string) => void;
   submitting: boolean;
   onBack: () => void;
   onConnect: () => void;
@@ -1365,84 +1324,7 @@ function KeyStep({
   const allFilled = fields.every(
     (f) => f.required === false || (values[f.configPath]?.trim().length ?? 0) > 0,
   );
-  const robotEmail = entry.availability?.robotEmail ?? null;
   const unavailable = entry.availability?.available === false;
-
-  if (isGoogleSheetsEntry(entry)) {
-    const parsed = parseGoogleSheetIds(googleSheetsLinks);
-    const canConnect = !unavailable && Boolean(robotEmail) && googleSheetsLinks.trim().length > 0;
-    return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-8">
-        <div className="flex items-center gap-3">
-          <AppLogo name={entry.name} logoUrl={entry.branding.logoUrl} size={48} />
-          <div>
-            <h2 className="text-lg font-bold tracking-tight sm:text-xl">Connect Google Sheets</h2>
-            <p className="text-sm text-muted-foreground">{copy.short}</p>
-          </div>
-        </div>
-
-        <div className="mt-8 space-y-6">
-          <ConnectionNameField name={name} onNameChange={onNameChange} />
-
-          {robotEmail ? (
-            <div>
-              <label className="text-sm font-medium text-foreground">Share each sheet with this email</label>
-              <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
-                <div
-                  title={robotEmail}
-                  className="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-muted/40 px-3 py-2.5 font-mono text-xs leading-tight text-foreground break-all"
-                >
-                  {robotEmail}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="shrink-0"
-                  onClick={() => void copyTextToClipboard(robotEmail).catch(() => {})}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy
-                </Button>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                In Google Sheets, click Share and add this email as an Editor. Then paste the sheet links below.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
-              Google Sheets is not available on this instance yet.
-            </div>
-          )}
-
-          <div>
-            <label className="text-sm font-medium text-foreground">Paste links to the sheets you shared</label>
-            <Textarea
-              value={googleSheetsLinks}
-              onChange={(e) => onGoogleSheetsLinksChange(e.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-              className="mt-2 min-h-28"
-            />
-            <div className="mt-2 text-xs text-muted-foreground">
-              {parsed.ids.length > 0
-                ? `${parsed.ids.length} ${parsed.ids.length === 1 ? "sheet" : "sheets"} ready to connect.`
-                : "Paste one link per line. Both .../edit and .../edit#gid=... links work."}
-            </div>
-            {googleSheetsError && <div className="mt-2 text-xs text-destructive">{googleSheetsError}</div>}
-          </div>
-        </div>
-
-        <div className="mt-8 flex items-center justify-between">
-          <Button variant="ghost" onClick={onBack} disabled={submitting}>
-            Back
-          </Button>
-          <Button onClick={onConnect} disabled={submitting || !canConnect}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {submitting ? "Checking…" : "Connect"}
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-8">

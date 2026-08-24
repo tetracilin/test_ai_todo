@@ -6,7 +6,7 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const CHECKER_MODE = "report";
+export const CHECKER_MODE = "blocking";
 
 export const HISTORICAL_ALLOWLIST = [
   {
@@ -33,9 +33,20 @@ const CONTROL_PATHS = new Set([
   "docs/migration/test-ai-todo-inventory.md",
 ]);
 
-const TERM_PATTERN = /google|firebase|gemini/gi;
-const CONTROL_REFERENCE_PATTERN = /check(?::|-)no-google-runtime(?:\.test)?(?:\.mjs)?/gi;
-const ACTIVE_DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".html"]);
+export const FORBIDDEN_PATTERNS = [
+  { id: "legacy_adapter_id", pattern: /gemini_local/i },
+  { id: "legacy_adapter_file", pattern: /(?:^|\/)Dockerfile\.gemini/i },
+  { id: "legacy_adapter_package", pattern: /@paperclipai\/adapter-gemini-local/i },
+  { id: "legacy_cli_package", pattern: /@google\/gemini-cli/i },
+  { id: "legacy_client_sdk", pattern: /@google\/genai|(?:^|["'])firebase(?:\/|["'])/i },
+  { id: "legacy_ai_env", pattern: /\b(?:GEMINI_API_KEY|GOOGLE_API_KEY)\b/i },
+  { id: "legacy_model_endpoint", pattern: /generativelanguage\.googleapis\.com/i },
+  { id: "legacy_data_endpoint", pattern: /(?:firebaseio\.com|firebasestorage\.(?:app|googleapis\.com)|firebaseapp\.com)/i },
+  { id: "legacy_app_slug", pattern: /\b(?:google-sheets|google-gemini)\b/i },
+  { id: "legacy_app_env", pattern: /\bGOOGLE_SHEETS_[A-Z0-9_]+\b/i },
+  { id: "web_api_key_shape", pattern: /AIza[0-9A-Za-z_-]{35}/ },
+  { id: "oauth_client_shape", pattern: /[0-9]+-[0-9a-z_]{32}\.apps\.googleusercontent\.com/i },
+];
 
 function normalizePath(value) {
   return value.split(path.sep).join("/").replace(/^\.\//, "");
@@ -56,14 +67,15 @@ function historicalAllowlistEntry(relativePath) {
   return HISTORICAL_ALLOWLIST.find((entry) => matchesGlob(relativePath, entry.pattern));
 }
 
-function classificationFor(relativePath) {
-  if (ACTIVE_DOC_EXTENSIONS.has(path.extname(relativePath).toLowerCase())) return "replace";
-  return "remove";
-}
-
-function termsIn(value) {
-  const normalized = value.replaceAll(CONTROL_REFERENCE_PATTERN, "");
-  return [...new Set([...normalized.matchAll(TERM_PATTERN)].map((match) => match[0].toLowerCase()))].sort();
+function verificationAllowlistPattern(relativePath) {
+  if (/\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i.test(relativePath)) return "**/*.{test,spec}.*";
+  if (/(?:^|\/)fixtures(?:\/|$)/.test(relativePath)) return "**/fixtures/**";
+  if (relativePath.startsWith("ui/storybook/")) return "ui/storybook/**";
+  if (relativePath.startsWith("packages/shared/src/telemetry/generated/")) return "packages/shared/src/telemetry/generated/**";
+  if (relativePath === "packages/shared/src/app-definitions.ingestion-report.json") return relativePath;
+  if (relativePath === "scripts/general-server-shard-durations.json") return relativePath;
+  if (relativePath.startsWith("patches/")) return "patches/**";
+  return undefined;
 }
 
 function trackedPathsFromGit(repoRoot) {
@@ -95,17 +107,15 @@ function inspectPath(repoRoot, relativePath) {
     return null;
   }
 
-  const pathTerms = termsIn(relativePath);
-  const contentWithoutControlReferences = content.replaceAll(CONTROL_REFERENCE_PATTERN, "");
-  const contentMatches = [...contentWithoutControlReferences.matchAll(TERM_PATTERN)];
-  const contentTerms = contentMatches.map((match) => match[0].toLowerCase());
-  const terms = [...new Set([...pathTerms, ...contentTerms])].sort();
-  if (terms.length === 0) return null;
+  const haystack = `${relativePath}\n${content}`;
+  const patternIds = FORBIDDEN_PATTERNS
+    .filter(({ pattern }) => pattern.test(haystack))
+    .map(({ id }) => id);
+  if (patternIds.length === 0) return null;
 
   return {
     path: relativePath,
-    terms,
-    matches: pathTerms.length + contentMatches.length,
+    patternIds,
   };
 }
 
@@ -122,15 +132,16 @@ export function scanRepository({ repoRoot, trackedPaths } = {}) {
     const hit = inspectPath(repoRoot, relativePath);
     if (!hit) continue;
     const allowlistEntry = historicalAllowlistEntry(relativePath);
-    if (allowlistEntry) {
+    const verificationPattern = verificationAllowlistPattern(relativePath);
+    if (allowlistEntry || verificationPattern) {
       allowed.push({
         ...hit,
-        classification: "historical-allowlist",
-        allowlistPattern: allowlistEntry.pattern,
-        reason: allowlistEntry.reason,
+        classification: allowlistEntry ? "historical-allowlist" : "verification-allowlist",
+        allowlistPattern: allowlistEntry?.pattern ?? verificationPattern,
+        reason: allowlistEntry?.reason ?? "Test, fixture, generated compatibility data, or immutable patch evidence; never shipped as active runtime configuration.",
       });
     } else {
-      forbidden.push({ ...hit, classification: classificationFor(relativePath) });
+      forbidden.push({ ...hit, classification: "remove-or-replace" });
     }
   }
 
@@ -146,14 +157,14 @@ export function scanRepository({ repoRoot, trackedPaths } = {}) {
 export function formatReport(report) {
   const lines = [
     "No-Google runtime inventory",
-    `MODE: ${report.mode} (non-blocking; findings exit 0 until K12)`,
+    `MODE: ${report.mode} (findings fail the gate)`,
     `Forbidden paths (${report.forbidden.length}):`,
   ];
 
   if (report.forbidden.length === 0) lines.push("  (none)");
   for (const hit of report.forbidden) {
     lines.push(
-      `  - [${hit.classification}] ${hit.path} (terms: ${hit.terms.join(", ")}; matches: ${hit.matches})`,
+      `  - [${hit.classification}] ${hit.path} (patterns: ${hit.patternIds.join(", ")})`,
     );
   }
 
@@ -161,11 +172,11 @@ export function formatReport(report) {
   if (report.allowed.length === 0) lines.push("  (none)");
   for (const hit of report.allowed) {
     lines.push(
-      `  - [historical-allowlist] ${hit.path} (${hit.allowlistPattern}; terms: ${hit.terms.join(", ")})`,
+      `  - [${hit.classification}] ${hit.path} (${hit.allowlistPattern}; patterns: ${hit.patternIds.join(", ")})`,
     );
   }
 
-  lines.push("Result: REPORT ONLY; forbidden findings do not fail CI.");
+  lines.push(report.forbidden.length === 0 ? "Result: PASS; zero forbidden runtime paths." : "Result: BLOCKED; remove or replace every forbidden runtime path.");
   return lines.join("\n");
 }
 
@@ -182,7 +193,7 @@ export function runCheck({
   try {
     const report = scanRepository({ repoRoot, trackedPaths });
     for (const line of formatReport(report).split("\n")) log(line);
-    return { exitCode: 0, report };
+    return { exitCode: report.forbidden.length === 0 ? 0 : 1, report };
   } catch (caught) {
     error(`No-Google runtime inventory error: ${caught instanceof Error ? caught.message : String(caught)}`);
     return { exitCode: 1, report: null };
@@ -196,8 +207,9 @@ function isMainModule() {
 if (isMainModule()) {
   if (process.argv.includes("--json")) {
     try {
-      console.log(formatJsonReport(scanRepository({ repoRoot: process.cwd() })));
-      process.exit(0);
+      const report = scanRepository({ repoRoot: process.cwd() });
+      console.log(formatJsonReport(report));
+      process.exit(report.forbidden.length === 0 ? 0 : 1);
     } catch (caught) {
       console.error(
         `No-Google runtime inventory error: ${caught instanceof Error ? caught.message : String(caught)}`,

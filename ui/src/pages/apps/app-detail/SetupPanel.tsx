@@ -1,11 +1,10 @@
 import { useState } from "react";
 import type { ToolCatalogEntry, ToolConnection } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { appDefinitionSlug } from "../app-definition-display";
 import type { AppDetailSectionProps } from "./types";
-import { googleSheetsConfigWithAllowlist, parseGoogleSheetIds } from "../google-sheets";
+
 
 export function SetupPanel({
   connection,
@@ -36,13 +35,7 @@ export function SetupPanel({
       {description && (
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
       )}
-      {appDefinitionSlug(galleryEntry) === "google-sheets" && (
-        <GoogleSheetsAllowlistSection
-          connection={connection}
-          disabled={configUpdateDisabled}
-          onUpdateConfig={onUpdateConfig}
-        />
-      )}
+
       {hasOAuthSignIn && (
         <OAuthConnectionSection
           connected={Boolean((oauth as Record<string, unknown>).connectedAt)}
@@ -84,113 +77,6 @@ function OAuthConnectionSection({
           {connected ? "Reconnect" : `Connect with ${providerName}`}
         </Button>
       </div>
-    </section>
-  );
-}
-
-function currentSpreadsheetIds(connection: ToolConnection): string[] {
-  const raw = connection.config?.allowedSpreadsheetIds;
-  return Array.isArray(raw) ? raw.map((value) => String(value).trim()).filter(Boolean) : [];
-}
-
-function googleSheetsUrlForId(id: string): string {
-  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
-}
-
-function GoogleSheetsAllowlistSection({
-  connection,
-  disabled,
-  onUpdateConfig,
-}: {
-  connection: ToolConnection;
-  disabled: boolean;
-  onUpdateConfig: (config: Record<string, unknown>) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const ids = currentSpreadsheetIds(connection);
-  const saveIds = (nextIds: string[]) =>
-    onUpdateConfig(googleSheetsConfigWithAllowlist(connection.config, nextIds));
-
-  return (
-    <section className="rounded-xl border border-border bg-card px-5 py-4">
-      <div>
-        <h2 className="text-sm font-bold text-foreground">Sheets agents can use</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Agents can only use the sheets listed here.
-        </p>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        {ids.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No sheets are connected yet.</div>
-        ) : (
-          ids.map((id) => {
-            const sheetUrl = googleSheetsUrlForId(id);
-            return (
-              <div key={id} className="flex items-center gap-3 border-t border-border py-2 first:border-t-0">
-                <a
-                  href={sheetUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-w-0 flex-1 text-sm font-medium text-foreground underline-offset-2 hover:underline"
-                >
-                  <span className="block truncate">Open sheet</span>
-                  <span className="block truncate font-mono text-xs font-normal text-muted-foreground">
-                    {sheetUrl}
-                  </span>
-                  <span className="block truncate font-mono text-(length:--text-micro) font-normal text-muted-foreground/80">
-                    ID: {id}
-                  </span>
-                </a>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={disabled || ids.length <= 1}
-                  title={ids.length <= 1 ? "Add another sheet before removing this one." : undefined}
-                  onClick={() => saveIds(ids.filter((current) => current !== id))}
-                >
-                  Remove
-                </Button>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <Input
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setError(null);
-          }}
-          placeholder="https://docs.google.com/spreadsheets/d/..."
-          className="h-10"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => {
-            const parsed = parseGoogleSheetIds(draft);
-            if (parsed.ids.length === 0) {
-              setError("Paste a Google Sheets link.");
-              return;
-            }
-            if (parsed.invalidCount > 0) {
-              setError("That doesn't look like a Google Sheets link.");
-              return;
-            }
-            saveIds(Array.from(new Set([...ids, ...parsed.ids])));
-            setDraft("");
-          }}
-        >
-          Add sheet
-        </Button>
-      </div>
-      {error && <div className="mt-2 text-xs text-destructive">{error}</div>}
     </section>
   );
 }

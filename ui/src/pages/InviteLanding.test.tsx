@@ -265,6 +265,49 @@ describe("InviteLandingPage", () => {
     });
   });
 
+  it("offers Hermes Gateway as the only runtime for agent invites", async () => {
+    getInviteMock.mockResolvedValue({
+      id: "invite-1",
+      companyId: "company-1",
+      companyName: "Acme Robotics",
+      companyLogoUrl: "/api/invites/pcp_invite_test/logo",
+      companyBrandColor: "#114488",
+      inviteType: "company_join",
+      allowedJoinTypes: "agent",
+      expiresAt: "2027-03-07T00:10:00.000Z",
+      inviteMessage: "Welcome aboard.",
+    });
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/invite/pcp_invite_test"]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/invite/:token" element={<InviteLandingPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const select = Array.from(container.querySelectorAll("select")).find(
+      (candidate) => candidate.previousElementSibling?.textContent === "Adapter type",
+    );
+    expect(select).not.toBeNull();
+    const options = Array.from(select!.querySelectorAll("option"));
+    expect(options.map((option) => option.value)).toEqual(["hermes_gateway"]);
+    expect(options[0]?.disabled).toBe(false);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("renders invite auth errors in an alert region referenced by the inputs", async () => {
     signInEmailMock.mockRejectedValue(
       Object.assign(new Error("Invalid email or password"), {

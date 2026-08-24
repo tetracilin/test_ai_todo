@@ -23,7 +23,7 @@ const mockParams = vi.hoisted(() => ({ appKey: undefined as string | undefined }
 
 const ZAPIER = CONNECTABLE_APP_DEFINITIONS.find((app) => app.slug === "zapier")!;
 const NOTION = CONNECTABLE_APP_DEFINITIONS.find((app) => app.slug === "notion")!;
-const GOOGLE_SHEETS = CONNECTABLE_APP_DEFINITIONS.find((app) => app.slug === "google-sheets")!;
+
 
 vi.mock("@/api/tools", () => ({
   toolsApi: {
@@ -825,50 +825,6 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     });
   });
 
-  it("shows the Google Sheets robot email and keeps empty sheet links from continuing", async () => {
-    listGalleryMock.mockResolvedValueOnce({
-      apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
-      ],
-    });
-    await render();
-
-    await act(async () => {
-      buttonContaining("Google Sheets")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("Share each sheet with this email");
-    expect(container.textContent).toContain("robot@paperclip.iam.gserviceaccount.com");
-    expect(container.textContent).toContain(
-      "In Google Sheets, click Share and add this email as an Editor. Then paste the sheet links below.",
-    );
-    expect(buttonByText("Connect")?.disabled).toBe(true);
-  });
-
-  it("shows inline validation for invalid Google Sheets links", async () => {
-    listGalleryMock.mockResolvedValueOnce({
-      apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
-      ],
-    });
-    await render();
-
-    await act(async () => {
-      buttonContaining("Google Sheets")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    await act(async () => setTextareaValue(textarea!, "https://example.com/not-a-sheet"));
-    await flushReact();
-    await act(async () => {
-      buttonByText("Connect")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("That doesn't look like a Google Sheets link.");
-    expect(connectAppMock).not.toHaveBeenCalled();
-  });
 
   // PAP-11283: the gallery step exposes a Name field (default = app name) so a
   // connection can be named at create time, matching the link flow.
@@ -947,71 +903,4 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(input).toMatchObject({ galleryKey: "zapier", name: "Zapier (stdio smoke)" });
   });
 
-  it("a custom name on the Google Sheets step is sent to the connect mutation", async () => {
-    listGalleryMock.mockResolvedValueOnce({
-      apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
-      ],
-    });
-    await render();
-
-    await act(async () => {
-      buttonContaining("Google Sheets")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    // Default is the app name.
-    expect(nameInputFrom(container)?.value).toBe("Google Sheets");
-    await act(async () => setInputValue(nameInputFrom(container)!, "Google Sheets (stdio smoke)"));
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    await act(async () =>
-      setTextareaValue(textarea!, "https://docs.google.com/spreadsheets/d/sheet_123/edit"),
-    );
-    await flushReact();
-    await act(async () => {
-      buttonByText("Connect")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(connectAppMock).toHaveBeenCalledTimes(1);
-    const [, input] = connectAppMock.mock.calls[0];
-    expect(input).toMatchObject({
-      galleryKey: "google-sheets",
-      name: "Google Sheets (stdio smoke)",
-      configValues: { allowedSpreadsheetIds: ["sheet_123"] },
-    });
-  });
-
-  it("passes parsed Google Sheets IDs as connection config values", async () => {
-    listGalleryMock.mockResolvedValueOnce({
-      apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
-      ],
-    });
-    await render();
-
-    await act(async () => {
-      buttonContaining("Google Sheets")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    await act(async () =>
-      setTextareaValue(
-        textarea!,
-        "https://docs.google.com/spreadsheets/d/sheet_123/edit\nhttps://docs.google.com/spreadsheets/d/sheet_456",
-      )
-    );
-    await flushReact();
-    await act(async () => {
-      buttonByText("Connect")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(connectAppMock).toHaveBeenCalledTimes(1);
-    const [, input] = connectAppMock.mock.calls[0];
-    expect(input).toMatchObject({
-      galleryKey: "google-sheets",
-      configValues: { allowedSpreadsheetIds: ["sheet_123", "sheet_456"] },
-    });
-  });
 });

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
 import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
@@ -18,16 +17,7 @@ import { formatDate } from "../lib/utils";
 type AuthMode = "sign_in" | "sign_up";
 type AuthFeedback = { tone: "error" | "info"; message: string };
 
-const joinAdapterOptions: AgentAdapterType[] = [...AGENT_ADAPTER_TYPES];
-const ENABLED_INVITE_ADAPTERS = new Set([
-  "claude_local",
-  "codex_local",
-  "gemini_local",
-  "kimi_local",
-  "opencode_local",
-  "pi_local",
-  "cursor",
-]);
+const joinAdapterOptions: AgentAdapterType[] = ["hermes_gateway"];
 
 function readNestedString(value: unknown, path: string[]): string | null {
   let current: unknown = value;
@@ -645,9 +635,7 @@ export function InviteLandingPage() {
                     onChange={(event) => setAdapterType(event.target.value as AgentAdapterType)}
                   >
                     {joinAdapterOptions.map((type) => (
-                      <option key={type} value={type} disabled={!ENABLED_INVITE_ADAPTERS.has(type)}>
-                        {getAdapterLabel(type)}{!ENABLED_INVITE_ADAPTERS.has(type) ? " (Coming soon)" : ""}
-                      </option>
+                      <option key={type} value={type}>{getAdapterLabel(type)}</option>
                     ))}
                   </select>
                 </label>

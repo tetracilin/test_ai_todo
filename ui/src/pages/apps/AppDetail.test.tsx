@@ -462,63 +462,6 @@ describe("AppDetail", () => {
     expect(container.textContent).not.toContain("Sign in again any time");
   });
 
-  it("lets Google Sheets connections add spreadsheet links from setup", async () => {
-    mockParams.tab = "setup";
-    getConnectionMock.mockResolvedValue(connection({
-      name: "Google Sheets",
-      transport: "local_stdio",
-      config: {
-        templateId: "paperclip.google-sheets",
-        sourceTemplateKey: "google-sheets",
-        allowedSpreadsheetIds: ["sheet_existing"],
-        env: { GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS: "sheet_existing" },
-      },
-    }));
-    listGalleryMock.mockResolvedValue({
-      apps: [
-        {
-          key: "google-sheets",
-          name: "Google Sheets",
-          logoUrl: "https://example.com/sheets.png",
-          tagline: "Read and update selected spreadsheets.",
-          description: "Share each sheet with the robot email, then paste the sheet links here.",
-          authKind: "none",
-          transportTemplate: { transport: "local_stdio", templateKey: "paperclip.google-sheets" },
-          credentialFields: [],
-          recommendedDefaults: {},
-          urlPatterns: ["https://docs.google.com/spreadsheets/*"],
-          availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" },
-        },
-      ],
-    });
-
-    await renderAppDetail();
-
-    expect(container.textContent).toContain("Sheets agents can use");
-    expect(container.textContent).toContain("https://docs.google.com/spreadsheets/d/sheet_existing/edit");
-    expect(container.textContent).toContain("sheet_existing");
-    const input = container.querySelector<HTMLInputElement>(
-      'input[placeholder="https://docs.google.com/spreadsheets/d/..."]',
-    );
-    expect(input).toBeTruthy();
-    await act(async () => setInputValue(input!, "https://docs.google.com/spreadsheets/d/sheet_new/edit"));
-    await flushReact();
-    await act(async () => {
-      Array.from(container.querySelectorAll("button"))
-        .find((button) => button.textContent?.trim() === "Add sheet")
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(updateConnectionMock).toHaveBeenCalledWith("conn-1", {
-      config: expect.objectContaining({
-        allowedSpreadsheetIds: ["sheet_existing", "sheet_new"],
-        env: expect.objectContaining({ GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS: "sheet_existing,sheet_new" }),
-      }),
-      transportConfig: { url: "https://github.example/mcp" },
-    });
-  });
-
   it("renders unified action permission dropdowns in the permissions tab", async () => {
     mockParams.tab = "permissions";
 

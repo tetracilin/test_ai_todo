@@ -201,7 +201,7 @@ Paperclip's supported adapter types (these are the ONLY valid values):
 - `opencode_local` — OpenCode CLI
 - `pi_local` — Pi CLI
 - `cursor` — Cursor
-- `gemini_local` — Gemini CLI
+
 - `openclaw_gateway` — OpenClaw gateway
 
 Only set an adapter when:

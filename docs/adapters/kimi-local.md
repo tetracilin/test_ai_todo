@@ -3,7 +3,7 @@ title: Kimi Code CLI
 summary: Kimi Code CLI local adapter setup and configuration
 ---
 
-The `kimi_local` adapter runs the Kimi Code CLI (`kimi`) locally. It has two execution engines: the default **ACP engine** (`kimi acp`, streaming transcript with live tool status, matching `claude_local`/`gemini_local`) and a **CLI lane** (`kimi -p --output-format stream-json`) used as an automatic fallback. It supports session persistence, per-run skill delivery via `--skills-dir`, thinking-effort control, and structured output parsing.
+The `kimi_local` adapter runs the Kimi Code CLI (`kimi`) locally. It has two execution engines: the default **ACP engine** (`kimi acp`, streaming transcript with live tool status) and a **CLI lane** (`kimi -p --output-format stream-json`) used as an automatic fallback. It supports session persistence, per-run skill delivery via `--skills-dir`, thinking-effort control, and structured output parsing.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ The `kimi_local` adapter runs the Kimi Code CLI (`kimi`) locally. It has two exe
 
 ## Execution Engine
 
-By default the adapter runs Kimi through the **ACP engine** (`kimi acp`, an Agent Client Protocol server over stdio), the same shared engine used by `claude_local`, `codex_local`, and `gemini_local`. ACP streams the transcript live: assistant text arrives as deltas and tool calls report a `pending`/`completed` status, so the issue thread updates continuously instead of in bursts.
+By default the adapter runs Kimi through the **ACP engine** (`kimi acp`, an Agent Client Protocol server over stdio), the same shared engine used by other ACP-compatible adapters. ACP streams the transcript live: assistant text arrives as deltas and tool calls report a `pending`/`completed` status, so the issue thread updates continuously instead of in bursts.
 
 Engine selection (`engine` config field):
 

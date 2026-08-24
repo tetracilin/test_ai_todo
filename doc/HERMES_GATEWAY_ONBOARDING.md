@@ -25,8 +25,8 @@ adapter.
 Keep these credentials distinct:
 
 - Hermes inference provider key: set at least one provider key for Hermes, such
-  as `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-  `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `MISTRAL_API_KEY`.
+  as `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
+  `MISTRAL_API_KEY`.
 - Hermes gateway key: set `API_SERVER_KEY` before starting Hermes. Paperclip
   stores the same value as `agentDefaultsPayload.apiKey` so it can call Hermes.
 - Paperclip agent key: created after the board approves the join request and

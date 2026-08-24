@@ -70,10 +70,7 @@ const APP_COPY: Record<string, AppCopy> = {
     tagline: "Create, update and read tickets.",
     short: "Create, update and read tickets.",
   },
-  "google-sheets": {
-    tagline: "Read and update selected spreadsheets.",
-    short: "Share each sheet with the robot email, then paste the links.",
-  },
+
   gmail: {
     tagline: "Read mail and send drafts for your review.",
     short: "Read mail and send drafts for your review.",
