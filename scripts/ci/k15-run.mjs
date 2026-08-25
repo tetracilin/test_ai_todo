@@ -361,10 +361,16 @@ function healthSmoke() {
       return { status: "red", detail: `/api/health never returned a 2xx\n${tail(logs)}` };
     }
 
-    // Postgres must actually be reachable from the app service.
-    const pgCheck = dc("exec -T paperclip node -e \"const net=require('net');const s=net.connect(5432,'db');s.on('connect',()=>{console.log('pg-reachable');s.end()});s.on('error',e=>{console.error(e.message);process.exit(1)});setTimeout(()=>process.exit(1),5000)\"");
-    if (pgCheck.status !== 0 || !pgCheck.stdout.includes("pg-reachable")) {
-      return { status: "red", detail: `app could not reach PostgreSQL on db:5432\n${tail(pgCheck)}` };
+    // Postgres must actually be reachable from the app service. Use spawnSync
+    // with an argument array (NOT sh()) — the one-liner contains spaces that
+    // sh()'s naive whitespace split mangles into a broken JS string.
+    const pgProgram = "const net=require('net');const s=net.connect(5432,'db');s.on('connect',()=>{console.log('pg-reachable');s.end();process.exit(0)});s.on('error',e=>{console.error(e.message);process.exit(1)});setTimeout(()=>{console.error('timeout');process.exit(1)},5000);";
+    const pgCheck = spawnSync(
+      "docker", ["compose", "-f", composeFile, "-p", projectName, "exec", "-T", "paperclip", "node", "-e", pgProgram],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+    if (pgCheck.status !== 0 || !`${pgCheck.stdout}`.includes("pg-reachable")) {
+      return { status: "red", detail: `app could not reach PostgreSQL on db:5432\n${pgCheck.stdout}${pgCheck.stderr}` };
     }
     return { status: "green", detail };
   } finally {
