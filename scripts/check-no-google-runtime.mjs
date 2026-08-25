@@ -33,6 +33,12 @@ const CONTROL_PATHS = new Set([
   "docs/migration/test-ai-todo-inventory.md",
 ]);
 
+// The bundle scanner's pattern table necessarily names the legacy provider
+// strings it detects. It is itself gated by scan-client-bundle.test.mjs and
+// only ever runs against built UI output, so treat it as gate control surface
+// (excluded from the source scan) rather than a runtime finding.
+CONTROL_PATHS.add("scripts/scan-client-bundle.mjs");
+
 export const FORBIDDEN_PATTERNS = [
   { id: "legacy_adapter_id", pattern: /gemini_local/i },
   { id: "legacy_adapter_file", pattern: /(?:^|\/)Dockerfile\.gemini/i },
