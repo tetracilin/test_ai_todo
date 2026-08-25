@@ -103,7 +103,12 @@
       "@lexical/react": "0.49.0",
       "@lexical/rich-text": "0.49.0",
       "@lexical/selection": "0.49.0",
-      "@lexical/utils": "0.49.0"
+      "@lexical/utils": "0.49.0",
+      "sqlite3": "6.0.1",
+      "undici": "6.28.0",
+      "path-to-regexp": "^8.4.0",
+      "js-yaml": "^4.3.1",
+      "fast-uri": "^3.1.5"
     }
   }
 }
