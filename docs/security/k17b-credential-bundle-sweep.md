@@ -89,8 +89,9 @@ prefix `85ab163f4727450f`, len 39) in exactly 2 files:
 Additionally, 12 `node_modules/@firebase/**` type-stub files in this workspace (`app.d.ts`,
 `public-types.d.ts`, `global_index.d.ts` across `@firebase/app`, `@firebase/firestore`,
 `@firebase/analytics`, `@firebase/remote-config`) contain AIza-shaped strings — but these are the
-well-known Firebase **docs placeholder** (`AIzaSyDOCAbC123dEf456GhI`, len 24, distinct
-fingerprint), NOT the legacy key. They are hygiene noise only and do not change severity.
+well-known Firebase **docs placeholder** (len 37, SHA-256 fingerprint prefix `95a4db2dd430bb3f`,
+distinct from the legacy key), NOT the legacy key itself. They are hygiene noise only and do not
+change severity.
 
 Same containment profile as F2 (private bind volume, not network-exposed), but a credential
 inventory must enumerate it: if the K18 purge follows only F2's session-JSON list, these two
@@ -99,10 +100,10 @@ purge checklist (or delete the whole restored `test_ai_todo/` directory), and re
 scan after purging to confirm zero remaining matches of fingerprint `85ab163f4727450f`.
 
 Note on false positives: Paperclip's own `_default` workspace under the same volume root contains
-AIza-shaped fixture strings (len 24–30, distinct fingerprints) in gemini-local test fixtures
+AIza-shaped fixture strings (len 24–37, distinct fingerprints) in gemini-local test fixtures
 (`acp.test.{ts,js}`), wasm blobs (`@pierre/diffs`, shiki), diff-plugin maps, and the same
-Firebase docs placeholder in `@firebase` stubs. None match the legacy key fingerprint; listed so
-future scans do not misclassify them.
+Firebase docs placeholder (fp `95a4db2d…`) in `@firebase` stubs. None match the legacy key
+fingerprint; listed so future scans do not misclassify them.
 
 ### F3 (P3) — stale tracked bundle on main
 
