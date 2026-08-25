@@ -25,13 +25,14 @@ credential-hygiene finding outside it that must be actioned before production cu
 | ID | Severity | Finding |
 |----|----------|---------|
 | F1 | **P1** | Legacy Firebase web API key still live on public surfaces outside the fork lineage (see below). Revoke/rotate in Google Cloud Console before K18. |
-| F2 | P2 | Same key embedded in agent session logs inside the restored staging DB volume (`/paperclip/.../acp-engine/**/sessions/*.json`, 6 occurrences across **3 files**, 2 per file). Contained (private bind, authenticated mode) but present at rest. |
+| F2 | P2 | Legacy key at rest inside the restored staging volume — **8 occurrences across 5 files**: 3 ACP agent-session JSONs (`companies/<id>/acp-engine/agents/*/sessions/`, 2 occurrences each) plus a restored project workspace `projects/2588c455…/cfdcf895…/test_ai_todo/` carrying it in `services/firebase.ts` and `dist/assets/index-C8FL1zCC.js` (see F4). Contained (private bind, authenticated mode) but present at rest. |
 | F3 | P3 | Stale tracked bundle `dist/assets/index-rWdMXOuK.js` exists only on `main` (commit 518aedcb3), which is **not** in the staging/release lineage — but `main` is a public GitHub repo with a live GH Pages deploy. |
-| F4 | P2 | A restored user project workspace inside the staging volume (`projects/<company>/<project>/test_ai_todo/`) contains the same legacy key (verified fingerprint match) in `services/firebase.ts`, `dist/assets/index-C8FL1zCC.js`, and 12 `@firebase` `node_modules` type-stub files with AIza-shaped doc examples — 14 files total. Same containment as F2; must be on the K18 purge checklist or the purge leaves live copies behind. |
+| F4 | P2 | The restored workspace subtree `projects/2588c455…/cfdcf895…/test_ai_todo/` holds 2 of F2's 5 key-bearing files (`services/firebase.ts`, `dist/assets/index-C8FL1zCC.js`). Its 12 `@firebase` type-stub files contain only AIza-shaped **docs-placeholder** strings (distinct fingerprint, not the legacy key). Must be on the K18 purge checklist or the purge leaves live copies behind. |
 
 > Round-2 correction note (review of e72618adc): F2 originally claimed "6 occurrences across
-> 6 files"; the true population is 6/3. The scan also missed the F4 surface; a full-volume
-> re-inventory was performed and is reflected above and in Residual Risk.
+> 6 files". A full-volume re-inventory in-container establishes the true population as
+> **8 occurrences across 5 files** (sessions 6/3 + workspace 2/2) and surfaced the missed
+> F4 surface; both are reflected above and in Residual Risk.
 
 ## Scan tools and exact commands
 
@@ -46,6 +47,7 @@ credential-hygiene finding outside it that must be actioned before production cu
 - Logs: `docker logs t3-staging-paperclip-1` and `t3-staging-db-1` grep counts for AIza/storied-epigram/firebase/gemini/generativelanguage → **0**.
 - Env: image Config.Env + compose environment contain no Google/Firebase/Gemini variable names (only HOST/PORT/PAPERCLIP_*/POSTGRES_*/BETTER_AUTH_SECRET_FILE/HERMES_API_BASE_URL; secrets delivered via Docker secrets files).
 - Network: `/proc/net/tcp(+tcp6)` remote endpoints = postgres service (172.16.12.2:5432, internal network only), self health (127.0.0.1:3100), Hermes relay (172.20.0.1:8642), and an intra-gateway peer (172.20.0.3:8137). **No egress to googleapis.com / firebaseio.com / generativelanguage.googleapis.com or any external host.**
+- Full-volume re-inventory (round 2, in-container): `docker exec t3-staging-paperclip-1 sh -c "grep -rhoE 'AIza[A-Za-z0-9_-]{34}' /paperclip | sort | uniq -c"` → single unique value, len 39, fingerprint `85ab163f4727450f` — **8 occurrences across 5 files** (3 session JSONs ×2, workspace `services/firebase.ts` ×1, workspace `dist/assets/index-C8FL1zCC.js` ×1). Cross-checked against `git show origin/main:services/firebase.ts | grep -oE 'AIza[A-Za-z0-9_-]+'` → same len/fingerprint. All fingerprints computed in-container/host-side; no key value left the host.
 
 ## Findings detail
 
@@ -68,34 +70,39 @@ for the public repo itself.**
 
 The staging volume was seeded by restoring a snapshot of live data; historical ACP agent session
 JSONs contain tool output quoting the old firebase config (**6 occurrences across 3 files, 2 per
-file** under `companies/<id>/acp-engine/agents/*/sessions/`). Not exposed (bind 127.0.0.1,
-authenticated mode, private exposure) but present at rest and in every future backup taken from
-this volume. Action: purge those session rows/files in staging before K18 backup rehearsal, or
-accept documented risk.
+file** under `companies/2588c455…/acp-engine/agents/{b4b94950…,dc1862d1…}/sessions/`). Together
+with the F4 workspace copies this makes **8 occurrences across 5 files** volume-wide. Not exposed
+(bind 127.0.0.1, authenticated mode, private exposure) but present at rest and in every future
+backup taken from this volume. Action: purge those session rows/files in staging before K18 backup
+rehearsal, or accept documented risk.
 
 ### F4 (P2) — same key inside a restored project workspace in the staging volume
 
-A restored user workspace lives at `projects/<company-id>/<project-id>/test_ai_todo/` inside the
+A restored user workspace lives at `projects/2588c455…/cfdcf895…/test_ai_todo/` inside the
 staging volume and carries the **same legacy key** (in-container SHA-256 fingerprint match,
-prefix `85ab163f4727450f`, len 39) in:
+prefix `85ab163f4727450f`, len 39) in exactly 2 files:
 
 1. `services/firebase.ts` — full legacy config source file;
-2. `dist/assets/index-C8FL1zCC.js` — built client bundle embedding the key;
-3. 12 `node_modules/@firebase/**` type-stub files (`app.d.ts`, `public-types.d.ts`,
-   `global_index.d.ts` across `@firebase/app`, `@firebase/firestore`, `@firebase/analytics`,
-   `@firebase/remote-config`) whose doc-comment examples contain AIza-shaped strings matching the
-   key fingerprint.
+2. `dist/assets/index-C8FL1zCC.js` — built client bundle embedding the key (1 occurrence each;
+   verified in-container against `origin/main`, same fingerprint).
 
-14 files total. Same containment profile as F2 (private bind volume, not network-exposed), but a
-credential inventory must enumerate it: if the K18 purge follows only F2's session-JSON list,
-these copies survive into production rehearsal backups. Action: add this workspace subtree to the
-K18 purge checklist (or delete the whole restored `test_ai_todo/` directory), and re-run the
-volume scan after purging to confirm zero remaining matches.
+Additionally, 12 `node_modules/@firebase/**` type-stub files in this workspace (`app.d.ts`,
+`public-types.d.ts`, `global_index.d.ts` across `@firebase/app`, `@firebase/firestore`,
+`@firebase/analytics`, `@firebase/remote-config`) contain AIza-shaped strings — but these are the
+well-known Firebase **docs placeholder** (`AIzaSyDOCAbC123dEf456GhI`, len 24, distinct
+fingerprint), NOT the legacy key. They are hygiene noise only and do not change severity.
+
+Same containment profile as F2 (private bind volume, not network-exposed), but a credential
+inventory must enumerate it: if the K18 purge follows only F2's session-JSON list, these two
+copies survive into production rehearsal backups. Action: add this workspace subtree to the K18
+purge checklist (or delete the whole restored `test_ai_todo/` directory), and re-run the volume
+scan after purging to confirm zero remaining matches of fingerprint `85ab163f4727450f`.
 
 Note on false positives: Paperclip's own `_default` workspace under the same volume root contains
-AIza-shaped fixture strings (len 27–30, distinct fingerprints) in gemini-local test fixtures,
-wasm blobs, and diff-plugin maps. These are NOT the legacy key and require no action; listed here
-only so future scans do not misclassify them.
+AIza-shaped fixture strings (len 24–30, distinct fingerprints) in gemini-local test fixtures
+(`acp.test.{ts,js}`), wasm blobs (`@pierre/diffs`, shiki), diff-plugin maps, and the same
+Firebase docs placeholder in `@firebase` stubs. None match the legacy key fingerprint; listed so
+future scans do not misclassify them.
 
 ### F3 (P3) — stale tracked bundle on main
 
@@ -117,7 +124,7 @@ by fixing `origin/main`.
 ## Residual risk
 
 1. Public repo `main` + GH Pages still serve the legacy key until owner revokes it (F1) — outside this card's write scope.
-2. Staging DB retains historical key copies in session JSONs (F2) and in a restored `test_ai_todo/` project workspace (F4: 14 files) until purged.
+2. Staging DB retains historical key copies in session JSONs (F2) and in a restored `test_ai_todo/` project workspace (F4: `services/firebase.ts`, `dist/assets/index-C8FL1zCC.js`) until purged — 8 occurrences across 5 files volume-wide.
 3. Insecure plain-HTTP Hermes relay hop accepted for staging only.
 4. Image not yet pushed to any registry; digest here covers the local build tag only.
 
