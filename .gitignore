@@ -72,3 +72,6 @@ tests/storybook-visual/playwright-report/
 .superpowers/
 .claude/worktrees/
 .herenow
+
+# K15 CI run artifacts
+report/k15-ci/
