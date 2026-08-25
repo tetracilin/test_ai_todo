@@ -314,7 +314,9 @@ function healthSmoke() {
   if (!fs.existsSync(composeFile)) return { status: "red", detail: "deploy/compose.yaml missing" };
 
   // Throwaway secret files for this smoke run only (never committed).
-  const secretsDir = fs.mkdtempSync(path.join(repoRoot, "report", "k15-ci", "smoke-secrets-"));
+  const smokeRoot = path.join(repoRoot, "report", "k15-ci");
+  fs.mkdirSync(smokeRoot, { recursive: true });
+  const secretsDir = fs.mkdtempSync(path.join(smokeRoot, "smoke-secrets-"));
   const pgPassFile = path.join(secretsDir, "postgres_password");
   const authSecretFile = path.join(secretsDir, "better_auth_secret");
   fs.writeFileSync(pgPassFile, `k15_smoke_${randomHex()}\n`);
