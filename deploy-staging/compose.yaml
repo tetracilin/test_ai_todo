@@ -1,0 +1,102 @@
+# K16 staging deployment — separate Compose project, volumes, DB, port and hostname.
+# Never collides with the live host-network Paperclip (port 3100, embedded PG 54329)
+# or the production deploy/ project. All runtime values come from deploy-staging/.env
+# and deploy-staging/secrets/*; neither is committed.
+name: ${COMPOSE_PROJECT_NAME:-t3-staging}
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17.9-alpine@sha256:c7526c0f6c3f30260a563d7bcf8ad778effac59a44f8ffa86678c35418338609}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-paperclip}
+      POSTGRES_DB: ${POSTGRES_DB:-paperclip}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 60s
+    networks:
+      - database
+
+  paperclip:
+    image: ${PAPERCLIP_IMAGE:-paperclip:k15-7927f06fa}
+    entrypoint: ["/usr/local/bin/t3-container-entrypoint"]
+    command: ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+    init: true
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3100"
+      SERVE_UI: "true"
+      PAPERCLIP_HOME: /paperclip
+      PAPERCLIP_CONFIG: /etc/paperclip/config.json
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_BIND: lan
+      PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-http://127.0.0.1:33120}
+      PAPERCLIP_ALLOWED_HOSTNAMES: ${PAPERCLIP_ALLOWED_HOSTNAMES:-localhost,127.0.0.1}
+      PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
+      PAPERCLIP_MIGRATION_PROMPT: never
+      PAPERCLIP_SECRETS_STRICT_MODE: "true"
+      PAPERCLIP_TELEMETRY_DISABLED: "1"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-paperclip}
+      POSTGRES_DB: ${POSTGRES_DB:-paperclip}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      BETTER_AUTH_SECRET_FILE: /run/secrets/better_auth_secret
+      HERMES_API_BASE_URL: ${HERMES_API_BASE_URL:-http://host.docker.internal:8642}
+    secrets:
+      - postgres_password
+      - better_auth_secret
+    volumes:
+      - paperclip-data:/paperclip
+      - ./paperclip-config.json:/etc/paperclip/config.json:ro
+      - ./scripts/container-entrypoint.sh:/usr/local/bin/t3-container-entrypoint:ro
+    ports:
+      - "${PAPERCLIP_BIND_ADDRESS:-127.0.0.1}:${PAPERCLIP_PORT:-33120}:3100"
+    extra_hosts:
+      - "host.docker.internal:${HERMES_BRIDGE_IP:-172.20.0.1}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3100/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 45s
+    networks:
+      - database
+      - gateway
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
+  better_auth_secret:
+    file: ${BETTER_AUTH_SECRET_FILE:-./secrets/better_auth_secret}
+
+volumes:
+  postgres-data:
+  paperclip-data:
+
+networks:
+  database:
+    internal: true
+  gateway:
+    driver: bridge
+    # Pin the subnet so the host-side gateway IP (x.x.0.1) is deterministic.
+    # The Hermes relay binds to that IP and host.docker.internal resolves to it
+    # (extra_hosts), keeping container->Hermes traffic on a single L2 bridge.
+    ipam:
+      config:
+        - subnet: ${HERMES_BRIDGE_SUBNET:-172.20.0.0/24}

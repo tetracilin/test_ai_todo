@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes loopback->Docker bridge relay (Paperclip staging)
+Documentation=https://github.com/paperclipai/paperclip
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:8642,bind=172.16.0.1,fork,reuseaddr TCP:127.0.0.1:8642
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

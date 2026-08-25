@@ -7,6 +7,9 @@ ui/storybook-static/
 .env
 deploy/secrets/
 deploy/backups/
+deploy-staging/secrets/
+deploy-staging/backups/
+deploy-staging/.env
 *.tsbuildinfo
 drizzle/meta/
 .vite/
