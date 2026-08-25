@@ -409,7 +409,13 @@ function depScanSbom() {
 
   fs.mkdirSync(path.dirname(reportFile), { recursive: true });
   const sbomFile = reportFile.replace(/\.md$/, "-sbom-cdx.json");
-  const sbomResult = sh(`pnpm dlx @cyclonedx/cyclonedx-npm --output-file ${sbomFile} --omit dev`, { timeout: 15 * 60_000 });
+  // Scope the SBOM to the shipped artifact (the server package) rather than the
+  // workspace root — the root package.json has no prod deps, so the root scan
+  // produced an empty component list (round-1 "vacuous gate" class of bug).
+  const sbomResult = sh(
+    `pnpm dlx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file ${sbomFile} --omit=dev -- package.json`,
+    { timeout: 15 * 60_000, cwd: path.join(repoRoot, "server") },
+  );
   if (sbomResult.status !== 0 || !fs.existsSync(sbomFile)) {
     return { status: "red", detail: `SBOM generation failed\n${tail(sbomResult)}` };
   }
