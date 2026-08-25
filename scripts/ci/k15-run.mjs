@@ -164,6 +164,12 @@ const GATES = [
     id: "g8-playwright-e2e",
     title: "Playwright E2E (no-legacy-provider network guard)",
     run: () => {
+      // Provision the Chromium browser here rather than in a separate workflow
+      // step: the gate runner owns dependency state (g1), and a standalone
+      // pre-step races the install (GH run 32868611590 failed because
+      // `playwright` was invoked before `pnpm install`). Idempotent + cached.
+      const install = sh("pnpm exec playwright install --with-deps chromium", { timeout: 10 * 60_000 });
+      if (install.status !== 0) return { status: "red", detail: `chromium provisioning failed\n${tail(install)}` };
       // The fork's critical E2E contract from K10/K12: the rendered app makes
       // zero requests to legacy provider domains. Uses the dedicated network
       // config against the built UI preview server.
