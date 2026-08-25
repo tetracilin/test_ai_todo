@@ -3,7 +3,7 @@
 //
 // Runs every gate from plan §K15 strictly in order and stops at the first red
 // gate. The publish phase (commit-SHA image tag) is reachable ONLY after every
-// gate is green — there is no flag that skips gates. A deliberate red-gate
+// gate is green — all gates are mandatory outside of --skip-install (g1 only). A deliberate red-gate
 // rehearsal is available via `--red-gate <gate-id>` which deterministically
 // fails the named gate and asserts the publish phase never executes.
 //
@@ -51,7 +51,7 @@ function sh(command, options = {}) {
 function record(gateId, status, detail, extra = {}) {
   const entry = { gateId, status, detail, ...extra };
   results.push(entry);
-  const icon = status === "green" ? "PASS" : status === "skipped" ? "SKIP" : "FAIL";
+  const icon = status === "green" ? "PASS" : status === "skipped" ? "SKIP" : "RED";
   console.log(`[${icon}] ${gateId} — ${String(detail).split("\n")[0]}`);
   return entry;
 }
@@ -109,21 +109,22 @@ const GATES = [
     id: "g4-unit-integration",
     title: "Unit + integration tests (focused workspace projects)",
     run: () => {
-      // Full vitest sweep is >1h on this box; run the fork-sensitive projects
-      // individually for auditability.  The gate runner's own --timeout flag
-      // can be raised by the CI runner (GH Actions has more cores).
+      // Each project lane is a bounded vitest invocation.  The pre-existing
+      // CI test runner handles sharding/ordering and is proven to terminate
+      // on CI; we invoke it per-group so failures are auditable per-lane.
+      // Heartbeat tests use explicit paths (no glob in spawnSync) and the
+      // db+shared+adapter-utils lane uses the general-workspaces-b runner.
       const projects = [
-        { label: "db", cmd: "pnpm --filter @paperclipai/db exec vitest run" },
-        { label: "shared", cmd: "pnpm --filter @paperclipai/shared run test" },
-        { label: "adapter-utils", cmd: "pnpm --filter @paperclipai/adapter-utils run test" },
-        { label: "server-routes", cmd: "pnpm --filter @paperclipai/server exec vitest run src/__tests__/scheduling-routes.test.ts src/__tests__/scheduling-service.test.ts" },
-        { label: "server-heartbeat", cmd: "pnpm --filter @paperclipai/server exec vitest run src/__tests__/heartbeat-*.test.ts" },
+        { label: "db-shared-adapters", cmd: "pnpm run test:run --mode general --group general-workspaces-b" },
+        { label: "server-heartbeat", fn: () => serverHeartbeatLane() },
         { label: "server-deploy", cmd: "pnpm --filter @paperclipai/server exec vitest run src/__tests__/docker-entrypoint.test.ts" },
       ];
       const failures = [];
       for (const p of projects) {
-        const r = sh(p.cmd, { timeout: 15 * 60_000 });
-        if (r.status !== 0) failures.push(`${p.label}: ${tail(r, 4)}`);
+        const r = p.fn ? p.fn() : sh(p.cmd, { timeout: 25 * 60_000 });
+        if (r.status !== undefined ? r.status !== 0 : r !== 0) {
+          failures.push(`${p.label}: ${typeof r === "object" ? tail(r, 4) : "exit "+r}`);
+        }
       }
       return failures.length === 0
         ? { status: "green", detail: `${projects.length} project lanes all green` }
@@ -235,6 +236,18 @@ function imageDigest(tag) {
   return cfg.stdout.trim();
 }
 
+function serverHeartbeatLane() {
+  // Expand the glob in JS since spawnSync has no shell expansion.
+  const testsDir = path.join(repoRoot, "server", "src", "__tests__");
+  const files = fs.readdirSync(testsDir)
+    .filter((f) => f.startsWith("heartbeat-") && f.endsWith(".test.ts"))
+    .map((f) => path.join("src", "__tests__", f));
+  if (files.length === 0) return { status: "red", detail: "no heartbeat test files found" };
+  const r = sh(`pnpm --filter @paperclipai/server exec vitest run ${files.join(" ")}`, { timeout: 25 * 60_000 });
+  if (r.status !== 0) return { status: "red", detail: tail(r, 4) };
+  return { status: "green", detail: `${files.length} heartbeat tests passed` };
+}
+
 function postgresLane() {
   const container = `k15-pg-${shortSha()}`;
   const port = Number(process.env.K15_PG_PORT ?? 35432);
@@ -259,7 +272,10 @@ function postgresLane() {
     if (!ready) return { status: "red", detail: "postgres never became ready" };
 
     const env = { ...process.env, TEST_DATABASE_ADMIN_URL: adminUrl };
-    const dbTests = sh("pnpm --filter @paperclipai/db exec vitest run src/scheduling-schema-migration.test.ts", { timeout: 10 * 60_000 });
+    const dbTests = sh(
+      "pnpm --filter @paperclipai/db exec vitest run src/scheduling-schema-migration.test.ts",
+      { timeout: 10 * 60_000, env },
+    );
     if (dbTests.status !== 0) return { status: "red", detail: tail(dbTests) };
 
     const srvTests = sh(
@@ -408,12 +424,17 @@ function publish(imageTag) {
 function writeReport({ published, publishNote }) {
   fs.mkdirSync(path.dirname(reportFile), { recursive: true });
   const sha = safeHeadSha();
+  const imageResult = results.find((r) => r.imageDigest);
+  const imageDigest = imageResult?.imageDigest ?? "not built";
+  const ciRunUrl = process.env.K15_CI_RUN_URL ?? "";
   const lines = [
     "# K15 CI run report",
     "",
     `- Commit: \`${sha}\``,
     `- Branch: \`${safeBranch()}\``,
     `- Started: ${results.startedAt ?? ""}`,
+    `- Image digest: ${imageDigest}`,
+    ciRunUrl ? `- CI run: ${ciRunUrl}` : "",
     `- Mode: ${redGate ? `red-gate rehearsal (${redGate})` : untilGate ? `until ${untilGate}` : "full pipeline"}`,
     `- Published: ${published ? "yes" : "NO"}`,
     "",
@@ -442,6 +463,8 @@ function safeBranch() {
 
 const allGates = [];
 let failure = null;
+
+results.startedAt = new Date().toISOString();
 
 for (const g of GATES) {
   if (g.skip?.()) {
