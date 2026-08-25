@@ -109,25 +109,27 @@ const GATES = [
     id: "g4-unit-integration",
     title: "Unit + integration tests (focused workspace projects)",
     run: () => {
-      // Each project lane is a bounded vitest invocation.  The pre-existing
-      // CI test runner handles sharding/ordering and is proven to terminate
-      // on CI; we invoke it per-group so failures are auditable per-lane.
-      // Heartbeat tests use explicit paths (no glob in spawnSync) and the
-      // db+shared+adapter-utils lane uses the general-workspaces-b runner.
+      // Each project lane is a bounded vitest invocation targeting only the
+      // fork-sensitive packages.  Avoid the run-vitest-stable.mjs runner here
+      // because its general-workspaces-b group sweeps every non-server project
+      // including CI-hostile backup/restore tests that need PG setup.
       const projects = [
-        { label: "db-shared-adapters", cmd: "pnpm run test:run --mode general --group general-workspaces-b" },
-        { label: "server-heartbeat", fn: () => serverHeartbeatLane() },
-        { label: "server-deploy", cmd: "pnpm --filter @paperclipai/server exec vitest run src/__tests__/docker-entrypoint.test.ts" },
+        { label: "db-schema", cmd: "pnpm --filter @paperclipai/db exec vitest run --exclude '**/backup*' --exclude '**/embedded-postgres*' --exclude '**/native*'" },
+        { label: "shared", cmd: "pnpm --filter @paperclipai/shared run test" },
+        { label: "adapter-utils", cmd: "pnpm --filter @paperclipai/adapter-utils run test" },
       ];
       const failures = [];
       for (const p of projects) {
-        const r = p.fn ? p.fn() : sh(p.cmd, { timeout: 25 * 60_000 });
-        if (r.status !== undefined ? r.status !== 0 : r !== 0) {
-          failures.push(`${p.label}: ${typeof r === "object" ? tail(r, 4) : "exit "+r}`);
-        }
+        const r = sh(p.cmd, { timeout: 20 * 60_000 });
+        if (r.status !== 0) failures.push(`${p.label}: ${tail(r, 4)}`);
       }
+      const hr = serverHeartbeatLane();
+      if (hr.status !== "green") failures.push(`server-heartbeat: ${hr.detail}`);
+      const deployResult = sh("pnpm --filter @paperclipai/server exec vitest run src/__tests__/docker-entrypoint.test.ts", { timeout: 10 * 60_000 });
+      if (deployResult.status !== 0) failures.push(`server-deploy: ${tail(deployResult, 4)}`);
+      const laneCount = projects.length + 2;
       return failures.length === 0
-        ? { status: "green", detail: `${projects.length} project lanes all green` }
+        ? { status: "green", detail: `${laneCount} project lanes all green` }
         : { status: "red", detail: failures.join("\n") };
     },
   },
