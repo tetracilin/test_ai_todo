@@ -35,8 +35,9 @@ else
   cd "$DEPLOY_DIR"
   node -e '
     const rows=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+    const q=(v)=>JSON.stringify(v).replaceAll("\"","\x27");
     for(const r of rows){
-      console.log(`update agents set status=${JSON.stringify(r.status)}, paused_at=null, pause_reason=null where id=${JSON.stringify(r.id)} and pause_reason=${JSON.stringify("maintenance")};`);
+      console.log(`update agents set status=${q(r.status)}, paused_at=null, pause_reason=null where id=${q(r.id)} and pause_reason=${q("maintenance")};`);
     }
   ' "$SNAP" > /tmp/k18-resume.sql
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db psql -U paperclip -d paperclip -v ON_ERROR_STOP=1 -f - < /tmp/k18-resume.sql
