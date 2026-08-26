@@ -40,6 +40,14 @@ migrations **227**.
   hermes_gateway agent, its secret binding/version, and temp board API keys were
   deleted or terminated after acceptance. Production entity counts return to
   their K18 baselines (activity_log rows for the test runs remain, as expected).
+- **Temp test data — round-2 correction**: after the round-1 review found two
+  residual issues still live in company T3 ("K19 sched smoke 1787723355" and
+  "Sync Hermes gateway API credentials for K19 agent"), both were hard-deleted
+  together with their 6 comments and the S3 attachment-upload artifact
+  (issue_attachments row, assets row, and the `k19-attachment.bin` object under
+  the issue's prefix in MinIO). Verified post-cleanup: zero live issues titled
+  `%K19%`, zero attachment rows for either id, object gone from storage,
+  `/api/health` still ok at commit 7927f06fa.
 - **Relay durability**: socat relays are still background processes; systemd
   install remains an operator follow-up (runbook Part E).
 
