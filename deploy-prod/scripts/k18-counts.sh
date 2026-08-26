@@ -41,7 +41,12 @@ else
   # shellcheck disable=SC2013
   for t in $(cat /tmp/k18-tables.txt); do
     n=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db psql -U paperclip -d paperclip -tA -c "select count(*) from \"$t\"" | tr -d '[:space:]')
-    echo "$t=$n"
+    case "$t" in
+      user) k=users ;;
+      session) k=sessions ;;
+      *) k=$t ;;
+    esac
+    echo "$k=$n"
   done > /tmp/k18-counts.txt
   mig=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db psql -U paperclip -d paperclip -tA -c "select count(*)||'/'||max(id) from drizzle.__drizzle_migrations" | tr -d '[:space:]')
   {
