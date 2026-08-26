@@ -28,3 +28,4 @@ junit*.xml
 *.njsproj
 *.sln
 *.sw?
+/deploy-prod/runtime.env
