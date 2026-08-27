@@ -1,0 +1,6 @@
+# QA scratch results from the company-route-contract E2E runs
+test-results-archived/
+test-results-extra/
+test-results-onboarding/
+test-results-route-contract/
+playwright-report/
