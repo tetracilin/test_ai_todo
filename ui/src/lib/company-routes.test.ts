@@ -142,4 +142,40 @@ describe("company routes", () => {
     // Already-prefixed paths are returned untouched.
     expect(applyCompanyPrefix("/PAP/artifacts", "PAP")).toBe("/PAP/artifacts");
   });
+
+  // Regression for the T3 scheduling release bug: Today/Schedule links were
+  // generated without the company segment, and route words such as `schedule`
+  // were misread as company prefixes — `/today` and `/schedule` 404'd with
+  // `No company matches prefix "SCHEDULE"`. The scheduling route roots must
+  // behave like every other board route: prefixable, never extracted as
+  // company prefixes, and never re-emitted as `/<ROUTE>/...` hrefs.
+  it("treats Today, Schedule and Scheduling Routines as board routes that need a company prefix", () => {
+    for (const path of ["/today", "/schedule", "/schedule/routines"]) {
+      expect(isBoardPathWithoutPrefix(path)).toBe(true);
+      expect(extractCompanyPrefixFromPath(path)).toBeNull();
+    }
+
+    expect(applyCompanyPrefix("/today", "TVE")).toBe("/TVE/today");
+    expect(applyCompanyPrefix("/schedule", "TVE")).toBe("/TVE/schedule");
+    expect(applyCompanyPrefix("/schedule/routines", "TVE")).toBe("/TVE/schedule/routines");
+    expect(applyCompanyPrefix("/schedule/routines?view=week", "TVE")).toBe(
+      "/TVE/schedule/routines?view=week",
+    );
+
+    // Goals / Projects / Artifacts were already board routes — pin them too so
+    // the whole reported set stays company-prefixed.
+    expect(applyCompanyPrefix("/goals", "TVE")).toBe("/TVE/goals");
+    expect(applyCompanyPrefix("/projects", "TVE")).toBe("/TVE/projects");
+    expect(applyCompanyPrefix("/artifacts", "TVE")).toBe("/TVE/artifacts");
+
+    // A route word must never be read back as a company prefix, and prefixed
+    // scheduling paths must round-trip to company-relative form.
+    expect(extractCompanyPrefixFromPath("/schedule/goals")).toBeNull();
+    expect(toCompanyRelativePath("/TVE/schedule/routines")).toBe("/schedule/routines");
+    expect(toCompanyRelativePath("/TVE/today")).toBe("/today");
+
+    // Idempotent: already-prefixed paths are left untouched.
+    expect(applyCompanyPrefix("/TVE/today", "TVE")).toBe("/TVE/today");
+    expect(applyCompanyPrefix("/TVE/schedule/routines", "TVE")).toBe("/TVE/schedule/routines");
+  });
 });
