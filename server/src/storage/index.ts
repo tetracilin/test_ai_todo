@@ -15,6 +15,8 @@ function signatureForConfig(config: Config): string {
     s3Endpoint: config.storageS3Endpoint,
     s3Prefix: config.storageS3Prefix,
     s3ForcePathStyle: config.storageS3ForcePathStyle,
+    s3AccessKeySecretRef: config.storageS3AccessKeySecretRef,
+    s3SecretKeySecretRef: config.storageS3SecretKeySecretRef,
   });
 }
 

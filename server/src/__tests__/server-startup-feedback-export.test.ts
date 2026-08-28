@@ -182,6 +182,8 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     storageS3Endpoint: undefined,
     storageS3Prefix: "",
     storageS3ForcePathStyle: false,
+    storageS3AccessKeySecretRef: undefined,
+    storageS3SecretKeySecretRef: undefined,
     feedbackExportBackendUrl: "https://telemetry.example.com",
     feedbackExportBackendToken: "telemetry-token",
     heartbeatSchedulerEnabled: false,

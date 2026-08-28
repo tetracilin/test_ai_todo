@@ -5,6 +5,8 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { Readable } from "node:stream";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
@@ -15,6 +17,40 @@ interface S3ProviderConfig {
   endpoint?: string;
   prefix?: string;
   forcePathStyle?: boolean;
+  accessKeySecretRef?: string;
+  secretKeySecretRef?: string;
+}
+
+/**
+ * Resolve a credential secret by NAME. Values are never inlined in config:
+ * a ref points at a mounted secret file, either by absolute path or by name
+ * looked up under the deployment secrets directories (Docker secrets mount
+ * at /run/secrets/<name>).
+ */
+function resolveSecretReference(ref: string): string {
+  const trimmed = ref.trim();
+  if (!trimmed) throw unprocessable("Storage credential secret reference is empty");
+
+  if (trimmed.startsWith("/") && existsSync(trimmed)) {
+    return readFileSync(trimmed, "utf8").trim();
+  }
+
+  const secretsDirs = [
+    process.env.PAPERCLIP_SECRETS_DIR,
+    "/run/secrets",
+    "/paperclip/instances/default/secrets",
+  ].filter((dir): dir is string => Boolean(dir));
+
+  for (const dir of secretsDirs) {
+    const candidate = path.join(dir, trimmed);
+    if (existsSync(candidate)) {
+      return readFileSync(candidate, "utf8").trim();
+    }
+  }
+
+  throw unprocessable(
+    `Storage credential secret reference not found: "${trimmed}" (searched: ${secretsDirs.join(", ")})`,
+  );
 }
 
 function normalizePrefix(prefix: string | undefined): string {
@@ -69,11 +105,24 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
   if (!bucket) throw unprocessable("S3 storage bucket is required");
   if (!region) throw unprocessable("S3 storage region is required");
 
+  const accessKeyId = config.accessKeySecretRef
+    ? resolveSecretReference(config.accessKeySecretRef)
+    : undefined;
+  const secretAccessKey = config.secretKeySecretRef
+    ? resolveSecretReference(config.secretKeySecretRef)
+    : undefined;
+  if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
+    throw unprocessable("accessKeySecretRef and secretKeySecretRef must be set together");
+  }
+
   const prefix = normalizePrefix(config.prefix);
   const client = new S3Client({
     region,
     endpoint: config.endpoint,
     forcePathStyle: Boolean(config.forcePathStyle),
+    ...(accessKeyId && secretAccessKey
+      ? { credentials: { accessKeyId, secretAccessKey } }
+      : {}),
   });
 
   return {

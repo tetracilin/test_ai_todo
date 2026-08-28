@@ -72,6 +72,11 @@ export const storageS3ConfigSchema = z.object({
   endpoint: z.string().optional(),
   prefix: z.string().default(""),
   forcePathStyle: z.boolean().default(false),
+  // Credentials are referenced by secret NAME only — never literal values.
+  // Each ref resolves to a secret file under the deployment secrets directory
+  // (e.g. /run/secrets/<name>) or, if absolute, is read as a file path directly.
+  accessKeySecretRef: z.string().optional(),
+  secretKeySecretRef: z.string().optional(),
 }).passthrough();
 
 export const storageConfigSchema = z.object({

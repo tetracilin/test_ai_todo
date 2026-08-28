@@ -37,3 +37,6 @@ Storage configuration is stored in the instance config file:
 ```
 ~/.paperclip/instances/default/config.json
 ```
+
+For the NAS MinIO external-storage option used by the artifact open-file flow,
+see [MinIO NAS artifact storage](./minio-nas-artifact-storage.md).
