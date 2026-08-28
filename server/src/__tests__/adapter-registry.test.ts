@@ -71,6 +71,19 @@ describe("server adapter registry", () => {
     expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
   });
 
+  // NLM-A01 (card t_8dd5eb9e): T3 approved keeping the built-in `process`
+  // adapter operator-only for the NotebookLM Phase 0 MVP — it must stay
+  // registered (so an operator-created agent still runs) but must NOT appear
+  // in the selectable set the K10 Hermes-only policy exposes to normal
+  // hire/create flows. `notebooklm_local` may only join the selectable set
+  // in a later, separately-approved phase. See
+  // doc/NOTEBOOKLM_ONBOARDING.md and
+  // outputs/hermes/2026/08/2026-08-28-notebooklm-adapter-action-plan-review.md.
+  it("keeps the built-in process adapter registered but not selectable (NLM-A01 operator-only policy)", () => {
+    expect(findServerAdapter("process")).not.toBeNull();
+    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).not.toContain("process");
+  });
+
   it("exposes adapter model profiles when adapters declare them", async () => {
     const adapterWithProfiles: ServerAdapterModule = {
       ...externalAdapter,

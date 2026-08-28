@@ -89,10 +89,26 @@ WORKDIR /app
 RUN echo "cli-tools-epoch: ${CLI_TOOLS_CACHE_EPOCH}" \
   && npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai @moonshot-ai/kimi-code@latest \
   && apt-get update \
-  && apt-get install -y --no-install-recommends openssh-client jq \
+  && apt-get install -y --no-install-recommends openssh-client jq python3 python3-venv \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
+
+# NLM-A01: bake the notebooklm-mcp-cli (`nlm`) binary into the image as a
+# durable runtime dependency, pinned to the version verified in card
+# NLM-C01 (nlm --version == 0.9.14). This installs the tool ONLY — no
+# credentials, cookies, or profile data. Google auth/profile state lives
+# exclusively on the bind-mounted /paperclip volume
+# (host /root/paperclip-data/notebooklm -> container /paperclip/notebooklm),
+# never inside the image. Installed to /usr/local, never /app, so it survives
+# independent of the app layer and matches the "never write ephemeral /app"
+# rule. Uses uv (not pipx) for a fully self-contained, reproducible tool venv.
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
+  && env UV_TOOL_DIR=/usr/local/share/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_INSTALL_DIR=/usr/local/share/uv-python \
+    /usr/local/bin/uv tool install --python 3.11 notebooklm-mcp-cli==0.9.14 --no-cache \
+  && chmod -R a+rX /usr/local/share/uv-tools /usr/local/share/uv-python \
+  && nlm --version
 
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
@@ -113,7 +129,8 @@ ENV NODE_ENV=production \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  OPENCODE_ALLOW_ALL_MODELS=true
+  OPENCODE_ALLOW_ALL_MODELS=true \
+  NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm
 
 EXPOSE 3100
 
