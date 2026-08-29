@@ -18,6 +18,21 @@ export interface GetObjectInput {
   };
 }
 
+export interface ListObjectsInput {
+  prefix?: string;
+  limit?: number;
+}
+
+export interface ListObjectsResult {
+  objects: Array<{
+    key: string;
+    size: number;
+    lastModified: Date | undefined;
+  }>;
+  truncated: boolean;
+  nextContinuationToken?: string;
+}
+
 export interface GetObjectResult {
   stream: Readable;
   contentType?: string;
@@ -40,6 +55,7 @@ export interface StorageProvider {
   getObject(input: GetObjectInput): Promise<GetObjectResult>;
   headObject(input: GetObjectInput): Promise<HeadObjectResult>;
   deleteObject(input: GetObjectInput): Promise<void>;
+  listObjects(input: ListObjectsInput): Promise<ListObjectsResult>;
 }
 
 export interface PutFileInput {
@@ -65,4 +81,5 @@ export interface StorageService {
   getObject(companyId: string, objectKey: string, options?: Pick<GetObjectInput, "range">): Promise<GetObjectResult>;
   headObject(companyId: string, objectKey: string): Promise<HeadObjectResult>;
   deleteObject(companyId: string, objectKey: string): Promise<void>;
+  listObjects(input: ListObjectsInput): Promise<ListObjectsResult>;
 }

@@ -49,6 +49,17 @@ const TAILSCALE_DETECT_TIMEOUT_MS = 3000;
 
 type DatabaseMode = "embedded-postgres" | "postgres";
 
+export interface ExternalStorageConfig {
+  label: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  forcePathStyle: boolean;
+  accessKeySecretRef: string | undefined;
+  secretKeySecretRef: string | undefined;
+}
+
 export interface Config {
   deploymentMode: DeploymentMode;
   deploymentExposure: DeploymentExposure;
@@ -84,6 +95,7 @@ export interface Config {
   storageS3ForcePathStyle: boolean;
   storageS3AccessKeySecretRef: string | undefined;
   storageS3SecretKeySecretRef: string | undefined;
+  storageExternal?: ExternalStorageConfig;
   feedbackExportBackendUrl: string | undefined;
   feedbackExportBackendToken: string | undefined;
   heartbeatSchedulerEnabled: boolean;
@@ -159,6 +171,35 @@ export function loadConfig(): Config {
     process.env.PAPERCLIP_STORAGE_S3_SECRET_KEY_SECRET_REF?.trim() ||
     fileStorage?.s3?.secretKeySecretRef?.trim() ||
     undefined;
+
+  // Optional external-storage source (e.g. the NAS MinIO instance) surfaced by
+  // the artifact "open file" flow. Configured only when both endpoint and
+  // bucket are present.
+  const fileExternal = fileStorage?.external;
+  const externalEndpoint = process.env.PAPERCLIP_STORAGE_EXTERNAL_ENDPOINT?.trim() || fileExternal?.endpoint?.trim() || undefined;
+  const externalBucket = process.env.PAPERCLIP_STORAGE_EXTERNAL_BUCKET?.trim() || fileExternal?.bucket?.trim() || undefined;
+  const storageExternal: ExternalStorageConfig | undefined =
+    externalEndpoint && externalBucket
+      ? {
+          label: process.env.PAPERCLIP_STORAGE_EXTERNAL_LABEL?.trim() || fileExternal?.label?.trim() || "External storage",
+          endpoint: externalEndpoint,
+          region: process.env.PAPERCLIP_STORAGE_EXTERNAL_REGION?.trim() || fileExternal?.region?.trim() || "us-east-1",
+          bucket: externalBucket,
+          prefix: process.env.PAPERCLIP_STORAGE_EXTERNAL_PREFIX ?? fileExternal?.prefix ?? "",
+          forcePathStyle:
+            process.env.PAPERCLIP_STORAGE_EXTERNAL_FORCE_PATH_STYLE !== undefined
+              ? process.env.PAPERCLIP_STORAGE_EXTERNAL_FORCE_PATH_STYLE === "true"
+              : (fileExternal?.forcePathStyle ?? true),
+          accessKeySecretRef:
+            process.env.PAPERCLIP_STORAGE_EXTERNAL_ACCESS_KEY_SECRET_REF?.trim() ||
+            fileExternal?.accessKeySecretRef?.trim() ||
+            undefined,
+          secretKeySecretRef:
+            process.env.PAPERCLIP_STORAGE_EXTERNAL_SECRET_KEY_SECRET_REF?.trim() ||
+            fileExternal?.secretKeySecretRef?.trim() ||
+            undefined,
+        }
+      : undefined;
   const feedbackExportBackendUrl =
     process.env.PAPERCLIP_FEEDBACK_EXPORT_BACKEND_URL?.trim() ||
     process.env.PAPERCLIP_TELEMETRY_BACKEND_URL?.trim() ||
@@ -356,6 +397,7 @@ export function loadConfig(): Config {
     storageS3ForcePathStyle,
     storageS3AccessKeySecretRef,
     storageS3SecretKeySecretRef,
+    storageExternal,
     feedbackExportBackendUrl,
     feedbackExportBackendToken,
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",

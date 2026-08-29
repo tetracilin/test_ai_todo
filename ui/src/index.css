@@ -284,6 +284,19 @@
      composer's action row never hides behind the nav. Desktop and the classic
      thread never override it and fall through to the safe-area default. */
   --tc-composer-bottom: var(--sz-calc-8);
+
+  /* Artifact-editor canvas reserves a 1200px × 800px primary editor after its
+     20rem version/comment rail, header/footer chrome, and 1rem main padding.
+     At the capped 1600px × 992px canvas, usable main area is at least
+     1248px × 800px. The min() fallbacks keep the modal reachable on smaller
+     displays. */
+  --artifact-editor-canvas-w: min(100rem, calc(100dvw - 2rem));
+  --artifact-editor-canvas-h: min(62rem, calc(100dvh - 2rem));
+  --artifact-editor-sidebar-w: 20rem;
+}
+
+.artifact-editor-layout {
+  grid-template-columns: minmax(0, 1fr) var(--artifact-editor-sidebar-w);
 }
 
 .dark {

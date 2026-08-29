@@ -91,5 +91,40 @@ export function createLocalDiskStorageProvider(baseDir: string): StorageProvider
         // idempotent delete
       }
     },
+
+    async listObjects(input) {
+      const prefix = input.prefix ? normalizeObjectKey(input.prefix) : "";
+      const baseDir = prefix ? resolveWithin(root, prefix) : root;
+      const base = path.resolve(baseDir);
+      const limit = input.limit && input.limit > 0 ? input.limit : 1000;
+      const objects: Array<{ key: string; size: number; lastModified: Date | undefined }> = [];
+
+      async function walk(dir: string): Promise<boolean> {
+        let entries: string[] = [];
+        try {
+          entries = await fs.readdir(dir);
+        } catch {
+          return false;
+        }
+        entries.sort();
+        for (const entry of entries) {
+          if (objects.length >= limit) return true;
+          const fullPath = path.join(dir, entry);
+          const stat = await statOrNull(fullPath);
+          if (!stat) continue;
+          if (stat.isDirectory()) {
+            const truncated = await walk(fullPath);
+            if (truncated) return true;
+          } else if (stat.isFile()) {
+            const key = path.relative(root, fullPath).split(path.sep).join("/");
+            objects.push({ key, size: stat.size, lastModified: stat.mtime });
+          }
+        }
+        return false;
+      }
+
+      const truncated = await walk(base);
+      return { objects, truncated };
+    },
   };
 }

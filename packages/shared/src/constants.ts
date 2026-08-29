@@ -822,6 +822,21 @@ export type Class3StaticLeaseAllowlistKey = (typeof CLASS3_STATIC_LEASE_ALLOWLIS
 export const STORAGE_PROVIDERS = ["local_disk", "s3"] as const;
 export type StorageProvider = (typeof STORAGE_PROVIDERS)[number];
 
+export const ARTIFACT_KINDS = ["document", "attachment"] as const;
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
+// Editable document formats that support in-app editing and version control.
+// markdown is edited as text and auto-versions on save; docx/xlsx are edited via
+// OpenOffice and version only when the user names a new version.
+export const ARTIFACT_EDITABLE_FORMATS = ["markdown", "docx", "xlsx"] as const;
+export type ArtifactEditableFormat = (typeof ARTIFACT_EDITABLE_FORMATS)[number];
+
+// Where an artifact version's object bytes originated. `internal` is the primary
+// storage provider; `external` is an optional NAS/S3 source selected in the
+// "open file" flow and copied into internal storage on open.
+export const ARTIFACT_VERSION_SOURCES = ["internal", "external"] as const;
+export type ArtifactVersionSource = (typeof ARTIFACT_VERSION_SOURCES)[number];
+
 export const BILLING_TYPES = [
   "metered_api",
   "subscription_included",

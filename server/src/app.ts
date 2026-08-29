@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import { derivePaperclipViteHmrPort, type DeploymentExposure, type DeploymentMode } from "@paperclipai/shared";
 import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
-import type { StorageService } from "./storage/types.js";
+import type { StorageService, StorageProvider } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
@@ -42,6 +42,8 @@ import { environmentService } from "./services/environments.js";
 import { environmentRuntimeService } from "./services/environment-runtime.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
+import { artifactRoutes } from "./routes/artifacts.js";
+import { wopiRoutes } from "./routes/wopi.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { schedulingRoutes } from "./routes/scheduling.js";
 import { caseRoutes } from "./routes/cases.js";
@@ -113,6 +115,7 @@ import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
+import { createWopiSessionStore } from "./services/wopi.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
@@ -283,6 +286,7 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
+    externalStorage?: StorageProvider | null;
     feedbackExportService?: {
       flushPendingFeedbackTraces(input?: {
         companyId?: string;
@@ -320,10 +324,19 @@ export async function createApp(
   },
 ) {
   const app = express();
+  const wopiSessions = createWopiSessionStore();
   app.locals.paperclipDb = db;
   const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
     (req as unknown as { rawBody: Buffer }).rawBody = buf;
   };
+
+  // Collabora sends binary document bytes to PutFile. This must run before the
+  // JSON parser, or an OOXML upload would be consumed/rejected as JSON.
+  app.use("/api/wopi/files/:artifactId/contents", express.raw({
+    type: "*/*",
+    limit: "100mb",
+    verify: captureRawBody,
+  }));
 
   // Respect the operator's `TRUST_PROXY` env var (see middleware/trust-proxy.ts).
   // Default is unset → Express trusts nothing, which is the only safe choice
@@ -572,6 +585,10 @@ export async function createApp(
     pluginWorkerManager: workerManager,
     approveToolActionRequest: (input) => toolGateway.approveActionRequest(input),
   }));
+  api.use(artifactRoutes(db, opts.storageService, opts.externalStorage ?? null));
+  if (process.env.PAPERCLIP_WOPI_STAGING_ENABLED === "true") {
+    api.use(wopiRoutes(db, opts.storageService, wopiSessions));
+  }
   api.use(schedulingRoutes(db));
   app.use(mcpGatewayProtocolRoutes(toolGateway));
   api.use(toolAccessRoutes(db, {

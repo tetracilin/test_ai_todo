@@ -28,6 +28,12 @@ import type {
   ReleaseIssueTreeHold,
   UpsertIssueWatchdog,
   UpsertIssueDocument,
+  Artifact,
+  ArtifactComment,
+  ArtifactCommentsResponse,
+  ArtifactVersionsResponse,
+  ExternalStorageObject,
+  ExternalStorageSource,
 } from "@paperclipai/shared";
 import { api, type RequestOptions } from "./client";
 
@@ -40,6 +46,12 @@ export type IssueUpdateResponse = Issue & {
 export type ResolveRecoveryActionResponse = {
   issue: Issue;
   recoveryAction: IssueRecoveryAction;
+};
+
+export type ArtifactEditorSession = {
+  actionUrl: string;
+  formParameters: Record<string, string>;
+  editorOrigin: string;
 };
 
 export type IssueListFilters = {
@@ -336,6 +348,55 @@ export const issuesApi = {
     return api.postForm<IssueAttachment>(`/companies/${companyId}/issues/${issueId}/attachments`, form);
   },
   deleteAttachment: (id: string) => api.delete<{ ok: true }>(`/attachments/${id}`),
+  listArtifactStorageSources: (companyId: string) =>
+    api.get<{ sources: ExternalStorageSource[] }>(`/companies/${companyId}/artifacts/storage-sources`),
+  listExternalArtifactObjects: (companyId: string, prefix?: string) => {
+    const params = new URLSearchParams();
+    if (prefix?.trim()) params.set("prefix", prefix.trim());
+    return api.get<{ objects: ExternalStorageObject[] }>(
+      `/companies/${companyId}/artifacts/external/objects${params.size > 0 ? `?${params.toString()}` : ""}`,
+    );
+  },
+  listArtifacts: (companyId: string, issueId: string) =>
+    api.get<{ artifacts: Artifact[] }>(`/companies/${companyId}/issues/${issueId}/artifacts`),
+  uploadArtifact: (companyId: string, issueId: string, file: File, versionName?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("issueId", issueId);
+    if (versionName?.trim()) form.append("versionName", versionName.trim());
+    return api.postForm<Artifact>(`/companies/${companyId}/issues/${issueId}/artifacts`, form);
+  },
+  openArtifact: (
+    companyId: string,
+    issueId: string,
+    data: { source: "internal" | "external"; objectKey: string; versionName?: string },
+  ) => api.post<Artifact>(`/companies/${companyId}/issues/${issueId}/artifacts/open`, { issueId, ...data }),
+  listArtifactVersions: (companyId: string, artifactId: string) =>
+    api.get<ArtifactVersionsResponse>(`/companies/${companyId}/artifacts/${artifactId}/versions`),
+  uploadArtifactVersion: (
+    companyId: string,
+    artifactId: string,
+    file: File,
+    versionName: string,
+    changeSummary?: string,
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("versionName", versionName);
+    if (changeSummary?.trim()) form.append("changeSummary", changeSummary.trim());
+    return api.postForm(`/companies/${companyId}/artifacts/${artifactId}/versions`, form);
+  },
+  saveMarkdownArtifact: (companyId: string, artifactId: string, body: string, changeSummary?: string) =>
+    api.put(`/companies/${companyId}/artifacts/${artifactId}/markdown`, {
+      body,
+      ...(changeSummary?.trim() ? { changeSummary: changeSummary.trim() } : {}),
+    }),
+  createArtifactEditorSession: (companyId: string, artifactId: string) =>
+    api.post<ArtifactEditorSession>(`/companies/${companyId}/artifacts/${artifactId}/editor-sessions`, {}),
+  listArtifactComments: (companyId: string, artifactId: string) =>
+    api.get<ArtifactCommentsResponse>(`/companies/${companyId}/artifacts/${artifactId}/comments`),
+  addArtifactComment: (companyId: string, artifactId: string, body: string) =>
+    api.post<ArtifactComment>(`/companies/${companyId}/artifacts/${artifactId}/comments`, { body }),
   listApprovals: (id: string) => api.get<Approval[]>(`/issues/${id}/approvals`),
   linkApproval: (id: string, approvalId: string) =>
     api.post<Approval[]>(`/issues/${id}/approvals`, { approvalId }),
