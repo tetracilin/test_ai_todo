@@ -196,6 +196,7 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
   const [markdownLoaded, setMarkdownLoaded] = useState(false);
   const [comment, setComment] = useState("");
   const [versionName, setVersionName] = useState("");
+  const [editorVersionName, setEditorVersionName] = useState("");
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
   const [editorSession, setEditorSession] = useState<{ actionUrl: string; formParameters: Record<string, string> } | null>(null);
   const replacementRef = useRef<HTMLInputElement>(null);
@@ -250,7 +251,10 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
     onSuccess: async () => { setReplacementFile(null); setVersionName(""); await invalidate(); },
   });
   const createEditorSession = useMutation({
-    mutationFn: () => issuesApi.createArtifactEditorSession(companyId, artifact.id),
+    mutationFn: () => {
+      if (!editorVersionName.trim()) throw new Error("Version name is required for DOCX/XLSX saves.");
+      return issuesApi.createArtifactEditorSession(companyId, artifact.id, editorVersionName.trim());
+    },
     onSuccess: (session) => {
       setEditorSession({ actionUrl: session.actionUrl, formParameters: session.formParameters });
     },
@@ -298,8 +302,16 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
               ) : isOffice ? (
                 <div className="flex h-full min-h-(--sz-560px) flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
-                    <span className="min-w-0 flex-1">Collabora Online editor saves a new version. Upload replacement stays available for a user-named version.</span>
-                    <Button size="sm" disabled={createEditorSession.isPending} onClick={() => createEditorSession.mutate()}>
+                    <label className="min-w-(--sz-220px) flex-1">
+                      <span className="sr-only">Version name for OpenOffice save</span>
+                      <Input
+                        aria-label="Version name for OpenOffice save"
+                        value={editorVersionName}
+                        onChange={(event) => setEditorVersionName(event.target.value)}
+                        placeholder="Required version name"
+                      />
+                    </label>
+                    <Button size="sm" disabled={!editorVersionName.trim() || createEditorSession.isPending} onClick={() => createEditorSession.mutate()}>
                       {createEditorSession.isPending ? "Opening editor…" : "Edit with OpenOffice"}
                     </Button>
                     <Button asChild variant="outline" size="sm"><a href={contentPath} download={artifact.name}><Download className="mr-1.5 h-3.5 w-3.5" />Download</a></Button>

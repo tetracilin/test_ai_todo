@@ -51,6 +51,15 @@ export const createArtifactVersionSchema = z.object({
 
 export type CreateArtifactVersion = z.infer<typeof createArtifactVersionSchema>;
 
+// A browser Office editor cannot be trusted to send a user-controlled name
+// with its WOPI PutFile callback. Capture and validate it before issuing the
+// opaque editor session token, then bind it to that server-side session.
+export const createArtifactEditorSessionSchema = z.object({
+  versionName: z.string().trim().min(1).max(ARTIFACT_VERSION_NAME_MAX_LENGTH),
+});
+
+export type CreateArtifactEditorSession = z.infer<typeof createArtifactEditorSessionSchema>;
+
 export const restoreArtifactVersionSchema = z.object({
   versionName: z.string().trim().min(1).max(ARTIFACT_VERSION_NAME_MAX_LENGTH).optional(),
 });

@@ -159,12 +159,22 @@ describe("IssueArtifactManager", () => {
     flushSync(() => root.unmount());
   });
 
-  it("posts editor token form only into named iframe and keeps canvas/iframe sizing classes", async () => {
+  it("requires and binds a user name before posting editor token form into named iframe", async () => {
     const root = renderManager(container);
     await waitForAssertion(() => expect(container.textContent).toContain("report.docx"));
     clickByText(container, "Open editor");
+    const versionName = container.querySelector("input[aria-label='Version name for OpenOffice save']") as HTMLInputElement;
+    const openEditor = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Edit with OpenOffice"));
+    expect(versionName).not.toBeNull();
+    expect(openEditor).toHaveProperty("disabled", true);
+    flushSync(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      valueSetter?.call(versionName, "Legal approval");
+      versionName.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     clickByText(container, "Edit with OpenOffice");
     await waitForAssertion(() => expect(container.querySelector("iframe")).not.toBeNull());
+    expect(api.createArtifactEditorSession).toHaveBeenCalledWith("company-1", "docx-id", "Legal approval");
     const form = container.querySelector("form") as HTMLFormElement;
     const iframe = container.querySelector("iframe") as HTMLIFrameElement;
     const canvas = container.querySelector("[data-slot='dialog-content']") as HTMLElement;

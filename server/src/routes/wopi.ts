@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { buffer } from "node:stream/consumers";
 import type { Db } from "@paperclipai/db";
+import { createArtifactEditorSessionSchema } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { artifactService, type ArtifactActor } from "../services/artifacts.js";
@@ -68,6 +69,11 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       res.status(403).json({ error: "Only signed-in users may create editor sessions" });
       return;
     }
+    const parsed = createArtifactEditorSessionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "A non-empty version name is required for DOCX/XLSX saves", details: parsed.error.issues });
+      return;
+    }
     const artifact = await artifacts.get(companyId, artifactId);
     if (!isDocxOrXlsx(artifact) || !artifact.currentVersionId) {
       res.status(422).json({ error: "Only DOCX and XLSX document artifacts can be edited" });
@@ -77,6 +83,7 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       companyId,
       artifactId,
       versionId: artifact.currentVersionId,
+      versionName: parsed.data.versionName,
       format: artifact.format,
       actor: actorFromRequest(req),
     });
@@ -155,7 +162,7 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       companyId: session.companyId,
       artifactId: session.artifactId,
       expectedVersionId: session.versionId,
-      versionName: `Collabora edit v${artifact.currentVersionNumber + 1}`,
+      versionName: session.versionName,
       contentType: artifact.contentType,
       body,
       actor: session.actor,
@@ -167,7 +174,7 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       action: "artifact.wopi.version.created",
       entityType: "artifact",
       entityId: session.artifactId,
-      details: { versionNumber: version.versionNumber, editor: "collabora" },
+      details: { versionNumber: version.versionNumber, versionName: version.versionName, editor: "collabora" },
     });
     res.set("X-WOPI-ItemVersion", String(version.versionNumber)).status(200).end();
   });

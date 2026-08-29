@@ -398,8 +398,8 @@ export const issuesApi = {
       body,
       ...(changeSummary?.trim() ? { changeSummary: changeSummary.trim() } : {}),
     }),
-  createArtifactEditorSession: (companyId: string, artifactId: string) =>
-    api.post<ArtifactEditorSession>(`/companies/${companyId}/artifacts/${artifactId}/editor-sessions`, {}),
+  createArtifactEditorSession: (companyId: string, artifactId: string, versionName: string) =>
+    api.post<ArtifactEditorSession>(`/companies/${companyId}/artifacts/${artifactId}/editor-sessions`, { versionName }),
   listArtifactComments: (companyId: string, artifactId: string) =>
     api.get<ArtifactCommentsResponse>(`/companies/${companyId}/artifacts/${artifactId}/comments`),
   addArtifactComment: (companyId: string, artifactId: string, body: string) =>
