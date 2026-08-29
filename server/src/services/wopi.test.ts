@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWopiSessionStore, normalizeWopiToken, wopiTokenMatches } from "./wopi.js";
+import { createWopiSessionStore, normalizeWopiToken, wopiEditorSessionPayload, wopiTokenMatches } from "./wopi.js";
 
 const actor = { createdByUserId: "user-1", createdByAgentId: null };
 
@@ -36,5 +36,21 @@ describe("WOPI session store", () => {
     expect(wopiTokenMatches(token, token)).toBe(true);
     expect(wopiTokenMatches(token, "b".repeat(43))).toBe(false);
     expect(normalizeWopiToken("bad")).toBeNull();
+  });
+
+  it("returns session metadata and action URL from the configured editor origin", () => {
+    const editorOrigin = "https://office.isolated.example.test:8446";
+    const callbackUrl = "https://app.isolated.example.test:8445/api/wopi/files/artifact-a";
+
+    expect(wopiEditorSessionPayload({
+      format: "docx",
+      callbackUrl,
+      token: "opaque-token",
+      expiresAt: 123,
+    }, editorOrigin)).toEqual({
+      actionUrl: `${editorOrigin}/browser/dist/cool.html?WOPISrc=${encodeURIComponent(callbackUrl)}&action=edit`,
+      formParameters: { access_token: "opaque-token", access_token_ttl: "123" },
+      editorOrigin,
+    });
   });
 });

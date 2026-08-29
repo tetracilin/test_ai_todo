@@ -159,21 +159,24 @@ describe("IssueArtifactManager", () => {
     flushSync(() => root.unmount());
   });
 
-  it("posts editor token form only into named iframe and keeps canvas/iframe sizing classes", async () => {
+  it("posts editor token form only into named iframe and keeps desktop editor geometry uncapped", async () => {
     const root = renderManager(container);
     await waitForAssertion(() => expect(container.textContent).toContain("report.docx"));
     clickByText(container, "Open editor");
     clickByText(container, "Edit with OpenOffice");
     await waitForAssertion(() => expect(container.querySelector("iframe")).not.toBeNull());
     const form = container.querySelector("form") as HTMLFormElement;
-    const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+    const iframe = container.querySelector("[data-testid='artifact-editor-frame']") as HTMLIFrameElement;
     const canvas = container.querySelector("[data-slot='dialog-content']") as HTMLElement;
+    const primary = container.querySelector("[data-testid='artifact-editor-primary']") as HTMLElement;
     expect(form.action).toBe("https://office.example.test/browser/edit");
     expect(form.method).toBe("post");
     expect(form.target).toBe(iframe.name);
     expect(form.querySelector("input[name='access_token']")?.getAttribute("value")).toBe("opaque-short-lived-token");
     expect(canvas.className).toContain("w-(--artifact-editor-canvas-w)");
     expect(canvas.className).toContain("h-(--artifact-editor-canvas-h)");
+    expect(canvas.className).toContain("sm:!max-w-none");
+    expect(primary).not.toBeNull();
     expect(iframe.className).toContain("min-h-0 flex-1");
     flushSync(() => root.unmount());
   });
