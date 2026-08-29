@@ -798,10 +798,17 @@ export interface Issue {
   status: IssueStatus;
   workMode: IssueWorkMode;
   priority: IssuePriority;
-  /** Manual progress percentage (0-100). Parent issues expose aggregated child progress. */
-  progress: number;
-  /** Ordering position among siblings sharing the same parent. */
-  sortOrder: number;
+  /**
+   * Manual progress percentage (0-100). Optional for compatibility with
+   * persisted/API issue shapes from before migration 0230; current rows expose
+   * this as 0 or greater. Parent issues expose aggregated child progress.
+   */
+  progress?: number;
+  /**
+   * Ordering position among siblings sharing the same parent. Optional for
+   * compatibility with persisted/API issue shapes from before migration 0230.
+   */
+  sortOrder?: number;
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;

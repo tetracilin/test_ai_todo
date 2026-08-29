@@ -46,6 +46,20 @@ services:
       PAPERCLIP_MIGRATION_PROMPT: never
       PAPERCLIP_SECRETS_STRICT_MODE: "true"
       PAPERCLIP_TELEMETRY_DISABLED: "1"
+      # Staging-only office editor bridge. Production stays disabled unless this
+      # explicit environment gate is set on its own deployment.
+      PAPERCLIP_WOPI_STAGING_ENABLED: ${PAPERCLIP_WOPI_STAGING_ENABLED:-false}
+      # Optional least-privilege MinIO source for artifact open-file flow.
+      # Credentials resolve from Docker secrets by reference name, never env.
+      PAPERCLIP_STORAGE_EXTERNAL_LABEL: ${PAPERCLIP_STORAGE_EXTERNAL_LABEL:-NAS MinIO}
+      PAPERCLIP_STORAGE_EXTERNAL_ENDPOINT: ${PAPERCLIP_STORAGE_EXTERNAL_ENDPOINT:-}
+      PAPERCLIP_STORAGE_EXTERNAL_REGION: ${PAPERCLIP_STORAGE_EXTERNAL_REGION:-us-east-1}
+      PAPERCLIP_STORAGE_EXTERNAL_BUCKET: ${PAPERCLIP_STORAGE_EXTERNAL_BUCKET:-}
+      PAPERCLIP_STORAGE_EXTERNAL_PREFIX: ${PAPERCLIP_STORAGE_EXTERNAL_PREFIX:-external/}
+      PAPERCLIP_STORAGE_EXTERNAL_FORCE_PATH_STYLE: ${PAPERCLIP_STORAGE_EXTERNAL_FORCE_PATH_STYLE:-true}
+      PAPERCLIP_STORAGE_EXTERNAL_ACCESS_KEY_SECRET_REF: ${PAPERCLIP_STORAGE_EXTERNAL_ACCESS_KEY_SECRET_REF:-paperclip_artifacts_access_key}
+      PAPERCLIP_STORAGE_EXTERNAL_SECRET_KEY_SECRET_REF: ${PAPERCLIP_STORAGE_EXTERNAL_SECRET_KEY_SECRET_REF:-paperclip_artifacts_secret_key}
+      PAPERCLIP_SECRETS_DIR: /run/secrets
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${POSTGRES_USER:-paperclip}
@@ -56,6 +70,8 @@ services:
     secrets:
       - postgres_password
       - better_auth_secret
+      - paperclip_artifacts_access_key
+      - paperclip_artifacts_secret_key
     volumes:
       - paperclip-data:/paperclip
       - ./paperclip-config.json:/etc/paperclip/config.json:ro
@@ -84,6 +100,10 @@ secrets:
     file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
   better_auth_secret:
     file: ${BETTER_AUTH_SECRET_FILE:-./secrets/better_auth_secret}
+  paperclip_artifacts_access_key:
+    file: ${PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE:-./secrets/paperclip_artifacts_access_key}
+  paperclip_artifacts_secret_key:
+    file: ${PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE:-./secrets/paperclip_artifacts_secret_key}
 
 volumes:
   postgres-data:
