@@ -38,8 +38,15 @@ interface CommentReassignment {
   assigneeUserId: string | null;
 }
 
+type TaskChatDeliveryMode = "agent" | "comment";
+
 interface TaskChatComposerProps {
-  onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void> | void;
+  onAdd: (
+    body: string,
+    reopen?: boolean,
+    reassignment?: CommentReassignment,
+    deliveryMode?: TaskChatDeliveryMode,
+  ) => Promise<void> | void;
   workMode: IssueWorkMode;
   onWorkModeChange?: (mode: IssueWorkMode) => Promise<void> | void;
   disabled?: boolean;
@@ -155,6 +162,7 @@ export function TaskChatComposer({
   const [body, setBody] = useState(() => (draftKey ? loadDraft(draftKey) : ""));
   const [submitting, setSubmitting] = useState(false);
   const [pendingMode, setPendingMode] = useState<IssueWorkMode>(workMode);
+  const [deliveryMode, setDeliveryMode] = useState<TaskChatDeliveryMode>("agent");
   const [pendingAssignee, setPendingAssignee] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const attachmentsRef = useRef(attachments);
@@ -332,9 +340,13 @@ export function TaskChatComposer({
       .map((item) => `[${escapeMarkdownLabel(item.name)}](${item.contentPath})`)
       .join("\n");
     const fullBody = [trimmed, refLines].filter(Boolean).join("\n\n");
-    const hasReassignment = showAssignee && assigneeValue !== currentAssigneeValue;
+    // Reassignment is an agent instruction, never part of a comment-only post.
+    const hasReassignment = deliveryMode === "agent" && showAssignee && assigneeValue !== currentAssigneeValue;
     const reassignment = hasReassignment ? parseAssigneeValue(assigneeValue) : undefined;
-    const reopen = shouldImplicitlyReopenComment(issueStatus, assigneeValue) ? true : undefined;
+    const reopen =
+      deliveryMode === "agent" && shouldImplicitlyReopenComment(issueStatus, assigneeValue)
+        ? true
+        : undefined;
 
     // The thread renders the outgoing comment optimistically, so remove its
     // text from the composer at the same time. The editor remains writable for
@@ -348,10 +360,16 @@ export function TaskChatComposer({
     setBody("");
     setSubmitting(true);
     try {
-      if (pendingMode !== workMode && onWorkModeChange) {
+      if (deliveryMode === "agent" && pendingMode !== workMode && onWorkModeChange) {
         await onWorkModeChange(pendingMode);
       }
-      await onAdd(fullBody, reopen, reassignment);
+      if (deliveryMode === "comment") {
+        await onAdd(fullBody, reopen, reassignment, "comment");
+      } else {
+        // Keep legacy callback arity: existing hosts and integrations only
+        // receive the delivery discriminator when comment-only is selected.
+        await onAdd(fullBody, reopen, reassignment);
+      }
       if (draftKey && bodyRef.current) {
         // The editor stays writable while the request is pending. Preserve
         // text entered after this submission started as the next draft.
@@ -501,19 +519,33 @@ export function TaskChatComposer({
               style={{ "--sc": modeHue(pendingMode) } as CSSProperties}
               data-testid="task-chat-composer-mode"
               data-pending-work-mode={pendingMode}
+              data-delivery-mode={deliveryMode}
             >
-              {modeMeta.label}
+              {deliveryMode === "comment" ? "Comment" : modeMeta.label}
               <ChevronDown className="h-3 w-3" aria-hidden />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-60">
+            <DropdownMenuItem
+              data-testid="task-chat-composer-mode-comment"
+              onSelect={() => setDeliveryMode("comment")}
+            >
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium">Comment only</span>
+                <span className="text-xs text-muted-foreground">Add to thread without invoking agent</span>
+              </span>
+              {deliveryMode === "comment" ? <Check className="h-4 w-4 shrink-0" aria-hidden /> : null}
+            </DropdownMenuItem>
             {workModeMetaList().map((m) => {
               const Icon = m.icon;
-              const selected = m.value === pendingMode;
+              const selected = deliveryMode === "agent" && m.value === pendingMode;
               return (
                 <DropdownMenuItem
                   key={m.value}
-                  onSelect={() => setPendingMode(m.value)}
+                  onSelect={() => {
+                    setDeliveryMode("agent");
+                    setPendingMode(m.value);
+                  }}
                   style={
                     selected
                       ? { backgroundColor: `color-mix(in srgb, ${modeHue(m.value)} 12%, transparent)` }
@@ -534,7 +566,7 @@ export function TaskChatComposer({
 
         <div className="flex-1" />
 
-        {showAssignee ? (
+        {deliveryMode === "agent" && showAssignee ? (
           <InlineEntitySelector
             value={assigneeValue}
             options={reassignOptions ?? []}

@@ -1031,6 +1031,45 @@ describe.sequential("issue comment reopen routes", () => {
     ));
   });
 
+  it("persists comment-only posts without waking, reopening, or resuming work", async () => {
+    const issue = {
+      ...makeIssue("in_progress"),
+      executionRunId: "retry-run-1",
+    };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockIssueService.getCurrentScheduledRetry.mockResolvedValue({
+      runId: "retry-run-1",
+      status: "scheduled_retry",
+      agentId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post("/api/issues/11111111-1111-4111-8111-111111111111/comments")
+      .send({ body: "Keep this as a note.", deliveryMode: "comment" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockIssueService.addComment).toHaveBeenCalled();
+    expect(mockIssueService.getCurrentScheduledRetry).not.toHaveBeenCalled();
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal issues terminal for comment-only posts", async () => {
+    mockIssueService.getById.mockResolvedValue(makeIssue("done"));
+
+    const res = await request(await installActor(createApp()))
+      .post("/api/issues/11111111-1111-4111-8111-111111111111/comments")
+      .send({ body: "Archived note.", deliveryMode: "comment", reopen: true, resume: true });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockIssueService.addComment).toHaveBeenCalled();
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
   it("skips the assignee wakeup when the issue is concurrently cancelled while the comment is being written", async () => {
     const app = await installActor(createApp());
     // First call is the route's pre-insert fetch; second is the wake-decision
