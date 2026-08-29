@@ -23,6 +23,20 @@ function appForAgent(companyId: string) {
   return app;
 }
 
+function appForUser() {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = { type: "board", userId: "user-1", source: "local_implicit" };
+    next();
+  });
+  const db = {} as Db;
+  const storage = {} as StorageService;
+  app.use("/api", wopiRoutes(db, storage, createWopiSessionStore()));
+  app.use(errorHandler);
+  return app;
+}
+
 describe("artifact route company boundaries", () => {
   it("rejects cross-company artifact, version, comment, and external-object routes before resource access", async () => {
     const app = appForAgent("company-a");
@@ -48,5 +62,16 @@ describe("artifact route company boundaries", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toBe("Agent key cannot access another company");
+  });
+
+  it("rejects blank or missing Office editor version names before artifact lookup", async () => {
+    for (const body of [{}, { versionName: "   " }]) {
+      const response = await request(appForUser())
+        .post("/api/companies/company-a/artifacts/artifact-a/editor-sessions")
+        .send(body);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("A non-empty version name is required for DOCX/XLSX saves");
+    }
   });
 });

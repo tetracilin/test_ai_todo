@@ -7,11 +7,11 @@ describe("WOPI session store", () => {
   it("binds opaque short-lived tokens to artifact and rotates same editing scope", () => {
     let clock = 1_000;
     const store = createWopiSessionStore({ now: () => clock, ttlMs: 100 });
-    const first = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", format: "docx", actor });
+    const first = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", versionName: "Editorial review", format: "docx", actor });
     expect(normalizeWopiToken(first.token)).toBe(first.token);
     expect(store.get(first.token, "artifact-a")).not.toBeNull();
     expect(store.get(first.token, "artifact-b")).toBeNull();
-    const rotated = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", format: "docx", actor });
+    const rotated = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", versionName: "Editorial review", format: "docx", actor });
     expect(store.get(first.token, "artifact-a")).toBeNull();
     expect(store.get(rotated.token, "artifact-a")).not.toBeNull();
     clock += 101;
@@ -20,7 +20,7 @@ describe("WOPI session store", () => {
 
   it("implements WOPI lock lifecycle and rejects stale/conflicting locks", () => {
     const store = createWopiSessionStore();
-    const session = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", format: "xlsx", actor });
+    const session = store.create({ companyId: "company-a", artifactId: "artifact-a", versionId: "version-a", versionName: "Finance review", format: "xlsx", actor });
     expect(store.lock(session, "lock-a", 60)).toEqual({ ok: true });
     expect(store.getLock(session)).toBe("lock-a");
     expect(store.lock(session, "lock-b", 60)).toEqual({ ok: false, current: "lock-a" });

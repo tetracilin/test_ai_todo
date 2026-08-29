@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { artifactComments, artifacts, artifactVersions, issues } from "@paperclipai/db";
 import {
+  ARTIFACT_VERSION_NAME_MAX_LENGTH,
   classifyArtifactFormat,
   type Artifact,
   type ArtifactComment,
@@ -113,6 +114,14 @@ function sha256Of(input: Buffer): string {
 
 function defaultVersionName(versionNumber: number, isAutomatic: boolean): string {
   return isAutomatic ? `Revision ${versionNumber}` : `v${versionNumber}`;
+}
+
+function requireManualVersionName(value: string): string {
+  const versionName = value.trim();
+  if (!versionName || versionName.length > ARTIFACT_VERSION_NAME_MAX_LENGTH) {
+    throw unprocessable("A non-empty version name is required for manual artifact versions");
+  }
+  return versionName;
 }
 
 function assertExternalObjectBelongsToCompany(companyId: string, objectKey: string): void {
@@ -483,6 +492,7 @@ export function artifactService(
       body: Buffer;
       actor: ArtifactActor;
     }) => {
+      const versionName = requireManualVersionName(input.versionName);
       const artifact = await getArtifact(input.companyId, input.artifactId);
       if ((artifact.format !== "docx" && artifact.format !== "xlsx") || artifact.currentVersionId !== input.expectedVersionId) {
         throw conflict("Artifact version changed before editor save");
@@ -497,7 +507,7 @@ export function artifactService(
             companyId: input.companyId,
             artifactId: artifact.id,
             versionNumber: nextNumber,
-            versionName: input.versionName,
+            versionName,
             source: "internal",
             provider: stored.provider,
             objectKey: stored.objectKey,

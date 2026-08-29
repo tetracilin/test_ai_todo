@@ -20,6 +20,7 @@ export interface WopiSession {
   companyId: string;
   artifactId: string;
   versionId: string;
+  versionName: string;
   format: WopiDocumentFormat;
   actor: ArtifactActor;
   expiresAt: number;

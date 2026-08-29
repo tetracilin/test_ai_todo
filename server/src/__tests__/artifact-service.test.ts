@@ -155,6 +155,45 @@ describeEmbeddedPostgres("artifact service", () => {
     expect(v2.isAutomatic).toBe(false);
   });
 
+  it("persists user-supplied WOPI names and rejects blank WOPI names", async () => {
+    const { companyId, issueId } = await setupCompanyIssue();
+    const { svc } = await makeService();
+    const artifact = await svc.createFromUpload({
+      companyId,
+      issueId,
+      name: "report.docx",
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      body: Buffer.from("docx-v1"),
+      versionName: "Draft",
+      actor,
+    });
+
+    await expect(svc.createWopiVersion({
+      companyId,
+      artifactId: artifact.id,
+      expectedVersionId: artifact.currentVersionId!,
+      versionName: "   ",
+      contentType: artifact.contentType,
+      body: Buffer.from("docx-v2"),
+      actor,
+    })).rejects.toThrow("A non-empty version name is required for manual artifact versions");
+
+    const version = await svc.createWopiVersion({
+      companyId,
+      artifactId: artifact.id,
+      expectedVersionId: artifact.currentVersionId!,
+      versionName: "  Legal approval  ",
+      contentType: artifact.contentType,
+      body: Buffer.from("docx-v2"),
+      actor,
+    });
+
+    expect(version.versionName).toBe("Legal approval");
+    const versions = await svc.listVersions(companyId, artifact.id);
+    expect(versions.versions[0]?.versionName).toBe("Legal approval");
+    expect(versions.versions[0]?.isAutomatic).toBe(false);
+  });
+
   it("treats other file types as non-editable attachments with upload-only version control", async () => {
     const { companyId, issueId } = await setupCompanyIssue();
     const { svc } = await makeService();
