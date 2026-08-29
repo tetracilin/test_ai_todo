@@ -258,6 +258,14 @@ describe("issue validators", () => {
     expect(parsed.body).toBe("Progress update\n\nNext action.");
   });
 
+  it("accepts comment-only delivery without changing legacy agent delivery", () => {
+    expect(addIssueCommentSchema.parse({ body: "Keep this as a note." }).deliveryMode).toBe("agent");
+    expect(addIssueCommentSchema.parse({
+      body: "Keep this as a note.",
+      deliveryMode: "comment",
+    }).deliveryMode).toBe("comment");
+  });
+
   it("accepts structured issue comment presentation and metadata", () => {
     const parsed = addIssueCommentSchema.parse({
       body: "Paperclip needs a disposition before this issue can continue.",

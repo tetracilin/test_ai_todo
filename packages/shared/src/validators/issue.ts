@@ -691,6 +691,11 @@ export const addIssueCommentSchema = z.object({
   authorType: issueCommentAuthorTypeSchema.optional(),
   presentation: issueCommentPresentationSchema.nullable().optional(),
   metadata: issueCommentMetadataSchema.nullable().optional(),
+  /**
+   * A comment-only post is durable thread context, not a request to wake the
+   * assigned agent. Agent mode keeps the historical comment-to-run behavior.
+   */
+  deliveryMode: z.enum(["agent", "comment"]).optional().default("agent"),
   reopen: z.boolean().optional(),
   resume: z.boolean().optional(),
   interrupt: z.boolean().optional(),

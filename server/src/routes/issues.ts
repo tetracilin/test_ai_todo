@@ -12166,14 +12166,17 @@ export function issueRoutes(
       presentation: req.body.presentation,
       metadata: req.body.metadata,
     })) return;
-    const closedExecutionWorkspace = await getClosedIssueExecutionWorkspace(issue);
-
     const actor = getActorInfo(req);
     const commentPresentation = req.body.presentation ??
       await deriveRecoveryCommentPresentation(req, issue.companyId, req.body.body);
-    const reopenRequested = req.body.reopen === true;
-    const resumeRequested = req.body.resume === true;
-    const interruptRequested = req.body.interrupt === true;
+    const deliveryMode = req.body.deliveryMode;
+    const isCommentOnly = deliveryMode === "comment";
+    // Comment-only is durable thread context. It cannot resume work, reopen a
+    // terminal issue, interrupt a run, or rebuild a closed execution workspace.
+    const reopenRequested = !isCommentOnly && req.body.reopen === true;
+    const resumeRequested = !isCommentOnly && req.body.resume === true;
+    const interruptRequested = !isCommentOnly && req.body.interrupt === true;
+    const closedExecutionWorkspace = isCommentOnly ? null : await getClosedIssueExecutionWorkspace(issue);
     const isClosed = isClosedIssueStatus(issue.status);
     const isBlocked = issue.status === "blocked";
     const crossIssueCommentOnlyGrant =
@@ -12206,7 +12209,7 @@ export function issueRoutes(
     }
     const explicitMoveToTodoRequested = effectiveReopenRequested || effectiveResumeRequested === true;
     const scheduledRetryForHumanComment =
-      shouldHumanCommentResumeInProgressScheduledRetry({
+      !isCommentOnly && shouldHumanCommentResumeInProgressScheduledRetry({
         hasComment: true,
         issueStatus: issue.status,
         assigneeAgentId: issue.assigneeAgentId,
@@ -12226,6 +12229,7 @@ export function issueRoutes(
       actorId: actor.actorId,
     });
     const effectiveMoveToTodoRequested =
+      !isCommentOnly &&
       !assigneeSelfCommentOnTerminal &&
       (explicitMoveToTodoRequested ||
         shouldImplicitlyMoveCommentedIssueToTodo({
@@ -12384,6 +12388,7 @@ export function issueRoutes(
     const currentExecutionState = parseIssueExecutionState(currentIssue.executionState);
     const currentExecutionPolicy = normalizeIssueExecutionPolicy(currentIssue.executionPolicy ?? null);
     const shouldAutoApproveReviewComment =
+      !isCommentOnly &&
       currentIssue.status === "in_review" &&
       currentExecutionState?.status === "pending" &&
       actorMatchesExecutionParticipant(actor, currentExecutionState.currentParticipant ?? null) &&
@@ -12553,6 +12558,7 @@ export function issueRoutes(
       details: {
         commentId: comment.id,
         bodySnippet: comment.body.slice(0, 120),
+        deliveryMode,
         identifier: currentIssue.identifier,
         issueTitle: currentIssue.title,
         authorizationReason: commentAuthorizationReason,
@@ -12698,7 +12704,10 @@ export function issueRoutes(
       // Re-derive closed-ness from the post-mutation issue so the auto-approval
       // transition (in_review -> done) suppresses a stale `issue_commented` wake
       // to the returnAssignee for an already-completed issue.
-      const skipWake = selfComment || isClosedIssueStatus(wakeIssueSnapshot.status);
+      // A comment-only post is intentionally thread-only. No agent wake is
+      // created, including for mentions; Agent mode explicitly requests work.
+      const skipWake =
+        deliveryMode === "comment" || selfComment || isClosedIssueStatus(wakeIssueSnapshot.status);
       if (assigneeId && (reopened || !skipWake)) {
         if (reopened) {
           addWakeup(assigneeId, {
@@ -12776,24 +12785,28 @@ export function issueRoutes(
         logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
       }
 
-      for (const mentionedId of mentionedIds) {
-        if (actorIsAgent && actor.actorId === mentionedId) continue;
-        addWakeup(mentionedId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_comment_mentioned",
-          payload: { issueId: id, commentId: comment.id },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: {
-            issueId: id,
-            taskId: id,
-            commentId: comment.id,
-            wakeCommentId: comment.id,
-            wakeReason: "issue_comment_mentioned",
-            source: "comment.mention",
-          },
-        });
+      // Comment-only is an audit/thread note. Never turn its assignee or
+      // mentions into agent runs; users select Agent mode to request work.
+      if (deliveryMode !== "comment") {
+        for (const mentionedId of mentionedIds) {
+          if (actorIsAgent && actor.actorId === mentionedId) continue;
+          addWakeup(mentionedId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: { issueId: id, commentId: comment.id },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: id,
+              taskId: id,
+              commentId: comment.id,
+              wakeCommentId: comment.id,
+              wakeReason: "issue_comment_mentioned",
+              source: "comment.mention",
+            },
+          });
+        }
       }
 
       const becameDone = issueBeforeCommentDecision.status !== "done" && currentIssue.status === "done";
