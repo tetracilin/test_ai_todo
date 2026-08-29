@@ -103,6 +103,16 @@ describe("server adapter registry", () => {
     expect(listSelectableServerAdapters().map((entry) => entry.type)).not.toContain("process");
   });
 
+  // NLM-A10: generic heartbeat/recovery may invoke this adapter again, but
+  // each invocation is a fresh nlm process. Absence of both hooks is the
+  // explicit no-op session-resume contract; do not add a fake codec or ID.
+  it("keeps notebooklm_local one-shot with no session codec or session management", () => {
+    const adapter = requireServerAdapter("notebooklm_local");
+
+    expect(adapter.sessionCodec).toBeUndefined();
+    expect(adapter.sessionManagement).toBeUndefined();
+  });
+
   it("exposes adapter model profiles when adapters declare them", async () => {
     const adapterWithProfiles: ServerAdapterModule = {
       ...externalAdapter,

@@ -120,6 +120,38 @@ describe("notebooklm_local execute — args/env", () => {
     expect(opts.timeoutSec).toBe(60);
     expect(opts.graceSec).toBe(15);
   });
+
+  // NLM-A10: notebooklm_local is deliberately one-shot. A heartbeat or
+  // recovery wake may carry generic Paperclip runtime session state, but the
+  // adapter must neither consume it nor manufacture a resumable session.
+  it("ignores prior runtime session state and returns no session-resume metadata", async () => {
+    runChildProcessMock.mockResolvedValueOnce(processResult({ stdout: "[]" }));
+
+    const result = await execute(
+      baseContext({
+        runtime: {
+          sessionId: "stale-session-id",
+          sessionParams: { sessionId: "stale-session-id", resume: true },
+          sessionDisplayId: "stale-session-id",
+          taskKey: "issue-1",
+        },
+        config: { subcommand: "notebook", args: ["list", "--json"] },
+      }),
+    );
+
+    expect(result).not.toHaveProperty("sessionId");
+    expect(result).not.toHaveProperty("sessionParams");
+    expect(result).not.toHaveProperty("sessionDisplayId");
+    expect(result).not.toHaveProperty("clearSession");
+    expect(runChildProcessMock).toHaveBeenCalledTimes(1);
+    expect(runChildProcessMock.mock.calls[0]?.[2]).toEqual([
+      "notebook",
+      "list",
+      "--json",
+      "--profile",
+      "default",
+    ]);
+  });
 });
 
 describe("notebooklm_local execute — injection rejection", () => {
