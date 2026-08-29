@@ -14,22 +14,49 @@ export const models: Array<{ id: string; label: string }> = [];
 
 export const agentConfigurationDoc = `# NotebookLM agent configuration
 
-Use this adapter for one deterministic \`nlm\` command per run: notebook and
-source management, queries, research, or artifact generation. It has no
-conversational session resume and does not accept Google credentials.
+Status: isolated trial only. Do not configure for CEO lane, general-purpose
+autonomy, or production without separate approved rollout gate.
+
+Use this adapter for one deterministic \`nlm\` command per run: notebook/source
+management, queries, research, or artifact generation. It has no ACP transport,
+conversational session resume, session codec, or automatic Google login.
+
+Runtime topology:
+- Image binary: \`/usr/local/bin/nlm\` (baked into image; never install under
+  ephemeral \`/app\`).
+- Host profile store: \`/root/paperclip-data/notebooklm\` (human maintenance
+  only; never use this host path in container agent config).
+- Container profile store: \`/paperclip/notebooklm\` (set as
+  \`cookieStorePath\`; injected as \`NOTEBOOKLM_MCP_CLI_PATH\`).
+- Profile data is sensitive even though path itself is plain config: never read,
+  display, paste, export, or log its contents. The adapter is non-portable by
+  default; exports omit its host-local profile-store mapping.
 
 Required runtime settings:
-- \`command\`: \`nlm\` or an in-runtime absolute executable path.
+- \`command\`: \`/usr/local/bin/nlm\` or another verified in-runtime absolute
+  executable path.
 - \`profile\`: one existing \`nlm\` profile name, default \`default\`.
-- \`cookieStorePath\`: optional absolute runtime path mapped to
+- \`cookieStorePath\`: \`/paperclip/notebooklm\`, mapped to
   \`NOTEBOOKLM_MCP_CLI_PATH\`; never inspect or paste store contents.
 - \`subcommand\` and newline-delimited \`args\`: allowlisted \`nlm\` argv.
-- \`cwd\`, \`timeoutSec\`, \`graceSec\`: optional execution limits.
+- \`cwd\`, \`timeoutSec\`, \`graceSec\`: explicit bounded execution limits.
 
-Authentication is out-of-band only. If Test reports invalid authentication,
-an operator must run \`nlm login --profile <profile>\` in the same runtime and
-then rerun Test. This adapter never starts a browser or automatic Google login.
+Authentication is human out-of-band only. Authorized human runs
+\`nlm login --profile <profile>\` in same runtime with
+\`NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm\`, then runs
+\`nlm login --check --profile <profile>\`. Record pass/fail only; never raw
+output or account identity. Run environment Test after configuration and after
+any image, profile-path, or auth change. Invalid auth blocks for human action;
+this adapter never starts browser or automatic Google login.
 
-Do not use for arbitrary shell execution, credential storage, or a shared
-profile whose access should not be available to this agent.
+Use isolated trial agent and bounded, read-only smoke issues first:
+\`notebook list --json\` and \`login --check\`. Confirm bounded/redacted result,
+no profile data, and no circuit-breaker trip before any further trial work.
+
+Do not use for arbitrary shell execution, credential storage, cookie export, or
+shared profile whose access should not be available to this agent. On command
+missing/wrong-binary error verify \`/usr/local/bin/nlm\`; on profile-store error
+verify bind mount/permissions without reading files; on auth error require
+human re-authentication. Treat unexpected Google API behavior as protocol drift:
+stop automation and retain redacted diagnostics only.
 `;

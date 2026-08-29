@@ -1,96 +1,128 @@
-# NotebookLM Adapter Onboarding (Phase 0 — operator-only)
+# NotebookLM Adapter Onboarding
 
-Status: Phase 0 only. There is no `notebooklm_local` Paperclip adapter yet.
-This document tracks the operator-only `process`-adapter integration approved
-under card NLM-A01 (`t_8dd5eb9e`) and implemented card-by-card under the
-`notebooklm-adapter-v2` kanban set. See
-`/root/T3-text-repo/outputs/hermes/2026/08/2026-08-28-notebooklm-adapter-action-plan-review.md`
-for the full architecture plan and rollout gates.
+Status: isolated-trial only. `notebooklm_local` is a registered, selectable
+Paperclip built-in after NLM-A06. It is not approved for CEO-lane or production
+use. Production rollout needs a separate approved gate.
 
-## What exists today
+This guide supersedes old Phase-0-only wording. Architecture authority:
+`/root/T3-text-repo/outputs/hermes/2026/08/2026-08-28-notebooklm-adapter-action-plan-review.md`.
+Implementation runtime source: [Dockerfile](../Dockerfile).
 
-- The `nlm` CLI (`notebooklm-mcp-cli` v0.9.14, PyPI) is baked into the
-  production Paperclip image (`Dockerfile`, production stage) via `uv tool
-  install`, pinned to the version verified live in card NLM-C01.
-  - Binary: `/usr/local/bin/nlm` (image layer, immutable, no credentials).
-  - `uv`, the managed CPython 3.11 runtime, and the tool venv all live under
-    `/usr/local/...` (never `/app`, which is ephemeral / rebuilt on every
-    release) and are world-readable+executable so the non-root `node` runtime
-    user can invoke `nlm` directly.
-- Runtime auth/profile state is **not** in the image. It lives on the existing
-  Paperclip bind mount:
-  - Host: `/root/paperclip-data/notebooklm`
-  - Container: `/paperclip/notebooklm` (via the standing
-    `/root/paperclip-data -> /paperclip` bind mount)
-  - The container env var `NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm` is
-    baked into the image `ENV` block so every `nlm` invocation inside the
-    container resolves to this path automatically; do not hardcode the host
-    path `/root/paperclip-data/notebooklm` in any in-container config.
-  - Directories are mode `700`; credential files inside are mode `600`. One
-    Paperclip agent maps to one `nlm` profile.
-- Google auth for the `default` profile was completed once, out-of-band, by a
-  human via a temporary Tailscale-only noVNC bridge (card NLM-C02). Hermes/an
-  agent never entered or saw credentials. Auth persists across
-  `docker restart -t 30 paperclip` because the profile lives on the bind
-  mount, not in the container filesystem.
+## Runtime and profile topology
 
-## K10 selectability policy (explicit decision, card NLM-A01)
+`notebooklm-mcp-cli` v0.9.14 (`nlm`) is baked into Paperclip image through
+`uv tool install`. Runtime executable is `/usr/local/bin/nlm`. It is immutable
+image content and contains no profile or credentials. Never install into
+`/app`; `/app` is ephemeral on image replacement.
 
-Paperclip's server registry (`server/src/adapters/registry.ts`,
-`listSelectableServerAdapters()`) is hard-coded to return only the
-`hermes_gateway` adapter — this is the K10 Hermes-only product policy, and it
-is asserted by `server/src/__tests__/adapter-registry.test.ts`
-("offers Hermes Gateway as the sole built-in AI adapter") and enforced at
-agent-create/update time by `assertSelectableAdapterType()` in
-`server/src/routes/agents.ts`.
+Profile data stays outside image on Paperclip bind mount:
 
-**This policy is unchanged and must remain unchanged for Phase 0.** The
-built-in `process` adapter (`server/src/adapters/process/`) is already a
-registered `BUILTIN_ADAPTER_TYPE` but is *not* in the selectable set, so it
-cannot be chosen through the normal hire/create-agent UI or API paths that go
-through `assertSelectableAdapterType`. That is exactly the "operator-only"
-posture T3 approved: a `process`-adapter NotebookLM agent must be created
-directly (DB insert or an operator-scoped path), never exposed as a pickable
-option to ordinary users.
+| Location | Path | Use |
+| --- | --- | --- |
+| Host | `/root/paperclip-data/notebooklm` | Human-only profile maintenance |
+| Container | `/paperclip/notebooklm` | `notebooklm_local.cookieStorePath` and `NOTEBOOKLM_MCP_CLI_PATH` |
+| Image runtime | `/usr/local/bin/nlm` | `notebooklm_local.command` |
 
-Do not add `process` or a future `notebooklm_local` type to
-`listSelectableServerAdapters()` in Phase 0. `notebooklm_local` (Phase 1/2 of
-the plan) may only be exposed in the UI after:
+Container configuration must use `/paperclip/notebooklm`, never host path.
+Image sets `NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm`; keep
+`cookieStorePath` explicit in agent configuration so target is testable.
+Directories require mode `700`; credential files require mode `600`. Do not
+inspect, copy, attach, print, or log profile-store contents.
 
-1. Phase 0 (`process`-adapter MVP, card NLM-A02) returns an explicit GO, and
-2. A dedicated `notebooklm_local` adapter package exists with its own
-   registration/policy tests (cards NLM-A03–A06).
+## Allowed use
 
-## Phase 0 usage (operator-only)
+Use one isolated trial `notebooklm_local` agent for one bounded, allowlisted
+`nlm` operation per run: notebook/source management, query, research, or
+artifact generation. Use distinct existing profile when access boundaries
+require it. Run environment Test before first task and after any image,
+profile-path, or auth change.
 
-Configure one isolated `process` agent per NotebookLM use case with:
+Recommended trial configuration:
 
-- `command`: `/usr/local/bin/nlm` (verified in-runtime absolute path; do not
-  rely on `PATH` resolution inside the spawned process).
-- `args`: one deterministic subcommand per agent/task (e.g.
-  `["notebook", "list"]` or `["login", "--check"]`) — never a shell string.
-- `env.NOTEBOOKLM_MCP_CLI_PATH`: `/paperclip/notebooklm` (already the
-  container default via image `ENV`, but set explicitly on the agent config
-  too so the agent is self-describing and portable).
-- `cwd`, `timeoutSec`, `graceSec`: set explicitly; do not rely on adapter
-  defaults for a new integration.
+| Field | Value |
+| --- | --- |
+| `command` | `/usr/local/bin/nlm` |
+| `profile` | `default` or existing isolated profile |
+| `cookieStorePath` | `/paperclip/notebooklm` |
+| `subcommand` | Exact allowlisted top-level `nlm` command |
+| `args` | One argv item per line; use `--json` only when supported |
+| `cwd` | Explicit absolute runtime directory |
+| `timeoutSec` | Explicit bounded limit; default `60` |
+| `graceSec` | Explicit bounded grace period; default `15` |
 
-See card NLM-A02 for the smoke-test protocol (`nlm notebook list`,
-`nlm login --check`) and go/no-go acceptance.
+Adapter spawns argv arrays only. It rejects non-allowlisted subcommands,
+multiline/NUL arguments, relative command paths, and malformed runtime values
+before spawn or persistence. Output, JSON lists, and transcript lines are
+bounded and redacted by adapter/CLI renderers.
 
-## Non-goals for Phase 0
+## Do not use
 
-- No ACP transport, no conversational session codec.
-- No Google credential fields in any adapter config; no automatic OAuth login.
-- No DB migration.
-- No production rollout, no CEO-lane usage, no broad `process` selectability.
+- Do not use `process` as user-selectable NotebookLM workaround. It remains
+  operator-only.
+- Do not use NotebookLM in CEO lane, autonomous general-purpose work, or
+  production until separate rollout gate approves it.
+- Do not use for arbitrary shell execution, credential storage, cookie export,
+  or sharing profile with agents that must not receive its NotebookLM access.
+- Do not put cookies, OAuth material, Google passwords, or profile contents in
+  agent config, issue text, logs, comments, evidence, or support requests.
+- Do not expect ACP transport, conversational session resume, session codec,
+  or automatic Google login. Each run is one deterministic command.
+
+## Human OAuth flow
+
+1. Authorized human opens approved out-of-band interactive session in same
+   target runtime/profile store. Agents never enter credentials or operate
+   browser.
+2. Human runs `nlm login --profile <profile>` with target runtime's
+   `NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm`, completes Google OAuth, and
+   closes interactive session.
+3. Human or operator runs `nlm login --check --profile <profile>` in same
+   runtime. Record only pass/fail, not account identity or raw output.
+4. Configure isolated trial agent with that profile name and
+   `cookieStorePath=/paperclip/notebooklm`, then run Paperclip environment Test.
+5. Continue only when Test reports binary identity, profile-store access, and
+   valid authentication. Failed test blocks for human remediation; never
+   triggers automatic login.
+
+## Smoke protocol
+
+Use only isolated NotebookLM trial agent and non-CEO issues. Create two bounded
+read-only smoke issues:
+
+1. `notebook list --json`
+2. `login --check`
+
+For each, verify successful exit, bounded/redacted transcript, no profile or
+credential data, and no circuit-breaker trip. Expected trial result reports
+minimal command result state; raw profile contents and account identity are not
+evidence. Do not repeat failed auth probes in loop; stop and request human
+re-authentication.
+
+## Troubleshooting
+
+| Symptom | Action |
+| --- | --- |
+| `notebooklm_local_command_not_found` | Verify image contains `/usr/local/bin/nlm`; do not install under `/app`. |
+| `notebooklm_local_wrong_binary` | Set `command` to `/usr/local/bin/nlm`; rerun environment Test. |
+| Profile store inaccessible | Set container `cookieStorePath` to `/paperclip/notebooklm`; verify bind mount and permissions without reading files. |
+| `notebooklm_local_auth_failed` or invalid auth Test | Human completes out-of-band `nlm login --profile <profile>` in same runtime, then reruns Test. |
+| Timeout | Lower command scope, check bounded `timeoutSec`/`graceSec`, inspect redacted result metadata only. |
+| Config rejected | Use absolute `command`, `cookieStorePath`, and `cwd`; simple profile name; one non-empty one-line argv item per arg; allowlisted subcommand. |
+| Unexpected CLI/API behavior | Treat as unofficial Google API/protocol drift. Stop automation, retain only redacted diagnostics, require review. |
 
 ## Rollback
 
-- Revert the `Dockerfile` NLM-A01 hunk and redeploy the prior image; confirm
-  `nlm` is absent from a fresh container (`command -v nlm` fails).
-- No K10 policy code changes were made in Phase 0, so there is nothing to
-  revert there.
-- Removing the operator-created `process` agent and its test issues does not
-  touch the auth profile on the bind mount or this image change; they are
-  independent layers by design (see plan "Rollback" sections for A01/A02).
+1. Disable or remove isolated trial agent and trial issues. Do not delete,
+   inspect, or alter retained auth profile data.
+2. Disable `notebooklm_local` registration/selection through approved deployment
+   procedure, or revert deployment to prior approved image/config. Never patch
+   ephemeral `/app`.
+3. If image rollback is approved, deploy prior image and verify new container
+   does not provide `nlm`; verify normal Hermes Gateway agents remain available.
+4. Revert this document only when runtime facts are inaccurate. Keep incident
+   evidence redacted and preserve exact deployment/version decision separately.
+
+`notebooklm_local` is non-portable by default because profile-store mapping is
+host-local. Export/import must not carry `cookieStorePath` or imply auth
+portability. See [Hermes Gateway onboarding](HERMES_GATEWAY_ONBOARDING.md) for
+normal gateway-agent configuration, not NotebookLM OAuth.
