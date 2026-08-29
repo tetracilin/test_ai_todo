@@ -51,6 +51,11 @@ export const issues = pgTable(
     originRunId: text("origin_run_id"),
     originFingerprint: text("origin_fingerprint").notNull().default("default"),
     requestDepth: integer("request_depth").notNull().default(0),
+    // Manual progress percentage (0-100) for a task/subtask. Parents expose an
+    // aggregated progress derived from their direct children instead of this value.
+    progress: integer("progress").notNull().default(0),
+    // Ordering position among siblings sharing the same parent. Lower sorts first.
+    sortOrder: integer("sort_order").notNull().default(0),
     billingCode: text("billing_code"),
     assigneeAdapterOverrides: jsonb("assignee_adapter_overrides").$type<Record<string, unknown>>(),
     executionPolicy: jsonb("execution_policy").$type<Record<string, unknown>>(),
