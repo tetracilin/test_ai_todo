@@ -38,6 +38,14 @@ describe("ui adapter registry", () => {
     expect(listUIAdapters().some((adapter) => adapter.type === "external_test")).toBe(true);
   });
 
+  it("registers notebooklm_local with schema-driven config", () => {
+    const adapter = findUIAdapter("notebooklm_local");
+    expect(adapter).not.toBeNull();
+    expect(adapter?.label).toBe("NotebookLM (local)");
+    expect(adapter?.ConfigFields).toBe(SchemaConfigFields);
+    expect(listUIAdapters().filter((entry) => entry.type === "notebooklm_local")).toHaveLength(1);
+  });
+
   it("falls back to the process parser for unknown types after unregistering", () => {
     registerUIAdapter(externalUIAdapter);
 

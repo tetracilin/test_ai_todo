@@ -91,6 +91,11 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     description: "Kimi Code CLI harness",
     icon: Moon,
   },
+  notebooklm_local: {
+    label: "NotebookLM",
+    description: "Deterministic NotebookLM CLI harness",
+    icon: Bot,
+  },
   hermes_gateway: {
     label: "Hermes Gateway",
     description: "Remote Hermes API server",

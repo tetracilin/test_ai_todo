@@ -88,6 +88,15 @@ import {
   models as kimiModels,
 } from "@paperclipai/adapter-kimi-local";
 import {
+  execute as notebookLmLocalExecute,
+  testEnvironment as notebookLmLocalTestEnvironment,
+  getConfigSchema as getNotebookLmLocalConfigSchema,
+} from "@paperclipai/adapter-notebooklm-local/server";
+import {
+  agentConfigurationDoc as notebookLmLocalAgentConfigurationDoc,
+  models as notebookLmLocalModels,
+} from "@paperclipai/adapter-notebooklm-local";
+import {
   createHermesGatewayServerAdapter,
   createHermesLocalServerAdapter,
 } from "@paperclipai/hermes-paperclip-adapter";
@@ -410,6 +419,20 @@ const kimiLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: kimiAgentConfigurationDoc,
 };
 
+const notebookLmLocalAdapter: ServerAdapterModule = {
+  type: "notebooklm_local",
+  execute: notebookLmLocalExecute,
+  testEnvironment: notebookLmLocalTestEnvironment,
+  models: notebookLmLocalModels,
+  // nlm uses its host-local profile store, not the Paperclip API. Do not mint
+  // or expose a run JWT to this one-shot child process.
+  supportsLocalAgentJwt: false,
+  supportsInstructionsBundle: false,
+  requiresMaterializedRuntimeSkills: false,
+  agentConfigurationDoc: notebookLmLocalAgentConfigurationDoc,
+  getConfigSchema: getNotebookLmLocalConfigSchema,
+};
+
 const hermesGatewayAdapter = createHermesGatewayServerAdapter();
 
 const hermesLocalAdapter = createHermesLocalServerAdapter();
@@ -487,6 +510,7 @@ function registerBuiltInAdapters() {
 
     grokLocalAdapter,
     kimiLocalAdapter,
+    notebookLmLocalAdapter,
     hermesGatewayAdapter,
     hermesLocalAdapter,
     openclawGatewayAdapter,
@@ -695,8 +719,13 @@ export function listServerAdapters(): ServerAdapterModule[] {
 }
 
 export function listSelectableServerAdapters(): ServerAdapterModule[] {
-  const hermesGateway = findActiveServerAdapter("hermes_gateway");
-  return hermesGateway ? [hermesGateway] : [];
+  // K10 policy (T3 approval on NLM-A01): process remains operator-only.
+  // notebooklm_local may join the normal create/hire surface only after the
+  // Phase 0 GO and registration/policy tests; both gates are satisfied by
+  // NLM-A02 and NLM-A06 respectively.
+  return ["hermes_gateway", "notebooklm_local"]
+    .map((type) => findActiveServerAdapter(type))
+    .filter((adapter): adapter is ServerAdapterModule => adapter !== null);
 }
 
 /**

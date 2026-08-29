@@ -342,6 +342,39 @@ describe("agent routes adapter validation", () => {
     });
   });
 
+  it("creates a notebooklm_local agent through the approved selection scope", async () => {
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl)
+        .post("/api/companies/company-1/agents")
+        .send({
+          name: "Notebook Runner",
+          adapterType: "notebooklm_local",
+          adapterConfig: {
+            command: "nlm",
+            profile: "default",
+            cookieStorePath: "/paperclip/notebooklm",
+            subcommand: "notebook",
+            args: ["list"],
+          },
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const [createdCompanyId, createdInput] = mockAgentService.create.mock.calls.at(-1) ?? [];
+    expect(createdCompanyId).toBe("company-1");
+    expect(createdInput).toMatchObject({
+      adapterType: "notebooklm_local",
+      adapterConfig: {
+        command: "nlm",
+        profile: "default",
+        cookieStorePath: "/paperclip/notebooklm",
+        subcommand: "notebook",
+        args: ["list"],
+      },
+    });
+  });
+
   it("rejects Hermes Gateway agents without server-owned connection config", async () => {
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>
@@ -359,7 +392,7 @@ describe("agent routes adapter validation", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("rejects creating a codex_local agent because Hermes Gateway is sole", async () => {
+  it("rejects creating codex_local outside the K10-approved selection", async () => {
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)
@@ -394,7 +427,7 @@ describe("agent routes adapter validation", () => {
     expect(env.CODEX_HOME).toBeUndefined();
   });
 
-  it("rejects switching an existing agent to process because Hermes Gateway is sole", async () => {
+  it("rejects switching an existing agent to operator-only process", async () => {
     // The agent has the fixed Claude Code OAuth binding on the claude_local
     // adapter. A PATCH moves the agent to the process adapter and sends an empty
     // env in the same request. The route must forward the new adapter type and
@@ -577,7 +610,7 @@ describe("agent routes adapter validation", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
   });
 
-  it("rejects a registered external adapter outside the sole selection", async () => {
+  it("rejects a registered external adapter outside the K10-approved selection", async () => {
     const { registerServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter(externalAdapter);
     mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["some_other_adapter"]);
