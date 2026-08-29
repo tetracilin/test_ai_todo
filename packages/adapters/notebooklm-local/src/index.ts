@@ -29,7 +29,9 @@ Runtime topology:
 - Container profile store: \`/paperclip/notebooklm\` (set as
   \`cookieStorePath\`; injected as \`NOTEBOOKLM_MCP_CLI_PATH\`).
 - Profile data is sensitive even though path itself is plain config: never read,
-  display, paste, export, or log its contents. The adapter is non-portable by
+  display, paste, export, or log its contents. Its directory and credential
+  files must be readable by the runtime user; after human OAuth, repair
+  ownership without inspecting contents. The adapter is non-portable by
   default; exports omit its host-local profile-store mapping.
 
 Required runtime settings:

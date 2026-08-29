@@ -26,7 +26,9 @@ Profile data stays outside image on Paperclip bind mount:
 Container configuration must use `/paperclip/notebooklm`, never host path.
 Image sets `NOTEBOOKLM_MCP_CLI_PATH=/paperclip/notebooklm`; keep
 `cookieStorePath` explicit in agent configuration so target is testable.
-Directories require mode `700`; credential files require mode `600`. Do not
+Directories require mode `700`; credential files require mode `600`. The
+runtime user must own or read these paths; after human OAuth, verify ownership
+and repair it to the runtime user without reading profile contents. Do not
 inspect, copy, attach, print, or log profile-store contents.
 
 ## Allowed use

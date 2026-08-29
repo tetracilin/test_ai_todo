@@ -9,6 +9,7 @@ describe("NotebookLM agent configuration guidance", () => {
     expect(agentConfigurationDoc).toContain("/paperclip/notebooklm");
     expect(agentConfigurationDoc).toContain("out-of-band only");
     expect(agentConfigurationDoc).toContain("never starts browser or automatic Google login");
+    expect(agentConfigurationDoc).toContain("readable by the runtime user");
   });
 
   it("forbids credential disclosure and fake session semantics", () => {
