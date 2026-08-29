@@ -22,6 +22,7 @@ export {
 } from "./validators/decision.js";
 
 export { decisionEffectTargetIssueIds } from "./types/decision.js";
+export { aggregateSubtaskProgress } from "./issue-subtask-progress.js";
 
 export type {
   DecisionEffectStaleness,
@@ -979,6 +980,7 @@ export type {
   ExternalObjectSummaryItem,
   CompactIssue,
   Issue,
+  IssueSubtaskProgress,
   IssueChangeReceiptEntry,
   IssueChanges,
   IssueAssigneeAdapterOverrides,

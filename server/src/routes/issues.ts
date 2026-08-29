@@ -2362,6 +2362,8 @@ function toCompactIssue(issue: any): CompactIssue {
     status: issue.status,
     workMode: issue.workMode,
     priority: issue.priority,
+    progress: issue.progress ?? 0,
+    sortOrder: issue.sortOrder ?? 0,
     reviewPolicy: issue.reviewPolicy,
     assigneeAgentId: issue.assigneeAgentId,
     assigneeUserId: issue.assigneeUserId,
@@ -8978,6 +8980,24 @@ export function issueRoutes(
     await queueTaskWatchdogEvaluation(issue, actor.runId);
 
     res.status(201).json(issue);
+  });
+
+  router.get("/issues/:id/subtasks", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, getIssueById(req, id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    const subtasks = await svc.listSubtasks(issue.companyId, issue.id);
+    res.json(subtasks);
+  });
+
+  router.get("/issues/:id/subtasks/progress", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, getIssueById(req, id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    const progress = await svc.getSubtaskProgress(issue.id);
+    res.json(progress);
   });
 
   router.get("/issues/:id/accepted-plan-decompositions", async (req, res) => {

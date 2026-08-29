@@ -30,6 +30,8 @@ function issue(input: Partial<Issue> & Pick<Issue, "id" | "companyId" | "title">
     description: null,
     status: "todo",
     priority: "medium",
+    progress: 0,
+    sortOrder: 0,
     assigneeAgentId: null,
     assigneeUserId: null,
     checkoutRunId: null,

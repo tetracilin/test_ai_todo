@@ -56,6 +56,7 @@ import type {
   SuccessfulRunHandoffState,
 } from "@paperclipai/shared";
 import {
+  aggregateSubtaskProgress,
   clampIssueRequestDepth,
   extractAgentMentionIds,
   extractProjectMentionIds,
@@ -3205,6 +3206,8 @@ const issueListSelect = {
   workMode: issues.workMode,
   harnessKind: issues.harnessKind,
   priority: issues.priority,
+  progress: issues.progress,
+  sortOrder: issues.sortOrder,
   reviewPolicy: issues.reviewPolicy,
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
@@ -6051,6 +6054,29 @@ export function issueService(db: Db) {
 
     getByIdentifier: async (identifier: string) => {
       return getIssueByIdentifier(identifier);
+    },
+
+    // Aggregates progress across a parent's direct, visible children. `progress`
+    // is the mean of the children's stored `progress` values rounded to the
+    // nearest integer (0 when there are no children); `completed` counts the
+    // children whose progress has reached 100.
+    getSubtaskProgress: async (parentId: string) => {
+      const rows = await db
+        .select({ progress: issues.progress })
+        .from(issues)
+        .where(and(eq(issues.parentId, parentId), visibleIssueCondition()));
+      return aggregateSubtaskProgress(rows.map((row) => row.progress));
+    },
+
+    // Lists a parent's direct children ordered by their sortOrder (then creation
+    // time as a stable tiebreak).
+    listSubtasks: async (companyId: string, parentId: string) => {
+      const children = await issueService(db).list(companyId, { parentId });
+      return children.sort(
+        (a, b) =>
+          a.sortOrder - b.sortOrder ||
+          a.createdAt.getTime() - b.createdAt.getTime(),
+      );
     },
 
     getCurrentScheduledRetry: async (issueId: string) => {
