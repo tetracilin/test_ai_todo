@@ -8,7 +8,7 @@ import {
   WOPI_STAGING_CALLBACK_ORIGIN,
   type WopiSession,
   type WopiSessionStore,
-  wopiEditorActionUrl,
+  wopiEditorSessionPayload,
 } from "../services/wopi.js";
 import { logActivity } from "../services/index.js";
 
@@ -81,11 +81,12 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       actor: actorFromRequest(req),
     });
     const callback = `${WOPI_STAGING_CALLBACK_ORIGIN}/api/wopi/files/${encodeURIComponent(artifactId)}`;
-    res.status(201).json({
-      actionUrl: wopiEditorActionUrl(artifact.format).replace("{{WOPISrc}}", encodeURIComponent(callback)),
-      formParameters: { access_token: session.token, access_token_ttl: String(session.expiresAt) },
-      editorOrigin: "https://hostinger-kvm8-host.tail9831b.ts.net:8444",
-    });
+    res.status(201).json(wopiEditorSessionPayload({
+      format: artifact.format,
+      callbackUrl: callback,
+      token: session.token,
+      expiresAt: session.expiresAt,
+    }));
   });
 
   router.get("/wopi/files/:artifactId", async (req, res) => {

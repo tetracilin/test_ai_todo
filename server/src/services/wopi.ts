@@ -37,9 +37,22 @@ export function wopiTokenMatches(expected: string, received: string): boolean {
   return expectedBuffer.length === receivedBuffer.length && timingSafeEqual(expectedBuffer, receivedBuffer);
 }
 
-export function wopiEditorActionUrl(format: WopiDocumentFormat): string {
+export function wopiEditorActionUrl(format: WopiDocumentFormat, editorOrigin = WOPI_EDITOR_ORIGIN): string {
   const action = format === "docx" ? "edit" : "edit";
-  return `${WOPI_EDITOR_ORIGIN}/browser/dist/cool.html?WOPISrc={{WOPISrc}}&action=${action}`;
+  return `${editorOrigin}/browser/dist/cool.html?WOPISrc={{WOPISrc}}&action=${action}`;
+}
+
+export function wopiEditorSessionPayload(input: {
+  format: WopiDocumentFormat;
+  callbackUrl: string;
+  token: string;
+  expiresAt: number;
+}, editorOrigin = WOPI_EDITOR_ORIGIN) {
+  return {
+    actionUrl: wopiEditorActionUrl(input.format, editorOrigin).replace("{{WOPISrc}}", encodeURIComponent(input.callbackUrl)),
+    formParameters: { access_token: input.token, access_token_ttl: String(input.expiresAt) },
+    editorOrigin,
+  };
 }
 
 export function createWopiSessionStore(input: { now?: () => number; ttlMs?: number } = {}) {

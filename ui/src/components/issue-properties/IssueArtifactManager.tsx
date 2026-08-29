@@ -277,7 +277,7 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
         {artifact.format === "markdown" ? "Edit" : isOffice ? "Open editor" : "View versions"}
       </Button>
       <Dialog open={open} onOpenChange={closeEditor}>
-        <DialogContent className="flex h-(--artifact-editor-canvas-h) w-(--artifact-editor-canvas-w) max-w-none flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="flex h-(--artifact-editor-canvas-h) w-(--artifact-editor-canvas-w) max-w-none flex-col gap-0 overflow-hidden p-0 sm:!max-w-none">
           <DialogHeader className="border-b border-border px-6 py-4 pr-12">
             <DialogTitle className="flex items-center gap-2"><Icon className="h-5 w-5" />{artifact.name}</DialogTitle>
             <DialogDescription>
@@ -285,7 +285,7 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
             </DialogDescription>
           </DialogHeader>
           <div className="artifact-editor-layout grid min-h-0 flex-1">
-            <main className="min-h-0 overflow-auto p-4">
+            <main data-testid="artifact-editor-primary" className="min-h-0 overflow-auto p-4">
               {artifact.format === "markdown" ? (
                 <Textarea
                   aria-label={`Edit ${artifact.name}`}
@@ -311,6 +311,7 @@ function ArtifactEditor({ artifact, companyId, onDone }: { artifact: Artifact; c
                         <button type="submit">Open OpenOffice editor</button>
                       </form>
                       <iframe
+                        data-testid="artifact-editor-frame"
                         name={editorFrameName}
                         title={`OpenOffice editing area for ${artifact.name}`}
                         className="min-h-0 flex-1 rounded-md border border-border bg-muted/20"
