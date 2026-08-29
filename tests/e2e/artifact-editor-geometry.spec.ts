@@ -44,6 +44,7 @@ test("artifact OpenOffice editor keeps a 1200x800 primary DOM area at 1700x1100"
   const artifactRow = page.getByText("geometry.docx", { exact: true }).locator("xpath=../..");
   await expect(artifactRow).toBeVisible({ timeout: 30_000 });
   await artifactRow.getByRole("button", { name: "Open editor" }).click();
+  await page.getByRole("textbox", { name: "Version name for OpenOffice save" }).fill("Geometry verification");
   await page.getByRole("button", { name: "Edit with OpenOffice" }).click();
 
   const dialog = page.getByRole("dialog");
