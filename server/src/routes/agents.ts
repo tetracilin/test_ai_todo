@@ -92,6 +92,7 @@ import {
   refreshAdapterModels,
   requireServerAdapter,
 } from "../adapters/index.js";
+import { validateNotebookLmLocalAdapterConfig } from "../adapters/registry.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
@@ -1874,6 +1875,13 @@ export function agentRoutes(
         throw unprocessable(
           "Invalid hermes_gateway adapterConfig: apiBaseUrl and secret-backed apiKey are required",
         );
+      }
+      return;
+    }
+    if (adapterType === "notebooklm_local") {
+      const issues = validateNotebookLmLocalAdapterConfig(adapterConfig);
+      if (issues.length > 0) {
+        throw unprocessable(`Invalid notebooklm_local adapterConfig: ${issues.map((issue) => `${issue.key}: ${issue.message}`).join(" ")}`);
       }
       return;
     }

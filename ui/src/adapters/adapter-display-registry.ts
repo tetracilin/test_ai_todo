@@ -8,6 +8,7 @@
 import type { ComponentType } from "react";
 import {
   Bot,
+  BookOpen,
   Code,
 
   Moon,
@@ -94,7 +95,7 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
   notebooklm_local: {
     label: "NotebookLM",
     description: "Deterministic NotebookLM CLI harness",
-    icon: Bot,
+    icon: BookOpen,
   },
   hermes_gateway: {
     label: "Hermes Gateway",

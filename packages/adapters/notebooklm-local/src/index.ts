@@ -8,24 +8,28 @@
 // canonical plan (2026-08-28-notebooklm-adapter-action-plan-review.md).
 
 export const type = "notebooklm_local";
-export const label = "NotebookLM (local)";
+export const label = "NotebookLM";
 
 export const models: Array<{ id: string; label: string }> = [];
 
-export const agentConfigurationDoc = `# notebooklm_local agent configuration
+export const agentConfigurationDoc = `# NotebookLM agent configuration
 
-Adapter: notebooklm_local
+Use this adapter for one deterministic \`nlm\` command per run: notebook and
+source management, queries, research, or artifact generation. It has no
+conversational session resume and does not accept Google credentials.
 
-STATUS: scaffold only (NLM-A03). No execute/parse/config-schema behavior is
-implemented yet; this doc will be filled in by NLM-A04+ once the adapter is
-functional. Do not select this adapter type for a real agent yet.
+Required runtime settings:
+- \`command\`: \`nlm\` or an in-runtime absolute executable path.
+- \`profile\`: one existing \`nlm\` profile name, default \`default\`.
+- \`cookieStorePath\`: optional absolute runtime path mapped to
+  \`NOTEBOOKLM_MCP_CLI_PATH\`; never inspect or paste store contents.
+- \`subcommand\` and newline-delimited \`args\`: allowlisted \`nlm\` argv.
+- \`cwd\`, \`timeoutSec\`, \`graceSec\`: optional execution limits.
 
-Use when (planned, not yet implemented):
-- You want Paperclip to invoke the \`nlm\` NotebookLM CLI for deterministic
-  notebook/source/query/research operations.
+Authentication is out-of-band only. If Test reports invalid authentication,
+an operator must run \`nlm login --profile <profile>\` in the same runtime and
+then rerun Test. This adapter never starts a browser or automatic Google login.
 
-Don't use when:
-- You need a conversational session with resumable state (this adapter is
-  built as a one-shot deterministic invocation per issue, matching the
-  Phase 0 \`process\` adapter MVP evidence).
+Do not use for arbitrary shell execution, credential storage, or a shared
+profile whose access should not be available to this agent.
 `;

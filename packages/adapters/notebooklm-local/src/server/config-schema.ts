@@ -65,6 +65,77 @@ export function isAllowedNotebookLmLocalSubcommand(value: string): value is Note
   return NOTEBOOKLM_LOCAL_SUBCOMMAND_SET.has(value);
 }
 
+export interface NotebookLmLocalConfigValidationIssue {
+  key: "command" | "profile" | "cookieStorePath" | "cwd" | "timeoutSec" | "graceSec" | "subcommand" | "args";
+  message: string;
+}
+
+function asTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isSafeNotebookLmLocalArg(value: string): boolean {
+  return value.length > 0 && !value.includes("\0") && !/[\r\n]/.test(value);
+}
+
+/**
+ * Reject malformed runtime config before persistence. Binary/profile-store
+ * reachability belongs to testEnvironment because it depends on target runtime.
+ */
+export function validateNotebookLmLocalConfig(
+  config: Record<string, unknown>,
+): NotebookLmLocalConfigValidationIssue[] {
+  const issues: NotebookLmLocalConfigValidationIssue[] = [];
+  const command = asTrimmedString(config.command) || "nlm";
+  const profile = asTrimmedString(config.profile) || "default";
+  const cookieStorePath = asTrimmedString(config.cookieStorePath);
+  const cwd = asTrimmedString(config.cwd);
+  const subcommand = asTrimmedString(config.subcommand);
+  const args = config.args;
+
+  if (/\0|[\r\n]/.test(command) || /\s/.test(command)) {
+    issues.push({ key: "command", message: "command must be one bare command name or absolute path without whitespace." });
+  }
+  if (command.includes("/") && !command.startsWith("/")) {
+    issues.push({ key: "command", message: "command paths must be absolute." });
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profile)) {
+    issues.push({ key: "profile", message: "profile must be a simple nlm profile name." });
+  }
+  if (cookieStorePath && !cookieStorePath.startsWith("/")) {
+    issues.push({ key: "cookieStorePath", message: "cookieStorePath must be an absolute path." });
+  }
+  if (/\0|[\r\n]/.test(cookieStorePath)) {
+    issues.push({ key: "cookieStorePath", message: "cookieStorePath must not contain control characters." });
+  }
+  if (cwd && !cwd.startsWith("/")) {
+    issues.push({ key: "cwd", message: "cwd must be an absolute path." });
+  }
+  if (/\0|[\r\n]/.test(cwd)) {
+    issues.push({ key: "cwd", message: "cwd must not contain control characters." });
+  }
+  if (!isAllowedNotebookLmLocalSubcommand(subcommand)) {
+    issues.push({ key: "subcommand", message: "subcommand must be one of the allowlisted nlm commands." });
+  }
+  if (Array.isArray(args) && !args.every((value) => typeof value === "string" && isSafeNotebookLmLocalArg(value))) {
+    issues.push({ key: "args", message: "each argument must be a non-empty single line." });
+  }
+  if (typeof args === "string" && !args.split(/\r?\n/).filter(Boolean).every(isSafeNotebookLmLocalArg)) {
+    issues.push({ key: "args", message: "each argument must be a non-empty single line." });
+  }
+  if (typeof args !== "undefined" && typeof args !== "string" && !Array.isArray(args)) {
+    issues.push({ key: "args", message: "args must be newline-delimited text or an array of strings." });
+  }
+
+  for (const [key, value] of [["timeoutSec", config.timeoutSec], ["graceSec", config.graceSec]] as const) {
+    if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value) || value < 0)) {
+      issues.push({ key, message: `${key} must be a non-negative integer.` });
+    }
+  }
+
+  return issues;
+}
+
 export function getConfigSchema(): AdapterConfigSchema {
   return {
     fields: [
@@ -80,7 +151,7 @@ export function getConfigSchema(): AdapterConfigSchema {
         label: "Auth profile",
         type: "text",
         default: "default",
-        hint: "nlm auth profile name (see \"nlm login --profile <name>\"). Never put credentials or cookies in this field.",
+        hint: "nlm auth profile name. Never put credentials or cookies here. If Test reports invalid auth, an operator must run `nlm login --profile <name>` out of band in this runtime; this adapter never logs in automatically.",
       },
       {
         key: "cookieStorePath",
@@ -93,6 +164,7 @@ export function getConfigSchema(): AdapterConfigSchema {
         label: "nlm subcommand",
         type: "select",
         required: true,
+        default: "notebook",
         options: NOTEBOOKLM_LOCAL_SUBCOMMANDS.map((value) => ({ label: value, value })),
         hint: "Top-level nlm command, restricted to the live-captured v0.9.14 --help surface. Any other value is rejected before spawn.",
       },

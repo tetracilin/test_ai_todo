@@ -375,6 +375,33 @@ describe("agent routes adapter validation", () => {
     });
   });
 
+  it("rejects malformed notebooklm_local config before it is persisted", async () => {
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl)
+        .post("/api/companies/company-1/agents")
+        .send({
+          name: "Unsafe Notebook Runner",
+          adapterType: "notebooklm_local",
+          adapterConfig: {
+            command: "nlm --unsafe",
+            profile: "default profile",
+            cookieStorePath: "relative/store",
+            cwd: "relative/cwd",
+            subcommand: "not-allowed",
+            args: ["list", "two\nlines"],
+            timeoutSec: -1,
+            graceSec: 1.5,
+          },
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("Invalid notebooklm_local adapterConfig");
+    expect(String(res.body.error ?? "")).toContain("subcommand");
+    expect(mockAgentService.create).not.toHaveBeenCalled();
+  });
+
   it("rejects Hermes Gateway agents without server-owned connection config", async () => {
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>

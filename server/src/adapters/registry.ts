@@ -91,6 +91,7 @@ import {
   execute as notebookLmLocalExecute,
   testEnvironment as notebookLmLocalTestEnvironment,
   getConfigSchema as getNotebookLmLocalConfigSchema,
+  validateNotebookLmLocalConfig,
 } from "@paperclipai/adapter-notebooklm-local/server";
 import {
   agentConfigurationDoc as notebookLmLocalAgentConfigurationDoc,
@@ -432,6 +433,12 @@ const notebookLmLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: notebookLmLocalAgentConfigurationDoc,
   getConfigSchema: getNotebookLmLocalConfigSchema,
 };
+
+export function validateNotebookLmLocalAdapterConfig(
+  config: Record<string, unknown>,
+): Array<{ key: string; message: string }> {
+  return validateNotebookLmLocalConfig(config);
+}
 
 const hermesGatewayAdapter = createHermesGatewayServerAdapter();
 
