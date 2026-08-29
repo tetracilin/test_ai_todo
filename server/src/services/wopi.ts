@@ -1,8 +1,15 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { ArtifactActor } from "./artifacts.js";
 
-export const WOPI_EDITOR_ORIGIN = "https://hostinger-kvm8-host.tail9831b.ts.net:8444";
-export const WOPI_STAGING_CALLBACK_ORIGIN = "https://hostinger-kvm8-host.tail9831b.ts.net:8445";
+const DEFAULT_WOPI_EDITOR_ORIGIN = "https://hostinger-kvm8-host.tail9831b.ts.net:8444";
+const DEFAULT_WOPI_STAGING_CALLBACK_ORIGIN = "https://hostinger-kvm8-host.tail9831b.ts.net:8445";
+
+// These explicit staging-only deployment values prevent an isolated test
+// container from sending Collabora callbacks to another staging instance.
+// Production keeps the reviewed defaults unless it opts in at deployment time.
+export const WOPI_EDITOR_ORIGIN = process.env.PAPERCLIP_WOPI_EDITOR_ORIGIN?.trim() || DEFAULT_WOPI_EDITOR_ORIGIN;
+export const WOPI_STAGING_CALLBACK_ORIGIN =
+  process.env.PAPERCLIP_WOPI_CALLBACK_ORIGIN?.trim() || DEFAULT_WOPI_STAGING_CALLBACK_ORIGIN;
 const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
 
 export type WopiDocumentFormat = "docx" | "xlsx";

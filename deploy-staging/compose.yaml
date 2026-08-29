@@ -49,6 +49,8 @@ services:
       # Staging-only office editor bridge. Production stays disabled unless this
       # explicit environment gate is set on its own deployment.
       PAPERCLIP_WOPI_STAGING_ENABLED: ${PAPERCLIP_WOPI_STAGING_ENABLED:-false}
+      PAPERCLIP_WOPI_EDITOR_ORIGIN: ${PAPERCLIP_WOPI_EDITOR_ORIGIN:-https://hostinger-kvm8-host.tail9831b.ts.net:8444}
+      PAPERCLIP_WOPI_CALLBACK_ORIGIN: ${PAPERCLIP_WOPI_CALLBACK_ORIGIN:-}
       # Optional least-privilege MinIO source for artifact open-file flow.
       # Credentials resolve from Docker secrets by reference name, never env.
       PAPERCLIP_STORAGE_EXTERNAL_LABEL: ${PAPERCLIP_STORAGE_EXTERNAL_LABEL:-NAS MinIO}
