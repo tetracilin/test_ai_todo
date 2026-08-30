@@ -333,6 +333,31 @@ describe("TaskChatComposer", () => {
     expect(onAdd).toHaveBeenCalledWith("do the plan", undefined, undefined);
   });
 
+  it("adopts an external work-mode change unless the user has a pending selection", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onWorkModeChange = vi.fn().mockResolvedValue(undefined);
+    const base = { onAdd, onWorkModeChange };
+    render(<TaskChatComposer {...base} workMode="standard" />);
+
+    const chip = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!;
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("standard");
+
+    // External change (e.g. the Plan tab's "Ask agent to plan" CTA puts the
+    // task into planning mode): with no pending selection the composer adopts it.
+    render(<TaskChatComposer {...base} workMode="planning" />);
+    await flushAsync();
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("planning");
+    expect(chip.textContent).toContain("Plan");
+
+    // A pending user selection (Shift+Tab) is never clobbered by later
+    // external changes — it stays until the user commits it at submit time.
+    pressKey("Tab", { shiftKey: true });
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("ask");
+    render(<TaskChatComposer {...base} workMode="standard" />);
+    await flushAsync();
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("ask");
+  });
+
   it("posts comment-only delivery without changing work mode or invoking agent delivery", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
     const onWorkModeChange = vi.fn().mockResolvedValue(undefined);

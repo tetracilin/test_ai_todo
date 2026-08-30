@@ -61,27 +61,50 @@ function formatRunDate(value: string | Date | null | undefined) {
   return Number.isNaN(date.getTime()) ? "unknown start" : date.toLocaleString();
 }
 
-function formatRunDuration(run: WorkerLogRun) {
-  const start = run.startedAt ?? run.createdAt;
-  if (!start) return null;
-  const end = run.finishedAt ?? (isActiveRun(run) ? new Date() : null);
-  if (!end) return null;
-  const startMs = new Date(start).getTime();
-  const endMs = end instanceof Date ? end.getTime() : new Date(end).getTime();
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
-  const totalSeconds = Math.max(0, Math.round((endMs - startMs) / 1000));
+/**
+ * Human-readable run duration from startedAt → finishedAt. Returns null when
+ * either bound is missing/invalid or the interval is negative (TVR-W02).
+ */
+function formatRunDuration(startedAt: string | Date | null | undefined, finishedAt: string | Date | null | undefined): string | null {
+  if (!startedAt || !finishedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const finish = new Date(finishedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(finish)) return null;
+  const totalSeconds = Math.max(0, Math.round((finish - start) / 1000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (minutes < 60) return `${minutes}m ${seconds}s`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
+/**
+ * Attempt/retry relation for a run selector entry: the original run's short ID
+ * when the run is a retry, so the chain stays visible in the dropdown (TVR-W02).
+ */
+function retryRelationLabel(run: Pick<WorkerLogRun, "retryOfRunId">): string | null {
+  if (!run.retryOfRunId) return null;
+  const target = run.retryOfRunId.length > 8 ? run.retryOfRunId.slice(0, 8) : run.retryOfRunId;
+  return `retry of ${target}`;
 }
 
 function runLabel(run: WorkerLogRun, agentMap: ReadonlyMap<string, Pick<Agent, "name">>) {
   const agent = agentMap.get(run.agentId)?.name ?? run.agentId.slice(0, 8);
-  const retry = run.retryOfRunId ? " retry" : "";
-  const duration = formatRunDuration(run);
-  return `${run.runId.slice(0, 8)} · ${agent} · ${runStatusLabel(run.status)}${retry} · ${formatRunDate(run.startedAt ?? run.createdAt)}${duration ? ` · ${duration}` : ""}`;
+  const duration = formatRunDuration(run.startedAt, run.finishedAt);
+  // Live runs have no finishedAt yet: surface "active" in the duration slot
+  // instead of dropping it (a terminal run missing finishedAt gets no slot).
+  const durationSlot = duration ?? (isActiveRun(run) ? "active" : null);
+  const retry = retryRelationLabel(run);
+  return [
+    run.runId.slice(0, 8),
+    agent,
+    runStatusLabel(run.status),
+    durationSlot,
+    retry,
+    formatRunDate(run.startedAt ?? run.createdAt),
+  ].filter((part): part is string => Boolean(part)).join(" · ");
 }
 
 function logErrorMessage(error: unknown) {

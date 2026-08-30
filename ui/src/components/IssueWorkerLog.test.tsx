@@ -336,4 +336,38 @@ describe("IssueWorkerLogContent", () => {
     expect((container.querySelector("pre")?.className ?? "").includes("overflow-auto")).toBe(true);
     expect((container.querySelector("pre")?.className ?? "").includes("max-h-96")).toBe(true);
   });
+
+  it("lists duration and retry relation in the run selector (TVR-W02)", async () => {
+    render({
+      runs: [
+        createRun({ runId: "run-aaaa" }),
+        createRun({
+          runId: "run-bbbb",
+          retryOfRunId: "run-aaaa",
+          startedAt: "2026-08-30T11:00:00.000Z",
+          finishedAt: "2026-08-30T11:02:30.000Z",
+        }),
+      ],
+    });
+    await flush();
+
+    // Newest first: the retry lands at index 0.
+    const options = [...container.querySelectorAll("option")];
+    expect(options[0]?.textContent).toContain("run-bbbb");
+    expect(options[0]?.textContent).toContain("2m 30s");
+    expect(options[0]?.textContent).toContain("retry of run-aaaa");
+    // The original run keeps its own 60s duration and no retry relation.
+    expect(options[1]?.textContent).toContain("run-aaaa");
+    expect(options[1]?.textContent).toContain("1m");
+    expect(options[1]?.textContent).not.toContain("retry of");
+  });
+
+  it("marks a live run as active instead of a duration in the selector (TVR-W02)", async () => {
+    render({ runs: [createRun({ status: "running", finishedAt: null })] });
+    await flush();
+    const option = container.querySelector("option");
+    expect(option?.textContent).toContain("Running");
+    expect(option?.textContent).toContain("active");
+    expect(option?.textContent).not.toContain("duration");
+  });
 });
