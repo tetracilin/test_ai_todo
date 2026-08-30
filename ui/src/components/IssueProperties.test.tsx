@@ -16,6 +16,7 @@ import type { Issue, IssueDocument } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueProperties } from "./IssueProperties";
 import { queryKeys } from "../lib/queryKeys";
+import { ApiError } from "../api/client";
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -460,6 +461,7 @@ describe("IssueProperties", () => {
     mockSidebarState.isMobile = false;
     container = document.createElement("div");
     document.body.appendChild(container);
+    window.sessionStorage.clear();
     mockAgentsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
@@ -503,6 +505,7 @@ describe("IssueProperties", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
+    window.sessionStorage.clear();
   });
 
   it("keeps the Plan tab visible for a planning-mode issue without a plan document", async () => {
@@ -539,6 +542,83 @@ describe("IssueProperties", () => {
       expect(container.textContent).toContain("A plan confirmation is pending, but the plan document it should confirm is missing.");
     });
 
+    act(() => root.unmount());
+  });
+
+  it("keeps Plan and Artifacts tabs visible for an empty task and restores its selected tab", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableClassicTaskInterface: false,
+    });
+    const issue = createIssue({ id: "issue-empty" });
+    const props = {
+      issue,
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    } satisfies ComponentProps<typeof IssueProperties>;
+    const { root } = renderPropertiesWithQueryClient(container, props);
+
+    await waitForAssertion(() => {
+      const labels = Array.from(container.querySelectorAll("button")).map((button) => button.textContent);
+      expect(labels).toContain("Plan");
+      expect(labels).toContain("Artifacts");
+    });
+
+    const artifactsTab = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Artifacts");
+    await act(async () => {
+      artifactsTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No artifacts yet.");
+      expect(window.sessionStorage.getItem("taskChatRedesign.propertiesPaneTab:issue-empty")).toBe("artifacts");
+    });
+
+    act(() => root.unmount());
+    const remount = renderPropertiesWithQueryClient(container, props);
+    await waitForAssertion(() => {
+      const selectedArtifactsTab = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Artifacts");
+      expect(selectedArtifactsTab?.getAttribute("data-state")).toBe("active");
+    });
+    act(() => remount.root.unmount());
+  });
+
+  it("keeps empty document tabs useful when their content cannot load", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableClassicTaskInterface: false,
+    });
+    mockIssuesApi.getDocument.mockRejectedValue(new ApiError("Plan unavailable", 500, null));
+    mockIssuesApi.listAttachments.mockRejectedValue(new ApiError("Artifacts unavailable", 500, null));
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-load-error" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Artifacts")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Plan could not be loaded.");
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Retry")).toBe(true);
+    });
+
+    const artifactsTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Artifacts");
+    await act(async () => {
+      artifactsTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Artifacts could not be loaded.");
+    });
     act(() => root.unmount());
   });
 
@@ -586,10 +666,15 @@ describe("IssueProperties", () => {
       inline: true,
     } satisfies ComponentProps<typeof IssueProperties>;
     const { root, queryClient } = renderPropertiesWithQueryClient(container, props);
+    const planTab = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
     await waitForAssertion(() => {
-      const planTab = Array.from(container.querySelectorAll("button"))
+      const selectedPlanTab = Array.from(container.querySelectorAll("button"))
         .find((button) => button.textContent === "Plan");
-      expect(planTab?.getAttribute("data-state")).toBe("active");
+      expect(selectedPlanTab?.getAttribute("data-state")).toBe("active");
     });
 
     await act(async () => {

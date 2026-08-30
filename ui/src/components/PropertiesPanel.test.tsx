@@ -105,16 +105,16 @@ describe("PropertiesPanel", () => {
       });
     });
 
-    it("renders the default 322px width with a drag grip and a maximize button", async () => {
+    it("renders the default 360px width with a drag grip and a maximize button", async () => {
       await renderPanel();
       const aside = container.querySelector("aside");
       expect(aside).not.toBeNull();
-      expect(aside!.style.width).toBe("322px");
+      expect(aside!.style.width).toBe("360px");
       expect(aside!.querySelector('[role="separator"][aria-label="Resize panel"]')).not.toBeNull();
       expect(container.querySelector('[aria-label="Maximize panel"]')).not.toBeNull();
       const inner = aside!.querySelector<HTMLDivElement>(":scope > div:not([role])");
-      expect(inner!.style.width).toBe("322px");
-      expect(inner!.style.minWidth).toBe("322px");
+      expect(inner!.style.width).toBe("360px");
+      expect(inner!.style.minWidth).toBe("360px");
     });
 
     it("restores a remembered width from localStorage (clamped to the minimum)", async () => {
@@ -123,16 +123,28 @@ describe("PropertiesPanel", () => {
       expect(container.querySelector("aside")!.style.width).toBe("300px");
     });
 
-    it("clamps a stored width below the 260px minimum", async () => {
+    it("clamps a stored width below the 300px minimum", async () => {
       window.localStorage.setItem("taskChatRedesign.propertiesPaneWidth", "100");
       await renderPanel();
-      expect(container.querySelector("aside")!.style.width).toBe("260px");
+      expect(container.querySelector("aside")!.style.width).toBe("300px");
     });
 
     it("falls back to the default width when the stored value is garbage", async () => {
       window.localStorage.setItem("taskChatRedesign.propertiesPaneWidth", "not-a-number");
       await renderPanel();
-      expect(container.querySelector("aside")!.style.width).toBe("322px");
+      expect(container.querySelector("aside")!.style.width).toBe("360px");
+    });
+
+    it("supports keyboard resizing with an announced current width", async () => {
+      await renderPanel();
+      const grip = container.querySelector<HTMLDivElement>('[role="separator"][aria-label="Resize panel"]');
+      expect(grip?.getAttribute("tabindex")).toBe("0");
+      expect(grip?.getAttribute("aria-valuenow")).toBe("360");
+      grip!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await flushReact();
+      expect(container.querySelector("aside")!.style.width).toBe("380px");
+      expect(grip?.getAttribute("aria-valuenow")).toBe("380");
+      expect(window.localStorage.getItem("taskChatRedesign.propertiesPaneWidth")).toBe("380");
     });
 
     it("keeps the collapse-to-0 behavior when the panel is hidden", async () => {
