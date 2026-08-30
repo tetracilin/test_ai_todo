@@ -117,4 +117,43 @@ describe("ProjectStorageConfig", () => {
     expect(container.querySelector("#project-minio-nas-folder")).toBeNull();
     expect(container.textContent).not.toContain("secret");
   });
+
+  it("preserves disabled MinIO NAS storage while saving a local folder", async () => {
+    api.getStorageConfig.mockResolvedValue({
+      projectId: "project-1",
+      repoLocalFolder: "/repo/project-1",
+      minio: {
+        enabled: false,
+        consoleUrl: null,
+        bucket: null,
+        nasFolder: "/projects/persisted",
+      },
+    });
+    api.updateStorageConfig.mockResolvedValue({
+      projectId: "project-1",
+      repoLocalFolder: "/repo/project-1-updated",
+      minio: {
+        enabled: false,
+        consoleUrl: null,
+        bucket: null,
+        nasFolder: "/projects/persisted",
+      },
+    });
+
+    render();
+    await waitFor(() => expect(container.querySelector<HTMLInputElement>("#project-repo-local-folder")).not.toBeNull());
+
+    const localFolderInput = container.querySelector<HTMLInputElement>("#project-repo-local-folder")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(localFolderInput, "/repo/project-1-updated");
+      localFolderInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => container.querySelector<HTMLButtonElement>("button")!.click());
+
+    await waitFor(() => expect(api.updateStorageConfig).toHaveBeenCalledTimes(1));
+    const request = api.updateStorageConfig.mock.calls[0]?.[1];
+    expect(request).toEqual({ repoLocalFolder: "/repo/project-1-updated" });
+    expect(request).not.toHaveProperty("nasFolder");
+  });
 });
