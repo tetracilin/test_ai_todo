@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
+import { agentWakeupRequests, agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   agentSkillSyncSchema,
@@ -56,6 +56,7 @@ import {
   issueRecoveryActionService,
   issueService,
   logActivity,
+  projectService,
   syncInstructionsBundleConfigFromFilePath,
   workspaceOperationService,
 } from "../services/index.js";
@@ -223,6 +224,61 @@ function readRunIssueId(context: Record<string, unknown> | null) {
   return typeof nestedIssueId === "string" && isUuidLike(nestedIssueId) ? nestedIssueId : null;
 }
 
+const AGENT_HELP_SCHEMA_VERSION = "agent_help.task_context.v1";
+const AGENT_HELP_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const AGENT_HELP_SECRET_RE = /(?:-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----|\b(?:bearer|basic)\s+[a-z0-9+/_=-]{12,}|\beyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b|\b(?:api[_-]?key|token|password|secret)\s*=\s*[^\s]+)/i;
+
+type AgentHelpPayload = {
+  schema_version: typeof AGENT_HELP_SCHEMA_VERSION;
+  task: {
+    id: string;
+    title: string;
+    description: string | null;
+    current_status: string;
+  };
+  project: {
+    id: string | null;
+    goal: string | null;
+  };
+};
+
+function agentHelpError(status: number, code: string, message: string): HttpError {
+  return new HttpError(status, message, { code });
+}
+
+function normalizeAgentHelpText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value
+    .normalize("NFC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+    .trim();
+}
+
+function requireAgentHelpText(value: unknown, limit: number): string {
+  const normalized = normalizeAgentHelpText(value);
+  if (!normalized || Array.from(normalized).length > limit) {
+    throw agentHelpError(422, "TASK_CONTEXT_INVALID", "Task context is incomplete or invalid.");
+  }
+  return normalized;
+}
+
+function optionalAgentHelpText(value: unknown, limit: number): string | null {
+  const normalized = normalizeAgentHelpText(value);
+  if (!normalized) return null;
+  return Array.from(normalized).slice(0, limit).join("");
+}
+
+function assertAgentHelpNoSecrets(values: Array<string | null>) {
+  if (values.some((value) => value && AGENT_HELP_SECRET_RE.test(value))) {
+    throw agentHelpError(
+      422,
+      "TASK_CONTEXT_CONTAINS_SECRET",
+      "Task context cannot be sent to an agent. Remove secrets and retry.",
+    );
+  }
+}
+
 export function agentRoutes(
   db: Db,
   options: {
@@ -309,6 +365,7 @@ export function agentRoutes(
 
   const router = Router();
   const svc = agentService(db);
+  const projectsSvc = projectService(db);
   const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
@@ -5223,6 +5280,138 @@ export function agentRoutes(
       agentName: agent.name,
       adapterType: agent.adapterType,
       outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
+    });
+  });
+
+  router.post("/issues/:issueId/agent-help", async (req, res) => {
+    assertAuthenticated(req);
+    const rawIssueId = req.params.issueId as string;
+    if (!rawIssueId || Buffer.byteLength(rawIssueId, "utf8") > 200) {
+      throw agentHelpError(400, "INVALID_AGENT_HELP_REQUEST", "Agent-help request is invalid.");
+    }
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body) || Object.keys(req.body).length !== 0) {
+      throw agentHelpError(400, "INVALID_AGENT_HELP_REQUEST", "Agent-help request is invalid.");
+    }
+    const header = req.header("Idempotency-Key");
+    if (!header || !AGENT_HELP_UUID_RE.test(header)) {
+      throw agentHelpError(400, "INVALID_AGENT_HELP_REQUEST", "Agent-help request is invalid.");
+    }
+
+    const identifier = normalizeIssueIdentifier(rawIssueId);
+    const issueSvc = issueService(db);
+    const issue = await (identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawIssueId));
+    if (!issue) {
+      throw agentHelpError(404, "TASK_NOT_FOUND", "Task not found.");
+    }
+    if (!hasCompanyAccess(req, issue.companyId)) {
+      throw agentHelpError(403, "TASK_ACCESS_DENIED", "You do not have access to this task.");
+    }
+    try {
+      assertCompanyAccess(req, issue.companyId);
+    } catch {
+      throw agentHelpError(403, "TASK_ACCESS_DENIED", "You do not have access to this task.");
+    }
+
+    const actor = getActorInfo(req);
+    const idempotencyKey = `agent-help:${actor.actorType}:${actor.actorId}:${issue.id}:${header}`;
+    const existingWake = await db
+      .select({ runId: agentWakeupRequests.runId })
+      .from(agentWakeupRequests)
+      .where(and(
+        eq(agentWakeupRequests.companyId, issue.companyId),
+        eq(agentWakeupRequests.idempotencyKey, idempotencyKey),
+      ))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (existingWake?.runId) {
+      const existingRun = await heartbeat.getRun(existingWake.runId);
+      if (existingRun) {
+        res.status(202).json({
+          launch_id: existingRun.id,
+          issue_id: issue.id,
+          status: "already_queued",
+          accepted_at: new Date(existingRun.createdAt).toISOString(),
+        });
+        return;
+      }
+    }
+
+    const title = requireAgentHelpText(issue.title, 500);
+    const currentStatus = requireAgentHelpText(issue.status, 100);
+    const description = optionalAgentHelpText(issue.description, 20_000);
+    let projectId: string | null = null;
+    let projectGoal: string | null = null;
+    if (issue.projectId) {
+      const project = await projectsSvc.getById(issue.projectId);
+      if (project && project.companyId === issue.companyId) {
+        projectId = project.id;
+        const legacyGoal = project.goalId
+          ? project.goals.find((goal) => goal.id === project.goalId) ?? null
+          : null;
+        const soleGoal = project.goals.length === 1 ? project.goals[0] ?? null : null;
+        projectGoal = optionalAgentHelpText((legacyGoal ?? soleGoal)?.title, 10_000);
+      }
+    }
+
+    assertAgentHelpNoSecrets([title, currentStatus, description, projectGoal]);
+    const payload: AgentHelpPayload = {
+      schema_version: AGENT_HELP_SCHEMA_VERSION,
+      task: {
+        id: requireAgentHelpText(issue.id, 200),
+        title,
+        description,
+        current_status: currentStatus,
+      },
+      project: {
+        id: projectId,
+        goal: projectGoal,
+      },
+    };
+
+    if (!issue.assigneeAgentId) {
+      throw agentHelpError(503, "AGENT_LAUNCH_UNAVAILABLE", "Assigned agent is unavailable. Assign an agent and retry.");
+    }
+    const assignedAgent = await svc.getById(issue.assigneeAgentId);
+    if (!assignedAgent || assignedAgent.companyId !== issue.companyId || assignedAgent.adapterType !== "hermes_gateway") {
+      throw agentHelpError(503, "AGENT_LAUNCH_UNAVAILABLE", "Assigned agent is unavailable. Assign a Hermes agent and retry.");
+    }
+
+    let run: Awaited<ReturnType<typeof heartbeat.wakeup>>;
+    try {
+      run = await heartbeat.wakeup(assignedAgent.id, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "agent_help_requested",
+        idempotencyKey,
+        requestedByActorType: actor.actorType,
+        requestedByActorId: actor.actorId,
+        payload: { issueId: issue.id, agent_help: payload },
+        contextSnapshot: { issueId: issue.id, projectId, agent_help: payload },
+      });
+    } catch {
+      throw agentHelpError(503, "AGENT_LAUNCH_UNAVAILABLE", "Agent launch is unavailable. Retry shortly.");
+    }
+    if (!run) {
+      throw agentHelpError(503, "AGENT_LAUNCH_UNAVAILABLE", "Agent launch is unavailable. Retry shortly.");
+    }
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: run.id,
+      action: "agent_help.queued",
+      entityType: "issue",
+      entityId: issue.id,
+      issueId: issue.id,
+      details: { launchId: run.id, schemaVersion: AGENT_HELP_SCHEMA_VERSION },
+    });
+    res.status(202).json({
+      launch_id: run.id,
+      issue_id: issue.id,
+      status: "queued",
+      accepted_at: new Date(run.createdAt).toISOString(),
     });
   });
 

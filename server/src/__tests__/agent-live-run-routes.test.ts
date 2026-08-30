@@ -14,11 +14,16 @@ const mockHeartbeatService = vi.hoisted(() => ({
   getRunLogAccess: vi.fn(),
   readLog: vi.fn(),
   wakeup: vi.fn(),
+  getRun: vi.fn(),
 }));
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   getByIdentifier: vi.fn(),
+}));
+
+const mockProjectService = vi.hoisted(() => ({
+  getById: vi.fn(),
 }));
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
@@ -78,6 +83,7 @@ function registerModuleMocks() {
     issueApprovalService: () => ({}),
     issueService: () => mockIssueService,
     logActivity: vi.fn(),
+    projectService: () => mockProjectService,
     secretService: () => ({}),
     syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
     workspaceOperationService: () => ({}),
@@ -92,7 +98,16 @@ function registerModuleMocks() {
   }));
 }
 
-async function createApp(db: Record<string, unknown> = {}) {
+async function createApp(
+  db: Record<string, unknown> = {},
+  actor: Record<string, unknown> = {
+    type: "board",
+    userId: "local-board",
+    companyIds: ["company-1"],
+    source: "local_implicit",
+    isInstanceAdmin: false,
+  },
+) {
   const [{ agentRoutes }, { errorHandler }] = await Promise.all([
     vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
@@ -100,13 +115,7 @@ async function createApp(db: Record<string, unknown> = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
-      companyIds: ["company-1"],
-      source: "local_implicit",
-      isInstanceAdmin: false,
-    };
+    (req as any).actor = actor;
     next();
   });
   app.use("/api", agentRoutes(db as any));
@@ -133,6 +142,15 @@ function createLiveRunsDbStub(rows: Array<Record<string, unknown>>) {
     },
     limit,
   };
+}
+
+function createAgentHelpDbStub(existingWakes: Array<Record<string, unknown>> = []) {
+  const query = {
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue(existingWakes),
+  };
+  return { select: vi.fn().mockReturnValue(query) };
 }
 
 async function requestApp(
@@ -182,6 +200,9 @@ describe("agent live run routes", () => {
       executionRunId: "run-1",
       assigneeAgentId: "agent-1",
       status: "in_progress",
+      title: "Prepare client demo",
+      description: "Draft agenda and confirm attendees.",
+      projectId: "project-1",
     });
     mockIssueService.getById.mockResolvedValue(null);
     mockAgentService.getById.mockResolvedValue({
@@ -189,6 +210,12 @@ describe("agent live run routes", () => {
       companyId: "company-1",
       name: "Builder",
       adapterType: "codex_local",
+    });
+    mockProjectService.getById.mockResolvedValue({
+      id: "project-1",
+      companyId: "company-1",
+      goalId: "goal-1",
+      goals: [{ id: "goal-1", title: "Ship approved client demo by Friday." }],
     });
     mockInstanceSettingsService.get.mockResolvedValue({
       id: "instance-settings-1",
@@ -244,7 +271,9 @@ describe("agent live run routes", () => {
       status: "queued",
       invocationSource: "on_demand",
       triggerDetail: "manual",
+      createdAt: new Date("2026-08-30T10:12:01.000Z"),
     });
+    mockHeartbeatService.getRun.mockResolvedValue(null);
   });
 
   it("returns a compact active run payload for issue polling", async () => {
@@ -651,5 +680,232 @@ describe("agent live run routes", () => {
         actorId: "local-board",
       },
     });
+  });
+
+  it("queues assigned Hermes agent with complete server-owned task context", async () => {
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      name: "Builder",
+      adapterType: "hermes_gateway",
+    });
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "11111111-1111-4111-8111-111111111111")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(res.body).toEqual({
+      launch_id: "run-1",
+      issue_id: "issue-1",
+      status: "queued",
+      accepted_at: "2026-08-30T10:12:01.000Z",
+    });
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith("agent-1", expect.objectContaining({
+      idempotencyKey: "agent-help:user:local-board:issue-1:11111111-1111-4111-8111-111111111111",
+      payload: {
+        issueId: "issue-1",
+        agent_help: {
+          schema_version: "agent_help.task_context.v1",
+          task: {
+            id: "issue-1",
+            title: "Prepare client demo",
+            description: "Draft agenda and confirm attendees.",
+            current_status: "in_progress",
+          },
+          project: {
+            id: "project-1",
+            goal: "Ship approved client demo by Friday.",
+          },
+        },
+      },
+    }));
+  });
+
+  it("uses null optional task context fields", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValueOnce({
+      id: "issue-1",
+      companyId: "company-1",
+      assigneeAgentId: "agent-1",
+      status: "todo",
+      title: "Review release notes",
+      description: "   ",
+      projectId: null,
+    });
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "22222222-2222-4222-8222-222222222222")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith("agent-1", expect.objectContaining({
+      payload: expect.objectContaining({
+        agent_help: expect.objectContaining({
+          task: expect.objectContaining({ description: null }),
+          project: { id: null, goal: null },
+        }),
+      }),
+    }));
+  });
+
+  it("rejects inaccessible task help requests", async () => {
+    const app = await createApp(createAgentHelpDbStub(), {
+      type: "board",
+      userId: "outsider",
+      companyIds: ["other-company"],
+      source: "session",
+      memberships: [],
+      isInstanceAdmin: false,
+    });
+    const res = await requestApp(
+      app,
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "33333333-3333-4333-8333-333333333333")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.code).toBe("TASK_ACCESS_DENIED");
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("returns safe unavailable error when Hermes launch fails", async () => {
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
+    mockHeartbeatService.wakeup.mockRejectedValueOnce(new Error("gateway token leaked"));
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "44444444-4444-4444-8444-444444444444")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(503);
+    expect(res.body).toEqual({
+      error: "Agent launch is unavailable. Retry shortly.",
+      code: "AGENT_LAUNCH_UNAVAILABLE",
+      details: { code: "AGENT_LAUNCH_UNAVAILABLE" },
+    });
+    expect(JSON.stringify(res.body)).not.toContain("gateway token");
+  });
+
+  it("rejects agent-help requests carrying client-supplied fields", async () => {
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "55555555-5555-4555-8555-555555555555")
+        .send({ title: "different task" }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+    expect(res.body.code).toBe("INVALID_AGENT_HELP_REQUEST");
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("requires a valid UUID idempotency key", async () => {
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+    expect(res.body.code).toBe("INVALID_AGENT_HELP_REQUEST");
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("rejects secret-like task context before dispatch", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValueOnce({
+      id: "issue-1",
+      companyId: "company-1",
+      assigneeAgentId: "agent-1",
+      status: "in_progress",
+      title: "Prepare client demo",
+      description: "Draft agenda with API_KEY=sk-abc123 and confirm attendees.",
+      projectId: null,
+    });
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "66666666-6666-4666-8666-666666666666")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.body.code).toBe("TASK_CONTEXT_CONTAINS_SECRET");
+    expect(JSON.stringify(res.body)).not.toContain("sk-abc123");
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("returns the prior launch for a duplicate idempotency key", async () => {
+    mockHeartbeatService.getRun.mockResolvedValueOnce({
+      id: "run-1",
+      createdAt: new Date("2026-08-30T10:12:01.000Z"),
+    });
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub([{ runId: "run-1" }])),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "77777777-7777-4777-8777-777777777777")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(res.body).toEqual({
+      launch_id: "run-1",
+      issue_id: "issue-1",
+      status: "already_queued",
+      accepted_at: "2026-08-30T10:12:01.000Z",
+    });
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("uses null project goal when the project has no resolvable goal", async () => {
+    mockProjectService.getById.mockResolvedValueOnce({
+      id: "project-1",
+      companyId: "company-1",
+      goalId: "goal-1",
+      goals: [],
+    });
+    const res = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "88888888-8888-4888-8888-888888888888")
+        .send({}),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith("agent-1", expect.objectContaining({
+      payload: expect.objectContaining({
+        agent_help: expect.objectContaining({
+          project: { id: "project-1", goal: null },
+        }),
+      }),
+    }));
   });
 });
