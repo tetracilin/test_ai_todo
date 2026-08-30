@@ -59,6 +59,41 @@ function toMs(value: Date | string | null | undefined): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
+/** TVR-A04 feed type filter options. */
+export type TaskChatFeedFilter = "all" | "comments" | "system" | "agent";
+
+export const TASK_CHAT_FEED_FILTER_OPTIONS: ReadonlyArray<{ value: TaskChatFeedFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "comments", label: "Comments" },
+  { value: "system", label: "System activity" },
+  { value: "agent", label: "Agent responses" },
+];
+
+/**
+ * Whether an assembled feed item passes the requested type filter (TVR-A04).
+ * The description brief always renders — it is task context, not feed content.
+ */
+export function matchesTaskChatFeedFilter(item: TaskChatItem, filter: TaskChatFeedFilter): boolean {
+  if (filter === "all" || item.kind === "brief") return true;
+  switch (filter) {
+    case "comments":
+      return item.kind === "message" && item.author === "human";
+    case "system":
+      if (item.kind === "message") return item.author === "system";
+      return (
+        item.kind === "activity"
+        || item.kind === "marker"
+        || item.kind === "interaction"
+        || item.kind === "status"
+        || item.kind === "usage"
+        || item.kind === "activity_phase"
+      );
+    case "agent":
+      if (item.kind === "message") return item.author === "agent";
+      return item.kind === "turn" || item.kind === "thinking" || item.kind === "tool";
+  }
+}
+
 // PAP-462 B4: backstop for how long the just-settled run's transcript stays
 // mounted when neither a settled turn nor a reply comment ever arrives to hand
 // off to (e.g. a stopped run with no tool activity). Normal completions hand off
@@ -475,6 +510,18 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     };
   }, [orderedEntries, runs, liveRun, transcriptByRun, linkedRunMetaById, lastCommentIdByRun, hasBrief]);
 
+  // TVR-A04: feed type filter (All / Comments / System activity / Agent
+  // responses) applied to the assembled feed. The description brief always
+  // renders, and the live run tail is gated separately below so it cannot
+  // leak agent activity into a Comments/System-only view.
+  const [feedFilter, setFeedFilter] = useState<TaskChatFeedFilter>("all");
+  const [feedPinned, setFeedPinned] = useState(true);
+  const [jumpSignal, setJumpSignal] = useState(0);
+  const filteredItems = useMemo(
+    () => (feedFilter === "all" ? items : items.filter((item) => matchesTaskChatFeedFilter(item, feedFilter))),
+    [feedFilter, items],
+  );
+
   // PAP-462 B4: the moment a run settles, `liveRun` flips to null — but its
   // settled turn (or reply comment) can take seconds to arrive on the next
   // comment refetch. Without a handoff the whole transcript unmounts that frame,
@@ -527,6 +574,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     (transcriptByRun.get(settlingRun.id)?.length ?? 0) > 0;
   const tailRunId = liveRun ? liveRun.id : showSettlingTail ? settlingRun!.id : null;
   const tailStreaming = Boolean(liveRun);
+  const hasFeedContent = items.length > 0 || tailRunId != null;
   const tailEntries = tailRunId ? (transcriptByRun.get(tailRunId) ?? []) : [];
   const tailContentKey = tailEntries.reduce((total, entry) => {
     if ("text" in entry) return total + entry.text.length;
@@ -538,7 +586,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     : liveWorkLinks
       ? `live:${liveWorkLinks.steps.map((step) => `${step.blocker.id}:${step.status}`).join(",")}:${liveWorkLinks.nowRunning.map((blocker) => blocker.id).join(",")}`
       : "";
-  const threadContentKey = `${taskChatContentKey(items)}:${tailContentKey}:${blockerContentKey}`;
+  // The scroller key tracks the FILTERED list so a filter switch re-anchors
+  // the auto-follow (and mobile window-follow) to the visible feed.
+  const threadContentKey = `${taskChatContentKey(filteredItems)}:${tailContentKey}:${blockerContentKey}`;
 
   // Status-pill inputs for the tail (PAP-461, A1): the run's start, its finish
   // (once terminal), and the "called N tools" summary. Memoized on the
@@ -684,13 +734,76 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   // in document flow instead (the same scroll={false} path the previews use)
   // and track auto-follow against window scroll. Desktop stays byte-identical.
   const { isMobile } = useSidebar();
-  useWindowAutoFollow(isMobile ? threadContentKey : 0, isMobile);
+  const windowFeedPinned = useWindowAutoFollow(isMobile ? threadContentKey : 0, isMobile);
+  const isFeedPinned = isMobile ? windowFeedPinned : feedPinned;
+
+  // TVR-A04 "Jump to latest": shown while the user is not at the bottom of a
+  // non-empty feed; desktop scrolls the bounded viewport (via the scroller's
+  // jump signal), mobile scrolls the window that hosts the document flow.
+  const handleFeedJumpToLatest = useCallback(() => {
+    if (isMobile) {
+      const el = document.scrollingElement ?? document.documentElement;
+      if (!el) return;
+      if (typeof el.scrollTo === "function") {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+      return;
+    }
+    setJumpSignal((signal) => signal + 1);
+  }, [isMobile]);
+  const showJumpToLatest = hasFeedContent && !isFeedPinned;
+  // The live/settling run tail is agent activity: hide it in the Comments and
+  // System activity views so the filter reads correctly (TVR-A04).
+  const tailVisible = feedFilter === "all" || feedFilter === "agent";
 
   return (
     <div
       className={cn("flex flex-col", !isMobile && "h-(--tc-thread-max-h) min-h-0 flex-1")}
       data-testid="task-chat-thread"
     >
+      {hasFeedContent ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-1.5"
+          data-testid="task-chat-feed-controls"
+        >
+          <div
+            role="group"
+            aria-label="Feed filter"
+            className="inline-flex items-center gap-0.5 text-xs"
+          >
+            {TASK_CHAT_FEED_FILTER_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={feedFilter === option.value}
+                data-feed-filter={option.value}
+                onClick={() => setFeedFilter(option.value)}
+                className={cn(
+                  "rounded-md px-2 py-1 transition-colors",
+                  feedFilter === option.value
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {showJumpToLatest ? (
+            <button
+              type="button"
+              data-testid="task-chat-jump-to-latest"
+              onClick={handleFeedJumpToLatest}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Jump to latest
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className={cn("flex flex-col", !isMobile && "min-h-0 flex-1")}>
         {items.length === 0 && !tailRunId ? (
           <div className={isMobile ? undefined : "min-h-0 flex-1 overflow-y-auto"}>
@@ -711,7 +824,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           </div>
         ) : (
           <TaskChatThreadView
-            items={items}
+            items={filteredItems}
             header={threadHeaderWithBlockers}
             renderInteraction={renderInteraction}
             renderBrief={issueBrief ? () => <TaskChatDescriptionBubble brief={issueBrief} /> : undefined}
@@ -719,7 +832,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             renderQueuedAction={renderQueuedAction}
             tail={tailRunId || bottomBlockerLinks ? (
               <>
-                {tailRunId ? (
+                {tailRunId && tailVisible ? (
                   <div data-testid="task-chat-live-transcript">
                     <TaskChatLiveRunPill
                       status={tailStatus}
@@ -748,6 +861,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             ) : null}
             contentKey={threadContentKey}
             scroll={!isMobile}
+            onPinnedChange={isMobile ? undefined : setFeedPinned}
+            jumpSignal={isMobile ? undefined : jumpSignal}
           />
         )}
       </div>

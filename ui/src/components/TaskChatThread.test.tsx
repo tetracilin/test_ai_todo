@@ -762,3 +762,159 @@ describe("TaskChatThread live transcript", () => {
     expect(container.textContent).toContain("Worked");
   });
 });
+
+describe("TaskChatThread feed controls (TVR-A04)", () => {
+  const humanComment = {
+    id: "comment-human",
+    companyId: "company-1",
+    issueId: "issue-1",
+    authorType: "user" as const,
+    authorAgentId: null,
+    authorUserId: "user-1",
+    body: "Human comment text.",
+    presentation: null,
+    metadata: null,
+    createdAt: new Date("2026-08-15T12:00:00.000Z"),
+    updatedAt: new Date("2026-08-15T12:00:00.000Z"),
+  };
+  const agentComment = {
+    id: "comment-agent",
+    companyId: "company-1",
+    issueId: "issue-1",
+    authorType: "agent" as const,
+    authorAgentId: "agent-1",
+    authorUserId: null,
+    body: "Agent reply text.",
+    presentation: null,
+    metadata: null,
+    createdAt: new Date("2026-08-15T12:02:00.000Z"),
+    updatedAt: new Date("2026-08-15T12:02:00.000Z"),
+  };
+  const statusReceipt = {
+    id: "evt-status",
+    companyId: "company-1",
+    actorType: "user",
+    actorId: "user-1",
+    action: "issue.updated",
+    entityType: "issue",
+    entityId: "issue-1",
+    agentId: null,
+    runId: null,
+    createdAt: new Date("2026-08-15T12:01:00.000Z"),
+    details: { status: "done", _previous: { status: "in_progress" } },
+  };
+
+  function renderMixedFeed() {
+    render(
+      <TaskChatThread
+        comments={[humanComment, agentComment]}
+        activity={[statusReceipt] as never}
+        onAdd={async () => {}}
+      />,
+    );
+  }
+
+  function filterButton(filter: string): HTMLButtonElement {
+    return container.querySelector(
+      `button[data-feed-filter="${filter}"]`,
+    ) as HTMLButtonElement;
+  }
+
+  it("renders All / Comments / System activity / Agent responses filters for a populated feed", () => {
+    renderMixedFeed();
+    const controls = container.querySelector('[data-testid="task-chat-feed-controls"]');
+    expect(controls).not.toBeNull();
+    expect(Array.from(controls!.querySelectorAll("button")).map((button) => button.textContent))
+      .toEqual(["All", "Comments", "System activity", "Agent responses"]);
+    expect(filterButton("all").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("does not render feed controls for an empty feed", () => {
+    render(<TaskChatThread comments={[]} onAdd={async () => {}} />);
+    expect(container.querySelector('[data-testid="task-chat-feed-controls"]')).toBeNull();
+  });
+
+  it("filters to human comments only", () => {
+    renderMixedFeed();
+    flushSync(() => filterButton("comments").click());
+    expect(container.textContent).toContain("Human comment text.");
+    expect(container.textContent).not.toContain("Agent reply text.");
+    expect(container.querySelector('[data-testid="task-chat-activity-receipt"]')).toBeNull();
+    expect(filterButton("comments").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("filters to system activity only", () => {
+    renderMixedFeed();
+    flushSync(() => filterButton("system").click());
+    expect(container.textContent).not.toContain("Human comment text.");
+    expect(container.textContent).not.toContain("Agent reply text.");
+    expect(container.querySelector('[data-testid="task-chat-activity-receipt"]')).not.toBeNull();
+  });
+
+  it("filters to agent responses only", () => {
+    renderMixedFeed();
+    flushSync(() => filterButton("agent").click());
+    expect(container.textContent).not.toContain("Human comment text.");
+    expect(container.textContent).toContain("Agent reply text.");
+    expect(container.querySelector('[data-testid="task-chat-activity-receipt"]')).toBeNull();
+  });
+
+  it("hides the live run tail in the Comments and System activity filters", () => {
+    transcriptState.transcriptByRun.set("run-1", [
+      { kind: "assistant", ts: "2026-08-07T00:00:00.000Z", text: "live agent words" },
+    ]);
+    render(
+      <TaskChatThread
+        comments={[humanComment]}
+        onAdd={async () => {}}
+        issueStatus="in_progress"
+        activeRun={{
+          id: "run-1",
+          status: "running",
+          invocationSource: "issue" as const,
+          triggerDetail: null,
+          startedAt: "2026-08-07T00:00:00.000Z",
+          finishedAt: null,
+          createdAt: "2026-08-07T00:00:00.000Z",
+          agentId: "agent-1",
+          agentName: "Coder",
+          adapterType: "codex_local",
+        }}
+      />,
+    );
+    expect(container.querySelector('[data-testid="task-chat-live-transcript"]')).not.toBeNull();
+    flushSync(() => filterButton("comments").click());
+    expect(container.querySelector('[data-testid="task-chat-live-transcript"]')).toBeNull();
+    flushSync(() => filterButton("system").click());
+    expect(container.querySelector('[data-testid="task-chat-live-transcript"]')).toBeNull();
+    flushSync(() => filterButton("all").click());
+    expect(container.querySelector('[data-testid="task-chat-live-transcript"]')).not.toBeNull();
+  });
+
+  it("shows Jump to latest when the user scrolls away and smooth-scrolls on click", async () => {
+    renderMixedFeed();
+    expect(container.querySelector('[data-testid="task-chat-jump-to-latest"]')).toBeNull();
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="task-chat-scroller"]')!;
+    fakeScrollGeometry(scroller, { scrollHeight: 1000, clientHeight: 400, scrollTop: 100 });
+    const scrollToSpy = vi.fn();
+    scroller.scrollTo = scrollToSpy as unknown as typeof scroller.scrollTo;
+    // Scroll is a continuous-priority event: the pinned-state update flushes
+    // on a macrotask, not synchronously (same convention as
+    // TaskMessageScroller.test.tsx).
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const jump = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-jump-to-latest"]');
+    expect(jump).not.toBeNull();
+    flushSync(() => jump!.click());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+
+    // Arrival at the bottom re-pins and hides the control.
+    scroller.scrollTop = 600; // 1000 - 600 - 400 = 0 → pinned
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container.querySelector('[data-testid="task-chat-jump-to-latest"]')).toBeNull();
+  });
+});

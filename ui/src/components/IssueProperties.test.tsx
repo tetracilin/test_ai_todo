@@ -555,6 +555,107 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
+  it("shows an authorized 'Ask agent to plan' action in the Plan empty state and invokes it", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const onRequestPlan = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+      canRequestPlan: true,
+      onRequestPlan,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.");
+      const cta = container.querySelector('[data-testid="plan-empty-state-ask-agent"]') as HTMLButtonElement | null;
+      expect(cta).not.toBeNull();
+      cta!.click();
+    });
+    expect(onRequestPlan).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+  });
+
+  it("keeps the Plan empty state guidance-only without write authorization", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta-readonly" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.");
+    });
+    expect(container.querySelector('[data-testid="plan-empty-state-ask-agent"]')).toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it("offers the 'Ask agent to plan' action in the planning-mode empty state", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const onRequestPlan = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta-planning", workMode: "planning" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+      canRequestPlan: true,
+      onRequestPlan,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("This task is in plan mode but no plan document has been written yet.");
+      expect(container.querySelector('[data-testid="plan-empty-state-ask-agent"]')).not.toBeNull();
+    });
+    const cta = container.querySelector('[data-testid="plan-empty-state-ask-agent"]') as HTMLButtonElement;
+    await act(async () => {
+      cta.click();
+    });
+    expect(onRequestPlan).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+  });
+
   it("keeps Plan and Artifacts tabs visible for an empty task and restores its selected tab", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
