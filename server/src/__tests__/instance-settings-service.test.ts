@@ -31,6 +31,7 @@ describe("instance settings service", () => {
       enableStreamlinedLeftNavigation: true,
       enableApps: false,
       enableConferenceRoomChat: false,
+      enableTaskChatRedesign: false,
       enableClassicTaskInterface: false,
       enableExternalObjects: false,
       enableSmokeLab: false,
@@ -75,12 +76,15 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableClassicTaskInterface to false for empty and legacy stored settings", () => {
+  it("defaults Task Chat Redesign and Classic Task Interface to false for empty and legacy stored settings", () => {
+    expect(normalizeExperimentalSettings(undefined).enableTaskChatRedesign).toBe(false);
+    expect(normalizeExperimentalSettings({}).enableTaskChatRedesign).toBe(false);
+    expect(
+      normalizeExperimentalSettings({ enableTaskChatRedesign: true }).enableTaskChatRedesign,
+    ).toBe(true);
     expect(normalizeExperimentalSettings(undefined).enableClassicTaskInterface).toBe(false);
     expect(normalizeExperimentalSettings({}).enableClassicTaskInterface).toBe(false);
-    // The retired enableTaskChatRedesign key must not bleed into the new flag:
-    // an install that had the chat redesign ON opted into chat-style, which is
-    // now the default — not into the classic view.
+    // Positive-gate data does not mutate the inverse compatibility setting.
     expect(
       normalizeExperimentalSettings({ enableTaskChatRedesign: true }).enableClassicTaskInterface,
     ).toBe(false);
