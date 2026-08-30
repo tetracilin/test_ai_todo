@@ -4670,7 +4670,8 @@ export function IssueDetail() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setMobilePropsOpen(true)}
-                title="Properties"
+                title="Properties, Plan, and Artifacts"
+                aria-label="Open Properties, Plan, and Artifacts"
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
@@ -5624,9 +5625,9 @@ export function IssueDetail() {
 
       {/* Mobile properties drawer */}
       <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
-        <SheetContent side="bottom" className="max-h-(--sz-85dvh) pb-(--sz-safe-bottom)">
+        <SheetContent side="bottom" className="h-(--sz-100dvh) max-h-(--sz-100dvh) pb-(--sz-safe-bottom)">
           <SheetHeader>
-            <SheetTitle className="text-sm">Properties</SheetTitle>
+            <SheetTitle className="text-sm">Properties, Plan, and Artifacts</SheetTitle>
           </SheetHeader>
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="px-4 pb-4">
