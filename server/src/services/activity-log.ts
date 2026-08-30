@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, agentApiKeys, companies, heartbeatRuns, issues } from "@paperclipai/db";
+import {
+  activityLog,
+  agentApiKeys,
+  companies,
+  discordDeliveryAttempts,
+  discordNotificationPreferences,
+  discordProjectChannelMappings,
+  discordUserLinks,
+  heartbeatRuns,
+  integrationEventOutbox,
+  issues,
+} from "@paperclipai/db";
 import { isUuidLike, PLUGIN_EVENT_TYPES, type PluginEventType } from "@paperclipai/shared";
 import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
@@ -40,6 +51,119 @@ export function setPluginEventBus(bus: PluginEventBus): void {
 function eventTypeForActivityAction(action: string): PluginEventType | null {
   if (PLUGIN_EVENT_SET.has(action)) return action as PluginEventType;
   return ACTIVITY_ACTION_TO_PLUGIN_EVENT[action.replaceAll(".", "_")] ?? null;
+}
+
+type DiscordEventType =
+  | "issue.created"
+  | "issue.status_changed"
+  | "issue.assignee_changed"
+  | "issue.priority_changed"
+  | "issue.comment_created"
+  | "issue.blocked"
+  | "issue.unblocked"
+  | "issue.completed";
+
+function discordEventTypesForActivity(input: LogActivityInput): DiscordEventType[] {
+  if (input.entityType !== "issue") return [];
+  if (input.action === "issue.created") return ["issue.created"];
+  if (input.action === "issue.comment.created" || input.action === "issue_comment_added" || input.action === "issue_comment_created") {
+    return ["issue.comment_created"];
+  }
+  if (input.action !== "issue.updated") return [];
+  const details = input.details ?? {};
+  const events: DiscordEventType[] = [];
+  if ("status" in details) {
+    if (details.status === "blocked") events.push("issue.blocked");
+    else if (details.status === "done") events.push("issue.completed");
+    else if (details._previous && typeof details._previous === "object" && (details._previous as Record<string, unknown>).status === "blocked") events.push("issue.unblocked");
+    else events.push("issue.status_changed");
+  }
+  if ("assigneeAgentId" in details || "assigneeUserId" in details) events.push("issue.assignee_changed");
+  if ("priority" in details) events.push("issue.priority_changed");
+  return events;
+}
+
+function discordIssueUrl(issue: { id: string; identifier: string | null }) {
+  const base = process.env.PAPERCLIP_DASHBOARD_URL?.replace(/\/$/, "") ?? "";
+  return `${base}/issues/${encodeURIComponent(issue.identifier ?? issue.id)}`;
+}
+
+async function enqueueDiscordNotifications(
+  db: Db,
+  activityId: string,
+  input: LogActivityInput,
+  redactedDetails: Record<string, unknown> | null,
+) {
+  const eventTypes = discordEventTypesForActivity(input);
+  if (eventTypes.length === 0) return;
+  const issue = await db.select({
+    id: issues.id,
+    companyId: issues.companyId,
+    projectId: issues.projectId,
+    identifier: issues.identifier,
+    title: issues.title,
+  }).from(issues).where(and(eq(issues.companyId, input.companyId), eq(issues.id, input.entityId))).then((rows) => rows[0] ?? null);
+  if (!issue) return;
+
+  const [mappings, preferences] = await Promise.all([
+    issue.projectId
+      ? db.select().from(discordProjectChannelMappings).where(and(
+        eq(discordProjectChannelMappings.companyId, issue.companyId),
+        eq(discordProjectChannelMappings.projectId, issue.projectId),
+        eq(discordProjectChannelMappings.enabled, true),
+      ))
+      : Promise.resolve([]),
+    db.select({ preference: discordNotificationPreferences, discordUserId: discordUserLinks.discordUserId })
+      .from(discordNotificationPreferences)
+      .innerJoin(discordUserLinks, and(
+        eq(discordUserLinks.companyId, discordNotificationPreferences.companyId),
+        eq(discordUserLinks.userId, discordNotificationPreferences.userId),
+        eq(discordUserLinks.active, true),
+      ))
+      .where(and(eq(discordNotificationPreferences.companyId, issue.companyId), eq(discordNotificationPreferences.enabled, true))),
+  ]);
+
+  for (const eventType of eventTypes) {
+    const [event] = await db.insert(integrationEventOutbox).values({
+      idempotencyKey: `discord:activity:${activityId}:${eventType}`,
+      companyId: issue.companyId,
+      projectId: issue.projectId,
+      issueId: issue.id,
+      eventType,
+      origin: "paperclip",
+      payload: {
+        issueIdentifier: issue.identifier,
+        title: issue.title,
+        issueUrl: discordIssueUrl(issue),
+        actor: input.actorId,
+        before: redactedDetails?._previous ?? null,
+        after: redactedDetails,
+      },
+    }).onConflictDoNothing().returning();
+    if (!event) continue;
+
+    const recipients = new Map<string, { recipientType: "channel" | "dm"; recipientId: string }>();
+    for (const mapping of mappings) {
+      if (mapping.notificationEvents.includes(eventType)) {
+        recipients.set(`channel:${mapping.channelId}`, { recipientType: "channel", recipientId: mapping.channelId });
+      }
+    }
+    for (const { preference, discordUserId } of preferences) {
+      if (preference.eventType !== eventType) continue;
+      const recipientId = preference.deliveryMode === "channel" ? preference.channelId : discordUserId;
+      if (!recipientId) continue;
+      const recipientType = preference.deliveryMode === "channel" ? "channel" : "dm";
+      recipients.set(`${recipientType}:${recipientId}`, { recipientType, recipientId });
+    }
+    if (recipients.size > 0) {
+      await db.insert(discordDeliveryAttempts).values([...recipients.values()].map((recipient) => ({
+        eventId: event.id,
+        recipientType: recipient.recipientType,
+        recipientId: recipient.recipientId,
+        idempotencyKey: `${event.id}:${recipient.recipientType}:${recipient.recipientId}`,
+      }))).onConflictDoNothing();
+    }
+  }
 }
 
 export function publishPluginDomainEvent(event: PluginEvent): void {
@@ -172,6 +296,13 @@ export async function persistActivity(db: Db, input: LogActivityInput) {
     responsibleUserId,
     details: redactedDetails,
   }).returning({ id: activityLog.id });
+  try {
+    await enqueueDiscordNotifications(db, activity.id, input, redactedDetails);
+  } catch (error) {
+    // Discord delivery must never block a source issue action. Only safe
+    // correlation fields reach logs; payloads and credentials stay omitted.
+    logger.warn({ err: error, activityId: activity.id, action: input.action }, "failed to enqueue Discord notification");
+  }
 
   const payload = {
     actorType: input.actorType,
