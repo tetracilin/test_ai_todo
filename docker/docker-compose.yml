@@ -29,6 +29,15 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      # Tagged-comment (@dev) ingestion scheduler (in-process heartbeat tick).
+      # Values shown are the defaults; unset the ones you do not need to tune.
+      # See docs/deploy/comment-intake-scheduler.md for enable/disable,
+      # manual-run, monitoring, and rollback.
+      PAPERCLIP_COMMENT_INTAKE_ENABLED: "${PAPERCLIP_COMMENT_INTAKE_ENABLED:-true}"
+      PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS: "${PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS:-300000}"
+      PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE: "${PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE:-100}"
+      PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS: "${PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS:-300000}"
+      PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES: "${PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES:-6}"
     volumes:
       - paperclip-data:/paperclip
     depends_on:

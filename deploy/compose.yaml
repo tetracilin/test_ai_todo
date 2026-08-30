@@ -49,6 +49,14 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       BETTER_AUTH_SECRET_FILE: /run/secrets/better_auth_secret
       HERMES_API_BASE_URL: ${HERMES_API_BASE_URL:-http://host.docker.internal:8642}
+      # Tagged-comment (@dev) ingestion scheduler (in-process heartbeat tick).
+      # Defaults match the server built-ins; override per deployment.
+      # See docs/deploy/comment-intake-scheduler.md.
+      PAPERCLIP_COMMENT_INTAKE_ENABLED: ${PAPERCLIP_COMMENT_INTAKE_ENABLED:-true}
+      PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS: ${PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS:-300000}
+      PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE: ${PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE:-100}
+      PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS: ${PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS:-300000}
+      PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES: ${PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES:-6}
     secrets:
       - postgres_password
       - better_auth_secret

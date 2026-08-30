@@ -1083,7 +1083,13 @@ export async function startServer(): Promise<StartedServer> {
     prepareHotRestartShutdown = heartbeat.prepareHotRestartShutdown;
     const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
     const routines = routineService(db as any, { pluginWorkerManager });
-    const commentIntakes = commentIntakeService(db as any);
+    const commentIntakes = commentIntakeService(db as any, {
+      enabled: config.commentIntake.enabled,
+      pollIntervalMs: config.commentIntake.pollIntervalMs,
+      batchSize: config.commentIntake.batchSize,
+      runTimeoutMs: config.commentIntake.runTimeoutMs,
+      maxConsecutiveFailures: config.commentIntake.maxConsecutiveFailures,
+    });
     const statusCards = statusCardService(db as any);
     const issues = issueService(db as any);
     const mergedPullRequestConfirmations = issueThreadInteractionService(db as any, {
@@ -1403,15 +1409,17 @@ export async function startServer(): Promise<StartedServer> {
         scheduleExternalObjectRefreshSweep(new Date());
 
         if (heartbeatSchedulerStopped) return;
-        trackHeartbeatSchedulerWork(commentIntakes
-          .runDue(new Date())
-          .then((results) => {
-            const processed = results.filter((result) => !("skipped" in result)).length;
-            if (processed > 0) logger.info({ processed }, "comment intake scheduler tick complete");
-          })
-          .catch((err) => {
-            logger.error({ err }, "comment intake scheduler tick failed");
-          }));
+        if (config.commentIntake.enabled) {
+          trackHeartbeatSchedulerWork(commentIntakes
+            .runDue(new Date())
+            .then((results) => {
+              const processed = results.filter((result) => !("skipped" in result)).length;
+              if (processed > 0) logger.info({ processed }, "comment intake scheduler tick complete");
+            })
+            .catch((err) => {
+              logger.error({ err }, "comment intake scheduler tick failed");
+            }));
+        }
 
         if (heartbeatSchedulerStopped) return;
         scheduleMergedPullRequestConfirmationSweep();

@@ -47,6 +47,20 @@ of mixed app versions. With the variable unset nothing is hidden and behavior
 is identical to earlier releases. Hiding a toggle does not change its value;
 pair hiding with the desired default where it matters.
 
+## Comment Intake Scheduler
+
+Controls the tagged-comment (`@dev`) ingestion poller. See
+[comment-intake-scheduler.md](comment-intake-scheduler.md) for enable/disable,
+manual-run, monitoring, and rollback.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAPERCLIP_COMMENT_INTAKE_ENABLED` | `true` | Master switch for the scheduler tick and the CLI poll pass |
+| `PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS` | `300000` | Minimum gap between polls of the same source (≥ 30 s) |
+| `PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE` | `100` | Candidates read per source per pass (1–1000) |
+| `PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS` | `300000` | Max time a run may stay active before it is reaped as stale (≥ 10 s) |
+| `PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES` | `6` | Consecutive failures before a source is auto-disabled (≥ 1) |
+
 ## Secrets
 
 | Variable | Default | Description |

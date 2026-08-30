@@ -60,6 +60,40 @@ export interface ExternalStorageConfig {
   secretKeySecretRef: string | undefined;
 }
 
+/**
+ * Production knobs for the tagged-comment (@dev) ingestion scheduler.
+ * Every value is env-driven so deployment can tune cadence, page size, run
+ * bound, and the auto-disable policy without a code change. Parsing lives in
+ * `resolveCommentIntakeOptions` (pure, unit-tested) and is shared by the
+ * in-process heartbeat scheduler and the one-shot CLI runner.
+ */
+export interface CommentIntakeSchedulerOptions {
+  enabled: boolean;
+  pollIntervalMs: number;
+  batchSize: number;
+  runTimeoutMs: number;
+  maxConsecutiveFailures: number;
+}
+
+export function resolveCommentIntakeOptions(
+  env: Record<string, string | undefined>,
+): CommentIntakeSchedulerOptions {
+  const readNumber = (key: string, fallback: number, min: number, max: number) => {
+    const raw = env[key]?.trim();
+    const value = Number(raw);
+    if (!raw || !Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(value)));
+  };
+  const enabledRaw = env.PAPERCLIP_COMMENT_INTAKE_ENABLED;
+  return {
+    enabled: enabledRaw !== undefined ? enabledRaw === "true" : true,
+    pollIntervalMs: readNumber("PAPERCLIP_COMMENT_INTAKE_POLL_INTERVAL_MS", 300_000, 30_000, 86_400_000),
+    batchSize: readNumber("PAPERCLIP_COMMENT_INTAKE_BATCH_SIZE", 100, 1, 1_000),
+    runTimeoutMs: readNumber("PAPERCLIP_COMMENT_INTAKE_RUN_TIMEOUT_MS", 300_000, 10_000, 3_600_000),
+    maxConsecutiveFailures: readNumber("PAPERCLIP_COMMENT_INTAKE_MAX_CONSECUTIVE_FAILURES", 6, 1, 1_000),
+  };
+}
+
 export interface Config {
   deploymentMode: DeploymentMode;
   deploymentExposure: DeploymentExposure;
@@ -100,6 +134,7 @@ export interface Config {
   feedbackExportBackendToken: string | undefined;
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
+  commentIntake: CommentIntakeSchedulerOptions;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
 }
@@ -332,6 +367,7 @@ export function loadConfig(): Config {
       && workspaceReaperCooldownDaysRaw >= 0
       ? workspaceReaperCooldownDaysRaw
       : 7;
+  const commentIntake = resolveCommentIntakeOptions(process.env);
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
@@ -402,6 +438,7 @@ export function loadConfig(): Config {
     feedbackExportBackendToken,
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
+    commentIntake,
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
   };

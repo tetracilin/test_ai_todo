@@ -40,6 +40,8 @@
     "postpack": "rm -rf ui-dist",
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
+    "comment-intake:run": "tsx scripts/comment-intake-run.ts",
+    "comment-intake:smoke": "tsx scripts/comment-intake-run.ts --smoke",
     "typecheck": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && tsc --noEmit"
   },
   "dependencies": {

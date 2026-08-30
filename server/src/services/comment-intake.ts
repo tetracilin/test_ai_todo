@@ -15,10 +15,24 @@ import { redactSensitiveText } from "../redaction.js";
 import { issueService } from "./issues.js";
 import { commentIntakeDedupeKey, parseCommentIntakeText } from "./comment-intake-text.js";
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000;
 const OVERLAP_MS = 5 * 60 * 1000;
-const MAX_PAGE_SIZE = 100;
-const SAFE_ERROR_CODES = new Set(["database_error", "unexpected_error"]);
+const SAFE_ERROR_CODES = new Set(["database_error", "timeout", "unexpected_error"]);
+
+export interface CommentIntakeServiceOptions {
+  enabled?: boolean;
+  pollIntervalMs?: number;
+  batchSize?: number;
+  runTimeoutMs?: number;
+  maxConsecutiveFailures?: number;
+}
+
+const DEFAULT_OPTIONS: Required<CommentIntakeServiceOptions> = {
+  enabled: true,
+  pollIntervalMs: 5 * 60 * 1000,
+  batchSize: 100,
+  runTimeoutMs: 5 * 60 * 1000,
+  maxConsecutiveFailures: 6,
+};
 
 type Source = typeof commentIntakeSources.$inferSelect;
 
@@ -27,6 +41,10 @@ function fingerprint(value: string) {
 }
 
 function safeErrorCode(error: unknown) {
+  // PostgreSQL 57014 = statement timeout (set locally per run below).
+  if (typeof error === "object" && error && "code" in error && error.code === "57014") {
+    return "timeout";
+  }
   const code = typeof error === "object" && error && "code" in error && typeof error.code === "string"
     ? error.code
     : "unexpected_error";
@@ -50,7 +68,12 @@ function backlogDescription(input: { sourceIssueId: string; sourceCreatedAt: Dat
 }
 
 /** Durable V1 poller for verified-human `issue_comments`. */
-export function commentIntakeService(db: Db) {
+export function commentIntakeService(
+  db: Db,
+  options: CommentIntakeServiceOptions = {},
+) {
+  const opts: Required<CommentIntakeServiceOptions> = { ...DEFAULT_OPTIONS, ...options };
+
   async function runSource(source: Source, now = new Date()) {
     if (source.providerKey !== "paperclip" || source.objectType !== "issue_comment" || source.sourceScopeId !== source.companyId) {
       return { sourceId: source.id, skipped: "unsupported_source" as const };
@@ -58,8 +81,38 @@ export function commentIntakeService(db: Db) {
 
     const checkpoint = await db.select().from(commentIntakeCheckpoints)
       .where(eq(commentIntakeCheckpoints.sourceId, source.id)).then((rows) => rows[0] ?? null);
-    if (checkpoint?.lastAttemptAt && now.getTime() - checkpoint.lastAttemptAt.getTime() < POLL_INTERVAL_MS) {
+    if (checkpoint?.lastAttemptAt && now.getTime() - checkpoint.lastAttemptAt.getTime() < opts.pollIntervalMs) {
       return { sourceId: source.id, skipped: "not_due" as const };
+    }
+
+    // Single-run guard (contract §9): one active run per source at a time.
+    // The in-transaction advisory lock below already serializes overlapping
+    // ticks, but starting a second run while the first is mid-flight wastes
+    // cycles and can double-queue backlog creates. A run row left "running"
+    // by a crashed or hung process is reaped once it exceeds the configured
+    // run timeout, so a stale row can never block the source forever.
+    const [activeRun] = await db.select().from(commentIntakeRuns)
+      .where(and(
+        eq(commentIntakeRuns.sourceId, source.id),
+        eq(commentIntakeRuns.status, "running"),
+        isNull(commentIntakeRuns.finishedAt),
+      ))
+      .orderBy(sql`${commentIntakeRuns.startedAt} desc`)
+      .limit(1);
+    if (activeRun) {
+      const staleSince = now.getTime() - opts.runTimeoutMs;
+      if (activeRun.startedAt.getTime() >= staleSince) {
+        return { sourceId: source.id, skipped: "already_running" as const };
+      }
+      await db.update(commentIntakeRuns)
+        .set({ status: "failed", finishedAt: now, errorCode: "timeout", errorDetail: "run exceeded configured timeout" })
+        .where(eq(commentIntakeRuns.id, activeRun.id));
+      logger.warn({
+        sourceId: source.id,
+        companyId: source.companyId,
+        runId: activeRun.id,
+        runTimeoutMs: opts.runTimeoutMs,
+      }, "comment intake reaped stale running run past its timeout");
     }
 
     const [run] = await db.insert(commentIntakeRuns).values({
@@ -70,6 +123,11 @@ export function commentIntakeService(db: Db) {
 
     try {
       const result = await db.transaction(async (tx) => {
+        // Hard per-run bound: any statement that exceeds the configured run
+        // timeout is cancelled by Postgres instead of hanging the tick.
+        // `set_config(..., true)` sets the value transaction-locally and,
+        // unlike `SET LOCAL`, accepts a bound parameter.
+        await tx.execute(sql`select set_config('statement_timeout', ${String(opts.runTimeoutMs)}, true)`);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`comment-intake:${source.id}`}, 0))`);
         const current = await tx.select().from(commentIntakeCheckpoints)
           .where(eq(commentIntakeCheckpoints.sourceId, source.id)).then((rows) => rows[0] ?? null);
@@ -121,7 +179,7 @@ export function commentIntakeService(db: Db) {
               bound,
             ))
             .orderBy(asc(issueComments.createdAt), asc(issueComments.id))
-            .limit(MAX_PAGE_SIZE);
+            .limit(opts.batchSize);
 
         // Replays run first so new-work candidates are counted/created last and
         // become the watermark; replay rows always sit at-or-before the
@@ -319,11 +377,28 @@ export function commentIntakeService(db: Db) {
           .where(eq(commentIntakeRuns.id, run.id));
       });
       logger.error({ sourceId: source.id, companyId: source.companyId, errorCode }, "comment intake source poll failed");
+      // Bounded retries: retries continue at the poll cadence until the source
+      // has failed `maxConsecutiveFailures` times in a row, then the source is
+      // auto-disabled so a persistently failing ingestion stops being retried
+      // (and stops writing failure rows) until an operator re-enables it.
+      const consecutiveFailures = (checkpoint?.consecutiveFailureCount ?? 0) + 1;
+      if (consecutiveFailures >= opts.maxConsecutiveFailures) {
+        await db.update(commentIntakeSources).set({ enabled: false }).where(eq(commentIntakeSources.id, source.id));
+        logger.warn({
+          sourceId: source.id,
+          companyId: source.companyId,
+          consecutiveFailureCount: consecutiveFailures,
+          maxConsecutiveFailures: opts.maxConsecutiveFailures,
+        }, "comment intake source auto-disabled after consecutive failures");
+      }
       return { sourceId: source.id, failed: true as const, errorCode };
     }
   }
 
   async function runDue(now = new Date()) {
+    if (!opts.enabled) {
+      return [{ skipped: "disabled" as const }];
+    }
     const sources = await db.select().from(commentIntakeSources).where(and(
       eq(commentIntakeSources.enabled, true),
       eq(commentIntakeSources.providerKey, "paperclip"),
