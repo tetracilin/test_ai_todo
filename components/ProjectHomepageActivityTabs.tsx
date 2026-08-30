@@ -40,7 +40,7 @@ const DetailLink: React.FC<{ title: string; url: string | null }> = ({ title, ur
     <a
       href={url}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       className="font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary rounded"
     >
       {title}

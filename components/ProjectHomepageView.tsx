@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { ProjectHomepageActivityTabs } from './ProjectHomepageActivityTabs';
 
 export interface ProjectHomepageGoal {
     id: string;
@@ -174,6 +175,8 @@ export const ProjectHomepageView: React.FC<{
                     </ul>
                 )}
             </section>
+
+            <ProjectHomepageActivityTabs documents={data.documents} artifactTasks={data.artifactTasks} />
         </div>
     );
 };
