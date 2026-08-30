@@ -33,7 +33,7 @@ Release branch: `t3-paperclip-aitodo/t_4220e88c-update-all-new-development-and-g
 | DB typecheck and migration safety | Pass | Migration numbering and safety checks passed |
 | Full repository suite | **Fail** | 5 files failed, 283 passed, 103 skipped; 19 tests failed, 2,736 passed, 1,804 skipped |
 
-Full-suite blockers include a missing `@paperclipai/adapter-gemini-local/server` package/export, stale storage mocks missing `createExternalStorageServiceFromConfig`, worktree-provisioning fixture/config failures, and a setup-token route expectation failure. Deployment gate remains closed until these failures are fixed and the full suite passes.
+Full-suite blockers include leftover test imports of the removed Gemini adapter server export, stale storage mocks missing `createExternalStorageServiceFromConfig`, worktree-provisioning fixture/config failures, and a setup-token route expectation failure. Deployment gate remains closed until these failures are fixed and the full suite passes.
 
 ## PaperclipAI port 3100 validation
 

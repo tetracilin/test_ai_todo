@@ -1490,6 +1490,10 @@ export function createPluginWorkerHandle(
     // `open`. The host holds these frames here and replays them in order right
     // after it binds the route, so a batched frame is never lost.
     preOpen: JsonRpcNotification[];
+    // True when a frame exceeded the bounded pre-open queue. Open resolution is
+    // still in flight when this happens, so terminalization is deferred until
+    // after the host session exists and can observe its settled wait.
+    preOpenLimitExceeded: boolean;
     pendingRequests: number;
     protocolErrors: number;
     totalDataBytes: number;
@@ -1570,13 +1574,15 @@ export function createPluginWorkerHandle(
   // host replays the held frames in order after it binds the route. Bound the
   // hold by the pre-bind frame count, so a worker that floods frames before it
   // replies to the open cannot make the host hold an unbounded number of frames.
-  // Count one protocol error for each frame past the bound.
+  // A frame past the bound marks the route for terminalization after open binds:
+  // terminalizing inside the response batch would invalidate the matching open
+  // reply and reject instead of returning a session whose wait reports failure.
   function bufferPreOpenDuplexChannelNotification(
     route: DuplexChannelRoute,
     notification: JsonRpcNotification,
   ): void {
     if (route.preOpen.length >= maxDuplexChannelPreBindFrames) {
-      recordDuplexChannelProtocolError(route);
+      route.preOpenLimitExceeded = true;
       return;
     }
     route.preOpen.push(notification);
@@ -1597,6 +1603,13 @@ export function createPluginWorkerHandle(
       } else if (notification.method === DUPLEX_CHANNEL_EXIT_NOTIFICATION) {
         routeDuplexChannelExit(notification);
       }
+    }
+    if (route.preOpenLimitExceeded && route.state === "open") {
+      // Let `openDuplexChannel` return its session before ending the route. This
+      // preserves the session contract while bounding queued pre-open frames.
+      setImmediate(() => {
+        void terminalizeDuplexChannelRoute(route);
+      });
     }
   }
 
@@ -1742,6 +1755,7 @@ export function createPluginWorkerHandle(
       buffered: [],
       bufferedChars: 0,
       preOpen: [],
+      preOpenLimitExceeded: false,
       pendingRequests: 0,
       protocolErrors: 0,
       totalDataBytes: 0,

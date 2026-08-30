@@ -5,10 +5,7 @@ import {
   sessionCodec as cursorSessionCodec,
   isCursorUnknownSessionError,
 } from "@paperclipai/adapter-cursor-local/server";
-import {
-  sessionCodec as geminiSessionCodec,
-  isGeminiSessionUnrecoverableError,
-} from "@paperclipai/adapter-gemini-local/server";
+
 import {
   sessionCodec as opencodeSessionCodec,
   isOpenCodeUnknownSessionError,
@@ -145,51 +142,6 @@ describe("adapter session codecs", () => {
     expect(cursorSessionCodec.getDisplayId?.(serialized ?? null)).toBe("cursor-session-1");
   });
 
-  it("normalizes gemini session params with cwd", () => {
-    const parsed = geminiSessionCodec.deserialize({
-      session_id: "gemini-session-1",
-      cwd: "/tmp/gemini",
-    });
-    expect(parsed).toEqual({
-      sessionId: "gemini-session-1",
-      cwd: "/tmp/gemini",
-    });
-
-    const serialized = geminiSessionCodec.serialize(parsed);
-    expect(serialized).toEqual({
-      sessionId: "gemini-session-1",
-      cwd: "/tmp/gemini",
-    });
-    expect(geminiSessionCodec.getDisplayId?.(serialized ?? null)).toBe("gemini-session-1");
-  });
-
-  it("preserves gemini ACP session params for ACP lane resumes", () => {
-    const parsed = geminiSessionCodec.deserialize({
-      sessionKey: "paperclip:company:agent:task:fingerprint",
-      runtimeSessionName: "runtime-session-1",
-      acpxRecordId: "record-1",
-      acpSessionId: "acp-session-1",
-      agentSessionId: "agent-session-1",
-      agent: "gemini",
-      cwd: "/tmp/gemini-acp",
-      mode: "persistent",
-      stateDir: "/tmp/gemini-acp-state",
-      configFingerprint: "fingerprint",
-      workspaceId: "workspace-1",
-    });
-
-    expect(parsed).toMatchObject({
-      runtimeSessionName: "runtime-session-1",
-      acpSessionId: "acp-session-1",
-      agent: "gemini",
-      cwd: "/tmp/gemini-acp",
-      configFingerprint: "fingerprint",
-      workspaceId: "workspace-1",
-    });
-    expect(geminiSessionCodec.serialize(parsed)).toEqual(parsed);
-    expect(geminiSessionCodec.getDisplayId?.(parsed)).toBe("runtime-session-1");
-  });
-
   it("preserves acpx session params required for compatibility checks", () => {
     const parsed = acpxSessionCodec.deserialize({
       sessionKey: "paperclip:company:agent:task:fingerprint",
@@ -291,29 +243,6 @@ describe("cursor resume recovery detection", () => {
     ).toBe(true);
     expect(
       isCursorUnknownSessionError(
-        "{\"type\":\"result\",\"subtype\":\"success\"}",
-        "",
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("gemini resume recovery detection", () => {
-  it("detects unknown session errors from gemini output", () => {
-    expect(
-      isGeminiSessionUnrecoverableError(
-        "",
-        "unknown session id abc",
-      ),
-    ).toBe(true);
-    expect(
-      isGeminiSessionUnrecoverableError(
-        "",
-        "checkpoint latest not found",
-      ),
-    ).toBe(true);
-    expect(
-      isGeminiSessionUnrecoverableError(
         "{\"type\":\"result\",\"subtype\":\"success\"}",
         "",
       ),

@@ -137,7 +137,20 @@ async function runPnpm(cwd: string, args: string[]) {
 async function writeRegisteredSourceConfig(baseCwd: string, instanceId = "source-instance") {
   const configDir = path.join(baseCwd, ".paperclip");
   await fs.mkdir(configDir, { recursive: true });
-  await fs.writeFile(path.join(configDir, "config.json"), "{}\n", "utf8");
+  await fs.writeFile(
+    path.join(configDir, "config.json"),
+    JSON.stringify({
+      $meta: {
+        version: 1,
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        source: "configure",
+      },
+      database: {},
+      logging: { mode: "file" },
+      server: {},
+    }) + "\n",
+    "utf8",
+  );
   await fs.writeFile(
     path.join(configDir, ".env"),
     `PAPERCLIP_INSTANCE_ID=${instanceId}\n`,
@@ -2073,7 +2086,7 @@ describe("realizeExecutionWorkspace", () => {
           "fi",
           "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"worktree\" ] && [ \"$3\" = \"init\" ]; then",
           "  mkdir -p \"$PWD/.paperclip\"",
-          "  printf '%s\\n' '{\"database\":{\"embeddedPostgresDataDir\":\"'$PWD'/.paperclip/runtime/db\"}}' > \"$PWD/.paperclip/config.json\"",
+          "  printf '%s\\n' '{\"$meta\":{\"version\":1,\"updatedAt\":\"2026-08-30T00:00:00.000Z\",\"source\":\"configure\"},\"database\":{\"embeddedPostgresDataDir\":\"'$PWD'/.paperclip/runtime/db\"},\"logging\":{\"mode\":\"file\"},\"server\":{}}' > \"$PWD/.paperclip/config.json\"",
           "  printf '%s\\n' \"PAPERCLIP_HOME=$PWD/.paperclip/runtime\" \"PAPERCLIP_INSTANCE_ID=healthy\" \"PAPERCLIP_CONFIG=$PWD/.paperclip/config.json\" > \"$PWD/.paperclip/.env\"",
           "  exit 0",
           "fi",

@@ -24,6 +24,7 @@ function makeCompany(overrides: Partial<Company>): Company {
     logoAssetId: null,
     logoUrl: null,
     defaultResponsibleUserId: null,
+    artifactStorage: "default",
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

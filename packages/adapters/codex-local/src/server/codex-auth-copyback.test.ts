@@ -11,6 +11,12 @@ import {
 } from "./codex-auth-cache.js";
 import { resolveSharedCodexHomeDir } from "./codex-home.js";
 
+// UID 0 bypasses mode bits, so chmod(0o500) cannot force the EACCES branches
+// exercised by the permission-failure cases below. Keep them active for normal
+// users and skip only in root-runner environments where their precondition is
+// impossible to establish.
+const itWithEnforcedDirectoryPermissions = process.getuid?.() === 0 ? it.skip : it;
+
 // The copy-back module reuses the exact same direction-agnostic decision
 // predicate (`codex-auth-merge-decision.cjs`) that the inbound extract path
 // runs, only with the arguments flipped: for an outbound copy-back the sandbox
@@ -222,7 +228,7 @@ describe("copyBackCodexAuth", () => {
     expect(logs.join("\n")).not.toContain("sandbox-only");
   });
 
-  it("preserves the host file atomically when the install cannot be staged (no partial write, no leaked temp)", async () => {
+  itWithEnforcedDirectoryPermissions("preserves the host file atomically when the install cannot be staged (no partial write, no leaked temp)", async () => {
     // Make the host directory read-only so staging the same-filesystem temp fails
     // with EACCES. The host credential must be left byte-for-byte intact and no
     // partial/temp file may remain — the outbound write is all-or-nothing.
@@ -525,7 +531,7 @@ describe("copyBackCodexAuth identity-keyed cache write", () => {
     expect(combined).not.toContain("id-token");
   });
 
-  it("a read-only cache directory does not fail the copy-back: the successful host result is kept and no partial slot remains", async () => {
+  itWithEnforcedDirectoryPermissions("a read-only cache directory does not fail the copy-back: the successful host result is kept and no partial slot remains", async () => {
     const { env, sharedHomeAuthPath } = await makeEnv();
     const sandboxAuth = subscriptionAuth({ accountId: "acct-x", lastRefresh: NEWER, marker: "sandbox" });
     const hostAuth = subscriptionAuth({ accountId: "acct-x", lastRefresh: OLDER, marker: "host" });
@@ -566,7 +572,7 @@ describe("copyBackCodexAuth identity-keyed cache write", () => {
     expect(combined).not.toContain("acct-x");
   });
 
-  it("a rejecting cache-failure log does not override the successful host copy-back result", async () => {
+  itWithEnforcedDirectoryPermissions("a rejecting cache-failure log does not override the successful host copy-back result", async () => {
     const { env, sharedHomeAuthPath } = await makeEnv();
     const sandboxAuth = subscriptionAuth({ accountId: "acct-x", lastRefresh: NEWER, marker: "sandbox" });
     const hostAuth = subscriptionAuth({ accountId: "acct-x", lastRefresh: OLDER, marker: "host" });

@@ -1,4 +1,7 @@
 import { Command } from "commander";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyPortabilityPreviewResult } from "@paperclipai/shared";
 import {
@@ -16,6 +19,11 @@ import {
 
 const ORIGINAL_ENV = { ...process.env };
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
+
+function createTempContextPath(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-company-"));
+  return path.join(dir, "context.json");
+}
 
 function makeProgram(): Command {
   const program = new Command();
@@ -71,6 +79,7 @@ describe("company CLI commands", () => {
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    process.env.PAPERCLIP_CONTEXT = createTempContextPath();
     delete process.env.PAPERCLIP_API_URL;
     delete process.env.PAPERCLIP_API_KEY;
     delete process.env.PAPERCLIP_COMPANY_ID;
