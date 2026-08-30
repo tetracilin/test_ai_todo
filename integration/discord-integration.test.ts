@@ -93,11 +93,36 @@ describe('Discord integration HTTP contracts', () => {
       projectId: 'other-project', channelId: 'channel-2', notificationsEnabled: true, taskCreationEnabled: true,
     });
     expect(denied.status).toBe(403);
-    const preference = await request(server).patch('/api/integrations/discord/preferences').set(userAuth).send({ notificationsEnabled: false });
-    expect(preference.status).toBe(200);
-    const settings = await request(server).get('/api/integrations/discord/settings').set(userAuth);
-    expect(settings.body.preference.notificationsEnabled).toBe(false);
-    expect(settings.body.channelMappings).toHaveLength(1);
+
+    const issued = await request(server).post('/api/integrations/discord/link-codes').set(userAuth).send({});
+    const linked = await request(server).post('/api/integrations/discord/link-codes/consume').set(bridgeAuth).send({
+      code: issued.body.code, discordUserId: 'discord-user-1',
+    });
+    expect(linked.status).toBe(200);
+    const settingsBeforeLink = await request(server).get('/api/integrations/discord/settings').set(userAuth);
+    expect(settingsBeforeLink.body).toMatchObject({ link: { status: 'linked' } });
+    expect(settingsBeforeLink.body.preferences).toHaveLength(8);
+    expect(settingsBeforeLink.body.preferences.every((preference: { enabled: boolean }) => !preference.enabled)).toBe(true);
+
+    const optOut = await request(server).put('/api/integrations/discord/notification-preferences').set(userAuth).send({
+      preferences: settingsBeforeLink.body.preferences.map((preference: Record<string, unknown>) => ({ ...preference, enabled: false })),
+    });
+    expect(optOut.status).toBe(200);
+    expect(optOut.body.preferences.every((preference: { enabled: boolean }) => !preference.enabled)).toBe(true);
+    expect(optOut.body.channelMappings).toHaveLength(1);
+
+    const forbiddenChannel = await request(server).put('/api/integrations/discord/notification-preferences').set(userAuth).send({
+      preferences: settingsBeforeLink.body.preferences.map((preference: Record<string, unknown>) => preference.eventType === 'issue.created'
+        ? { ...preference, enabled: true, deliveryMode: 'channel', channelId: 'other-channel' }
+        : preference),
+    });
+    expect(forbiddenChannel.status).toBe(403);
+
+    const unlinked = await request(server).post('/api/integrations/discord/unlink').set(bridgeAuth).send({ discordUserId: 'discord-user-1' });
+    expect(unlinked.status).toBe(200);
+    const afterUnlink = await request(server).get('/api/integrations/discord/settings').set(userAuth);
+    expect(afterUnlink.body.link.status).toBe('unlinked');
+    expect(afterUnlink.body.preferences.every((preference: { enabled: boolean }) => !preference.enabled)).toBe(true);
   });
 
   it('leases durable outbox delivery, retries 429, then marks 403/404 terminal', async () => {

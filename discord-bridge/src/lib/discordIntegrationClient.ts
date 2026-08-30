@@ -75,6 +75,14 @@ export class DiscordIntegrationClient {
     return this.request("/api/integrations/discord/commands/task-create", { method: "POST", body: JSON.stringify(request) });
   }
 
+  async consumeLinkCode(input: { code: string; discordUserId: string; guildId: string | null }): Promise<void> {
+    await this.request("/api/integrations/discord/link-codes/consume", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async unlinkDiscordUser(input: { discordUserId: string; guildId: string | null }): Promise<void> {
+    await this.request("/api/integrations/discord/unlink", { method: "POST", body: JSON.stringify(input) });
+  }
+
   async getPendingDiscordDeliveries(): Promise<DiscordDelivery[]> {
     return this.request("/api/integrations/discord/deliveries/pending");
   }

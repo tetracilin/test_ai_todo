@@ -4,6 +4,15 @@ export const commandDefinitions = [
   new SlashCommandBuilder()
     .setName("paperclip")
     .setDescription("Paperclip task commands")
+    .addSubcommand((command) =>
+      command
+        .setName("link")
+        .setDescription("Connect this Discord account to Paperclip with a one-time code")
+        .addStringOption((option) => option.setName("code").setDescription("One-time code from Paperclip settings").setRequired(true)),
+    )
+    .addSubcommand((command) =>
+      command.setName("unlink").setDescription("Disconnect this Discord account from Paperclip"),
+    )
     .addSubcommandGroup((group) =>
       group
         .setName("task")

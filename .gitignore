@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 server.pid
+data/discord-integration-state.json
+data/discord-integration-state.json.tmp
 
 # Test output
 playwright-report/

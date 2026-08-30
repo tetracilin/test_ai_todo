@@ -62,4 +62,22 @@ describe("DiscordIntegrationClient", () => {
       body: { outcome: "suppressed" },
     });
   });
+
+  it("uses bridge-scoped linking endpoints", async () => {
+    nextResponse = { status: 200, body: { linked: true } };
+    await client().consumeLinkCode({ code: "one-time-code", discordUserId: "discord-user-1", guildId: "guild-1" });
+    expect(requests[0]).toMatchObject({
+      method: "POST",
+      url: "/api/integrations/discord/link-codes/consume",
+      body: { code: "one-time-code", discordUserId: "discord-user-1", guildId: "guild-1" },
+    });
+
+    nextResponse = { status: 200, body: { unlinked: true } };
+    await client().unlinkDiscordUser({ discordUserId: "discord-user-1", guildId: "guild-1" });
+    expect(requests[1]).toMatchObject({
+      method: "POST",
+      url: "/api/integrations/discord/unlink",
+      body: { discordUserId: "discord-user-1", guildId: "guild-1" },
+    });
+  });
 });

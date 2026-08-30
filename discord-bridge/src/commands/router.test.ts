@@ -78,6 +78,31 @@ describe("routeCommand", () => {
     );
   });
 
+  it("consumes a one-time link code without task creation", async () => {
+    const paperclip = { consumeLinkCode: vi.fn().mockResolvedValue(undefined) } as any;
+    const interaction = fakeInteraction({ code: "link-code" }, {
+      options: { getSubcommandGroup: () => null, getSubcommand: () => "link", getString: () => "link-code" },
+    });
+
+    await routeCommand({ paperclip }, interaction);
+
+    expect(paperclip.consumeLinkCode).toHaveBeenCalledWith({ code: "link-code", discordUserId: "discord-1", guildId: "guild-1" });
+    expect(taskCreate.createTaskFromDiscord).not.toHaveBeenCalled();
+    expect(interaction.editReply).toHaveBeenCalledWith("Discord account connected to Paperclip.");
+  });
+
+  it("unlinks through bridge-scoped API", async () => {
+    const paperclip = { unlinkDiscordUser: vi.fn().mockResolvedValue(undefined) } as any;
+    const interaction = fakeInteraction({}, {
+      options: { getSubcommandGroup: () => null, getSubcommand: () => "unlink", getString: () => null },
+    });
+
+    await routeCommand({ paperclip }, interaction);
+
+    expect(paperclip.unlinkDiscordUser).toHaveBeenCalledWith({ discordUserId: "discord-1", guildId: "guild-1" });
+    expect(interaction.editReply).toHaveBeenCalledWith("Discord account disconnected from Paperclip.");
+  });
+
   it("does not invoke Paperclip for unsupported subcommands", async () => {
     const interaction = fakeInteraction({}, {
       options: { getSubcommandGroup: () => "task", getSubcommand: () => "show", getString: () => null },

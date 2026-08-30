@@ -52,6 +52,17 @@ function serveStatic(req, res, distDir) {
 
 const MAX_BODY_BYTES = 32 * 1024;
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
+const DISCORD_NOTIFICATION_EVENTS = [
+  'issue.created',
+  'issue.status_changed',
+  'issue.assignee_changed',
+  'issue.priority_changed',
+  'issue.comment_created',
+  'issue.blocked',
+  'issue.unblocked',
+  'issue.completed',
+];
+const DISCORD_NOTIFICATION_EVENT_SET = new Set(DISCORD_NOTIFICATION_EVENTS);
 
 function defaultDiscordState() {
   return {
@@ -78,9 +89,27 @@ function json(res, status, body) {
 function apiError(res, status, code) { json(res, status, { code }); }
 function codeHash(code) { return crypto.createHash('sha256').update(code).digest('hex'); }
 function membership(state, projectId, userId) { return (state.memberships[projectId] || []).includes(userId); }
+function defaultNotificationPreferences() {
+  return DISCORD_NOTIFICATION_EVENTS.map((eventType) => ({ eventType, enabled: false, deliveryMode: 'dm', channelId: null }));
+}
+function normalizeNotificationPreferences(preferences) {
+  const byEvent = new Map((Array.isArray(preferences) ? preferences : []).map((preference) => [preference.eventType, preference]));
+  return defaultNotificationPreferences().map((preference) => {
+    const candidate = byEvent.get(preference.eventType);
+    return candidate && typeof candidate.enabled === 'boolean' && (candidate.deliveryMode === 'dm' || candidate.deliveryMode === 'channel')
+      ? { ...preference, enabled: candidate.enabled, deliveryMode: candidate.deliveryMode, channelId: candidate.deliveryMode === 'channel' && typeof candidate.channelId === 'string' ? candidate.channelId : null }
+      : preference;
+  });
+}
+function notificationPreferencesFor(state, userId) {
+  return normalizeNotificationPreferences(state.preferences[userId]?.preferences);
+}
+function discordUserIdFor(state, userId) {
+  return Object.entries(state.links).find(([, linkedUserId]) => linkedUserId === userId)?.[0] || null;
+}
 
 function createDiscordStore(options) {
-  const dataPath = options.discordDataPath;
+  const dataPath = options.discordDataPath || process.env.DISCORD_INTEGRATION_DATA_PATH || path.join(__dirname, 'data', 'discord-integration-state.json');
   let state = clone(options.discordState || defaultDiscordState());
   if (dataPath && fs.existsSync(dataPath)) state = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
   for (const key of Object.keys(defaultDiscordState())) state[key] ||= {};
@@ -138,8 +167,13 @@ function createServer(options = {}) {
     });
   }
   function settingsFor(state, userId) {
+    const discordUserId = discordUserIdFor(state, userId);
     return {
-      preference: { notificationsEnabled: state.preferences[userId]?.notificationsEnabled !== false },
+      link: { status: discordUserId ? 'linked' : 'unlinked' },
+      preferences: notificationPreferencesFor(state, userId),
+      channels: Object.values(state.channelMappings)
+        .filter((mapping) => membership(state, mapping.projectId, userId))
+        .map((mapping) => ({ id: mapping.channelId, name: mapping.channelName || mapping.channelId, guildName: mapping.guildName })),
       channelMappings: Object.values(state.channelMappings).filter((mapping) => membership(state, mapping.projectId, userId)),
     };
   }
@@ -156,6 +190,17 @@ function createServer(options = {}) {
       if (!mapping.notificationsEnabled || mapping.projectId !== issue.projectId) continue;
       const deliveryId = crypto.randomUUID();
       state.deliveries[deliveryId] = { id: deliveryId, eventId: id, recipient: { type: 'channel', id: mapping.channelId }, status: 'pending', attempts: 0, availableAt: now() };
+    }
+    const discordUserId = discordUserIdFor(state, issue.createdByUserId);
+    const preference = notificationPreferencesFor(state, issue.createdByUserId).find((candidate) => candidate.eventType === eventType);
+    if (discordUserId && preference?.enabled) {
+      const recipient = preference.deliveryMode === 'channel'
+        ? { type: 'channel', id: preference.channelId }
+        : { type: 'dm', id: discordUserId };
+      if (recipient.id) {
+        const deliveryId = crypto.randomUUID();
+        state.deliveries[deliveryId] = { id: deliveryId, eventId: id, recipient, status: 'pending', attempts: 0, availableAt: now() };
+      }
     }
   }
   function createTask(state, payload) {
@@ -208,9 +253,26 @@ function createServer(options = {}) {
       const actor = requireUser(req, res); if (!actor) return;
       return readBody(req, res, (body) => {
         if (!body || typeof body.notificationsEnabled !== 'boolean' || Object.keys(body).some((key) => key !== 'notificationsEnabled')) return apiError(res, 400, 'validation_failed');
-        store.get().preferences[actor.userId] = { notificationsEnabled: body.notificationsEnabled };
+        store.get().preferences[actor.userId] = {
+          preferences: defaultNotificationPreferences().map((preference) => ({ ...preference, enabled: body.notificationsEnabled })),
+        };
         store.save();
         return json(res, 200, { notificationsEnabled: body.notificationsEnabled });
+      });
+    }
+    if (req.method === 'PUT' && url.pathname === '/api/integrations/discord/notification-preferences') {
+      const actor = requireUser(req, res); if (!actor) return;
+      return readBody(req, res, (body) => {
+        const preferences = body?.preferences;
+        const valid = Array.isArray(preferences) && preferences.length === DISCORD_NOTIFICATION_EVENTS.length &&
+          new Set(preferences.map((preference) => preference?.eventType)).size === DISCORD_NOTIFICATION_EVENTS.length &&
+          preferences.every((preference) => preference && DISCORD_NOTIFICATION_EVENT_SET.has(preference.eventType) && typeof preference.enabled === 'boolean' && (preference.deliveryMode === 'dm' || preference.deliveryMode === 'channel') && (preference.channelId === null || typeof preference.channelId === 'string') && (preference.deliveryMode !== 'channel' || !preference.enabled || typeof preference.channelId === 'string'));
+        if (!valid) return apiError(res, 400, 'validation_failed');
+        const eligibleChannels = new Set(settingsFor(store.get(), actor.userId).channels.map((channel) => channel.id));
+        if (preferences.some((preference) => preference.enabled && preference.deliveryMode === 'channel' && !eligibleChannels.has(preference.channelId))) return apiError(res, 403, 'channel_access_denied');
+        store.get().preferences[actor.userId] = { preferences: normalizeNotificationPreferences(preferences) };
+        store.save();
+        return json(res, 200, settingsFor(store.get(), actor.userId));
       });
     }
     if (req.method === 'PUT' && url.pathname === '/api/integrations/discord/settings/channel-mappings') {
@@ -236,6 +298,19 @@ function createServer(options = {}) {
         const record = store.get().linkCodes[codeHash(body.code)];
         if (!record || record.consumed || record.expiresAt < Date.now()) return apiError(res, 400, 'link_code_invalid');
         record.consumed = true; store.get().links[body.discordUserId] = record.userId; store.save(); return json(res, 200, { linked: true });
+      });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/integrations/discord/unlink') {
+      if (!requireBridge(req, res)) return;
+      return readBody(req, res, (body) => {
+        if (!body || typeof body.discordUserId !== 'string' || !body.discordUserId) return apiError(res, 400, 'validation_failed');
+        const linkedUserId = store.get().links[body.discordUserId];
+        if (linkedUserId) {
+          delete store.get().links[body.discordUserId];
+          delete store.get().preferences[linkedUserId];
+          store.save();
+        }
+        return json(res, 200, { unlinked: true });
       });
     }
     if (req.method === 'GET' && url.pathname === '/api/integrations/discord/deliveries/pending') {

@@ -34,6 +34,8 @@ Bridge-scoped:
 
 Link codes are single-use, expire after ten minutes, and server persists only SHA-256 code hashes.
 
+`DISCORD_INTEGRATION_DATA_PATH` optionally overrides Paperclip's default durable integration-state path. Production mounts this path on persistent storage; it never belongs in bridge state.
+
 ## Setup
 
 1. Copy `.env.example` to `.env`; use secret store in production.

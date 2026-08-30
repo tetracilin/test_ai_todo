@@ -20,13 +20,33 @@ export async function routeCommand(ctx: CommandContext, interaction: ChatInputCo
 }
 
 async function dispatch(ctx: CommandContext, interaction: ChatInputCommandInteraction): Promise<string> {
-  if (
-    interaction.commandName !== "paperclip" ||
-    interaction.options.getSubcommandGroup() !== "task" ||
-    interaction.options.getSubcommand() !== "create"
-  ) {
+  if (interaction.commandName !== "paperclip") {
     return "Unknown Paperclip command.";
   }
+
+  const subcommandGroup = interaction.options.getSubcommandGroup(false);
+  const subcommand = interaction.options.getSubcommand();
+  if (!subcommandGroup && subcommand === "link") {
+    try {
+      await ctx.paperclip.consumeLinkCode({
+        code: interaction.options.getString("code", true),
+        discordUserId: interaction.user.id,
+        guildId: interaction.guildId,
+      });
+      return "Discord account connected to Paperclip.";
+    } catch {
+      return "This link code is invalid or expired. Create a new code in Paperclip settings.";
+    }
+  }
+  if (!subcommandGroup && subcommand === "unlink") {
+    try {
+      await ctx.paperclip.unlinkDiscordUser({ discordUserId: interaction.user.id, guildId: interaction.guildId });
+      return "Discord account disconnected from Paperclip.";
+    } catch {
+      return "Paperclip could not disconnect this account. Try again in a moment.";
+    }
+  }
+  if (subcommandGroup !== "task" || subcommand !== "create") return "Unknown Paperclip command.";
 
   const channel = interaction.channel;
   const parentChannelId = channel?.isThread() ? channel.parentId : null;
