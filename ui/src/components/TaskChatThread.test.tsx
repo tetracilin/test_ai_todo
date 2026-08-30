@@ -114,6 +114,63 @@ describe("TaskChatThread draft pass-through", () => {
     expect(container.querySelector('[data-testid="mock-editor"]')?.textContent)
       .toBe("half-written thought");
   });
+
+  it("merges an activity receipt chronologically without duplicating its comment source", () => {
+    render(
+      <TaskChatThread
+        comments={[{
+          id: "comment-1",
+          companyId: "company-1",
+          issueId: "issue-1",
+          authorType: "user",
+          authorAgentId: null,
+          authorUserId: "user-1",
+          body: "First human comment.",
+          presentation: null,
+          metadata: null,
+          createdAt: new Date("2026-08-15T12:00:00.000Z"),
+          updatedAt: new Date("2026-08-15T12:00:00.000Z"),
+        }]}
+        activity={[
+          {
+            id: "evt-comment",
+            companyId: "company-1",
+            actorType: "user",
+            actorId: "user-1",
+            action: "issue.comment_added",
+            entityType: "issue",
+            entityId: "issue-1",
+            agentId: null,
+            runId: null,
+            createdAt: new Date("2026-08-15T12:00:00.000Z"),
+            details: { commentId: "comment-1" },
+          },
+          {
+            id: "evt-status",
+            companyId: "company-1",
+            actorType: "user",
+            actorId: "user-1",
+            action: "issue.updated",
+            entityType: "issue",
+            entityId: "issue-1",
+            agentId: null,
+            runId: null,
+            createdAt: new Date("2026-08-15T12:01:00.000Z"),
+            details: { status: "done", _previous: { status: "in_progress" } },
+          },
+        ] as never}
+        currentUserId="user-1"
+        onAdd={async () => {}}
+      />,
+    );
+
+    const receipt = container.querySelector('[data-testid="task-chat-activity-receipt"]');
+    expect(receipt?.textContent).toContain("Youchanged the status from in progress to done");
+    expect(container.querySelectorAll('[data-testid="task-chat-activity-receipt"]')).toHaveLength(1);
+    expect(container.textContent!.indexOf("First human comment.")).toBeLessThan(
+      container.textContent!.indexOf("changed the status from in progress to done"),
+    );
+  });
 });
 
 describe("TaskChatThread composer alignment", () => {

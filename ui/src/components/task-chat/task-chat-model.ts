@@ -111,6 +111,15 @@ export interface TaskChatMessageItem {
   createdAtIso?: string;
 }
 
+/** A persisted task activity receipt not already represented by a comment or interaction. */
+export interface TaskChatActivityItem {
+  id: string;
+  kind: "activity";
+  actor: string;
+  text: string;
+  createdAtIso: string;
+}
+
 /** Collapsed chain-of-thought (ACP agent_thought_chunk). */
 export interface TaskChatThinkingItem {
   id: string;
@@ -282,6 +291,7 @@ export interface TaskChatTurnItem {
 
 export type TaskChatItem =
   | TaskChatMessageItem
+  | TaskChatActivityItem
   | TaskChatThinkingItem
   | TaskChatToolItem
   | TaskChatStatusItem

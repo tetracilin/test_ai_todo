@@ -38,6 +38,7 @@ import { TaskChatBubbleActions } from "@/components/task-chat/TaskChatBubbleActi
 import type { FeedbackVoteValue } from "@paperclipai/shared";
 import { TaskChatThreadView, taskChatContentKey } from "@/components/task-chat/TaskChatThreadView";
 import { TaskChatComposer } from "@/components/task-chat/TaskChatComposer";
+import { activityToTaskChatItems } from "@/components/task-chat/task-chat-activity-adapter";
 import { useWindowAutoFollow } from "@/components/task-chat/useWindowAutoFollow";
 import { useSidebar } from "@/context/SidebarContext";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     comments,
     interactions,
     timelineEvents,
+    activity,
     issueId = null,
     agentMap,
     userLabelMap,
@@ -203,6 +205,18 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       issueAssigneeAgentId,
     }),
     [comments, agentMap, userLabelMap, currentUserId, issueAssigneeAgentId],
+  );
+
+  const activityItems = useMemo(
+    () => activityToTaskChatItems(activity, {
+      agentMap,
+      userLabelMap,
+      currentUserId,
+    }, {
+      commentIds: new Set(comments.map((comment) => (comment as { id?: string }).id).filter(Boolean) as string[]),
+      interactionIds: new Set((interactions ?? []).map((interaction) => interaction.id)),
+    }),
+    [activity, agentMap, comments, currentUserId, interactions, userLabelMap],
   );
 
   // Every run we might need a transcript for (history + live), deduped by id.
@@ -318,6 +332,28 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         item: { id, kind: "interaction", interaction },
       });
     }
+    for (const item of activityItems) {
+      entries.push({ ms: toMs(item.createdAtIso), order: 0, id: item.id, item });
+    }
+    // A transcript-backed run has its own folded turn. Keep an explicit
+    // lifecycle receipt only for terminal runs with no visible output, so a
+    // successful dispatch never disappears and transcript runs never duplicate.
+    for (const run of linkedRuns ?? []) {
+      if (run.hasStoredOutput || !isTerminalRunStatus(run.status)) continue;
+      const id = `run-lifecycle:${run.runId}`;
+      entries.push({
+        ms: toMs(run.finishedAt ?? run.createdAt),
+        order: 0,
+        id,
+        item: {
+          id,
+          kind: "marker",
+          variant: "turn_boundary",
+          label: run.status === "succeeded" ? "Run completed" : `Run ${run.status}`,
+          detail: run.agentName ? `${run.agentName} · no transcript output` : "No transcript output",
+        },
+      });
+    }
     if (planDocument) {
       const revision = planDocument.latestRevisionNumber ?? 1;
       const id = `plan-doc:${planDocument.latestRevisionId ?? planDocument.id}`;
@@ -337,7 +373,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     return entries.sort(
       (a, b) => a.ms - b.ms || a.order - b.order || a.id.localeCompare(b.id),
     );
-  }, [comments, commentItems, interactions, timelineEvents, linkedRuns, liveRuns, planDocument]);
+  }, [activityItems, comments, commentItems, interactions, timelineEvents, linkedRuns, liveRuns, planDocument]);
 
   // Boolean gate (stable across the host's per-render brief objects) so the
   // heavy assembly memo doesn't recompute on every parent render.

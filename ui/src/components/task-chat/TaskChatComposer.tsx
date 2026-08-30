@@ -517,6 +517,7 @@ export function TaskChatComposer({
               disabled={disabled || !onWorkModeChange}
               className="status-chip flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:opacity-50"
               style={{ "--sc": modeHue(pendingMode) } as CSSProperties}
+              aria-label={`Composer mode: ${deliveryMode === "comment" ? "Comment" : modeMeta.shortLabel}`}
               data-testid="task-chat-composer-mode"
               data-pending-work-mode={pendingMode}
               data-delivery-mode={deliveryMode}
@@ -531,7 +532,7 @@ export function TaskChatComposer({
               onSelect={() => setDeliveryMode("comment")}
             >
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium">Comment only</span>
+                <span className="font-medium">Comment</span>
                 <span className="text-xs text-muted-foreground">Add to thread without invoking agent</span>
               </span>
               {deliveryMode === "comment" ? <Check className="h-4 w-4 shrink-0" aria-hidden /> : null}

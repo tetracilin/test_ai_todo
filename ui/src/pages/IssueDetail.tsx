@@ -1336,6 +1336,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         feedbackTermsUrl={feedbackTermsUrl}
         linkedRuns={timelineRuns}
         timelineEvents={timelineEvents}
+        activity={resolvedActivity}
         workModeChanges={workModeChanges}
         liveRuns={resolvedLiveRuns}
         activeRun={resolvedActiveRun}

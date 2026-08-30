@@ -12,6 +12,7 @@ import { TaskChatStatusPill } from "./TaskChatStatusPill";
 import { TaskChatToolCard } from "./TaskChatToolCard";
 import { TaskChatUsageReadout } from "./TaskChatUsageReadout";
 import { TaskChatActivityPhase } from "./TaskChatActivityPhase";
+import { TaskChatActivityReceipt } from "./TaskChatActivityReceipt";
 import { TaskMessageScroller } from "./TaskMessageScroller";
 
 interface TaskChatThreadViewProps {
@@ -86,6 +87,8 @@ function renderItem(
         />
       );
     }
+    case "activity":
+      return <TaskChatActivityReceipt item={item} />;
     case "marker":
       return <TaskChatMarker item={item} />;
     case "thinking":

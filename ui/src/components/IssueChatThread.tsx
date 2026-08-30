@@ -42,6 +42,7 @@ import type {
   IssueScheduledRetry,
   SuccessfulRunHandoffState,
   IssueWorkMode,
+  ActivityEvent,
 } from "@paperclipai/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
 import { findUIAdapter } from "../adapters/registry";
@@ -439,6 +440,8 @@ interface IssueChatThreadProps {
   feedbackTermsUrl?: string | null;
   linkedRuns?: IssueChatLinkedRun[];
   timelineEvents?: IssueTimelineEvent[];
+  /** Raw issue activity for the redesigned chronological feed. Classic thread ignores it. */
+  activity?: ActivityEvent[];
   /**
    * Work-mode switch history from the activity feed. Only the chat-style
    * TaskChatThread consumes this to tag each agent reply with the mode its
