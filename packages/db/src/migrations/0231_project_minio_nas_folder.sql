@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "minio_nas_folder" text;

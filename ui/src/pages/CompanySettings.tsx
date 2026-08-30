@@ -44,6 +44,7 @@ export function CompanySettings() {
   const [description, setDescription] = useState("");
   const [brandColor, setBrandColor] = useState("");
   const [attachmentMaxMiB, setAttachmentMaxMiB] = useState(String(DEFAULT_COMPANY_ATTACHMENT_MAX_MIB));
+  const [artifactStorage, setArtifactStorage] = useState<"default" | "nas_minio">("default");
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [governance, setGovernance] = useState<InteractionResolverGovernance>({});
@@ -55,6 +56,7 @@ export function CompanySettings() {
     setDescription(selectedCompany.description ?? "");
     setBrandColor(selectedCompany.brandColor ?? "");
     setAttachmentMaxMiB(String(Math.round((selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES) / BYTES_PER_MIB)));
+    setArtifactStorage(selectedCompany.artifactStorage ?? "default");
     setLogoUrl(selectedCompany.logoUrl ?? "");
     setGovernance(selectedCompany.interactionResolverGovernance ?? {});
   }, [selectedCompany]);
@@ -70,7 +72,8 @@ export function CompanySettings() {
     (companyName !== selectedCompany.name ||
       description !== (selectedCompany.description ?? "") ||
       brandColor !== (selectedCompany.brandColor ?? "") ||
-      attachmentMaxBytes !== (selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES));
+      attachmentMaxBytes !== (selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES) ||
+      artifactStorage !== (selectedCompany.artifactStorage ?? "default"));
 
   const generalMutation = useMutation({
     mutationFn: (data: {
@@ -78,6 +81,7 @@ export function CompanySettings() {
       description: string | null;
       brandColor: string | null;
       attachmentMaxBytes: number;
+      artifactStorage: "default" | "nas_minio";
     }) => companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
@@ -190,7 +194,8 @@ export function CompanySettings() {
       name: companyName.trim(),
       description: description.trim() || null,
       brandColor: brandColor || null,
-      attachmentMaxBytes
+      attachmentMaxBytes,
+      artifactStorage,
     });
   }
 
@@ -346,6 +351,19 @@ export function CompanySettings() {
                     </span>
                   )}
                 </div>
+              </Field>
+              <Field
+                label="Default artifact storage"
+                hint="New task and subtask artifacts, documents, attachments, and later versions use this storage."
+              >
+                <select
+                  value={artifactStorage}
+                  onChange={(event) => setArtifactStorage(event.target.value as "default" | "nas_minio")}
+                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                >
+                  <option value="default">Default storage</option>
+                  <option value="nas_minio">NAS MinIO</option>
+                </select>
               </Field>
             </div>
           </div>

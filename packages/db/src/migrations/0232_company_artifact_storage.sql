@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "artifact_storage" text DEFAULT 'default' NOT NULL;

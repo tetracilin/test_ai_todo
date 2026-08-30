@@ -1,1 +1,0 @@
-ALTER TABLE "projects" ADD COLUMN "minio_nas_folder" text;

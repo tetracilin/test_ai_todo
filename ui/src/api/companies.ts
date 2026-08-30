@@ -102,6 +102,7 @@ export const companiesApi = {
         | "status"
         | "budgetMonthlyCents"
         | "attachmentMaxBytes"
+        | "artifactStorage"
         | "requireBoardApprovalForNewAgents"
         | "interactionResolverGovernance"
         | "feedbackDataSharingEnabled"

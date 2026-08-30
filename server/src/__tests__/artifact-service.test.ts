@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import {
   artifactComments,
   artifacts,
@@ -32,6 +33,7 @@ describeEmbeddedPostgres("artifact service", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   let storageDir: string;
+  let externalStorageDir: string;
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-artifact-service-");
@@ -46,6 +48,9 @@ describeEmbeddedPostgres("artifact service", () => {
     await db.delete(companies);
     if (storageDir) {
       await fs.rm(storageDir, { recursive: true, force: true });
+    }
+    if (externalStorageDir) {
+      await fs.rm(externalStorageDir, { recursive: true, force: true });
     }
   });
 
@@ -64,8 +69,10 @@ describeEmbeddedPostgres("artifact service", () => {
   async function makeService() {
     storageDir = await fs.mkdtemp(path.join(os.tmpdir(), "artifact-storage-"));
     const storage = createStorageService(createLocalDiskStorageProvider(storageDir));
-    const svc = artifactService(db, storage, null);
-    return { storage, svc };
+    externalStorageDir = await fs.mkdtemp(path.join(os.tmpdir(), "artifact-external-storage-"));
+    const externalStorage = createStorageService(createLocalDiskStorageProvider(externalStorageDir));
+    const svc = artifactService(db, storage, { label: "External storage", storage: externalStorage });
+    return { storage, externalStorage, svc };
   }
 
   const actor = { createdByUserId: "user-1", createdByAgentId: null };
@@ -89,6 +96,68 @@ describeEmbeddedPostgres("artifact service", () => {
     expect(artifact.currentVersionNumber).toBe(1);
     expect(artifact.currentVersion?.versionNumber).toBe(1);
     expect(artifact.currentVersion?.versionName).toBe("v1");
+  });
+
+  it("uses NAS MinIO as the company default for document and attachment versions", async () => {
+    const { companyId, issueId } = await setupCompanyIssue();
+    await db.update(companies).set({ artifactStorage: "nas_minio" }).where(eq(companies.id, companyId));
+    const { externalStorage, svc } = await makeService();
+
+    const artifact = await svc.createFromUpload({
+      companyId,
+      issueId,
+      name: "notes.md",
+      contentType: "text/markdown",
+      body: Buffer.from("# first", "utf8"),
+      versionName: null,
+      actor,
+    });
+    await svc.saveMarkdown({
+      companyId,
+      artifactId: artifact.id,
+      body: "# second",
+      changeSummary: null,
+      actor,
+    });
+
+    const versions = await db
+      .select()
+      .from(artifactVersions)
+      .where(eq(artifactVersions.artifactId, artifact.id));
+    expect(versions).toHaveLength(2);
+    expect(versions.every((version) => version.source === "external")).toBe(true);
+    for (const version of versions) {
+      expect((await externalStorage.headObject(companyId, version.objectKey)).exists).toBe(true);
+    }
+
+    const attachment = await svc.createFromUpload({
+      companyId,
+      issueId,
+      name: "scan.pdf",
+      contentType: "application/pdf",
+      body: Buffer.from("scan-v1", "utf8"),
+      versionName: null,
+      actor,
+    });
+    const attachmentVersion = await svc.createVersion({
+      companyId,
+      artifactId: attachment.id,
+      versionName: "Reviewed scan",
+      contentType: "application/pdf",
+      body: Buffer.from("scan-v2", "utf8"),
+      changeSummary: null,
+      actor,
+    });
+    expect(attachment.currentVersion?.source).toBe("external");
+    expect(attachmentVersion.source).toBe("external");
+    const attachmentVersions = await db
+      .select()
+      .from(artifactVersions)
+      .where(eq(artifactVersions.artifactId, attachment.id));
+    expect(attachmentVersions).toHaveLength(2);
+    for (const version of attachmentVersions) {
+      expect((await externalStorage.headObject(companyId, version.objectKey)).exists).toBe(true);
+    }
   });
 
   it("auto-versions markdown on save without requiring a version name", async () => {
