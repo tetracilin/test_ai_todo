@@ -292,4 +292,20 @@ describe("project env routes", () => {
     expect(response.status).toBe(403);
     expect(mockMinioNasStorage.listFolders).not.toHaveBeenCalled();
   });
+
+  it("rejects unauthorized storage configuration updates before validation or persistence", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject({ minioNasFolder: null }));
+    mockAccessService.decide.mockResolvedValue({ allowed: false });
+
+    const app = await createApp();
+    const response = await request(app)
+      .put("/api/projects/project-1/storage-config")
+      .send({ nasFolder: "/projects/alpha" });
+
+    expect(response.status).toBe(403);
+    expect(mockMinioNasStorage.validateFolder).not.toHaveBeenCalled();
+    expect(mockProjectService.update).not.toHaveBeenCalled();
+    expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
 });
