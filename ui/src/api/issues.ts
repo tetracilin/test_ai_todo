@@ -48,6 +48,14 @@ export type ResolveRecoveryActionResponse = {
   recoveryAction: IssueRecoveryAction;
 };
 
+export type StopIssueActiveRunResponse = {
+  issue: Issue;
+  run: {
+    id: string;
+    status: string;
+  };
+};
+
 export type ArtifactEditorSession = {
   actionUrl: string;
   formParameters: Record<string, string>;
@@ -178,6 +186,8 @@ export const issuesApi = {
     api.post<Issue>(`/companies/${companyId}/issues`, data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueUpdateResponse>(`/issues/${id}`, data),
+  stopActiveRun: (id: string) =>
+    api.post<StopIssueActiveRunResponse>(`/issues/${id}/active-run/stop`, {}),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(`/issues/${id}/stalled-review-decision`, data),
   resolveRecoveryAction: (
