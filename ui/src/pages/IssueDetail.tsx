@@ -335,6 +335,17 @@ export function canBoardResolveRecoveryAction(
   return membership.membershipRole !== "viewer" && membership.membershipRole !== null;
 }
 
+// Client-side write gate for the Plan tab's "Ask agent to plan" CTA (TVR-D04):
+// instance admins, local-implicit access, and active non-viewer memberships may
+// request plan work; viewers and non-members get the guidance-only empty state.
+// Authorization on the underlying work-mode update stays server-enforced.
+export function canBoardWriteIssue(
+  companyId: string | null | undefined,
+  boardAccess: CurrentBoardAccess | undefined,
+) {
+  return canBoardResolveRecoveryAction(companyId, boardAccess);
+}
+
 // `canBoardManageRuntime` and `readRecoveryReconcileWorkspaceId` moved to `@/lib/recovery-reconcile`
 // so the run-page recovery surface can reuse them without importing this page module. Re-exported
 // here (from the top-of-file import) to keep existing import sites — and their tests — stable, while
@@ -3534,6 +3545,8 @@ export function IssueDetail() {
         onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
         checkingMonitorNow={checkIssueMonitorNow.isPending}
         documentDeepLink={documentDeepLink?.issueId === panelIssue.id ? documentDeepLink : null}
+        canRequestPlan={canBoardWriteIssue(panelIssue.companyId, boardAccess)}
+        onRequestPlan={() => updateIssue.mutate({ workMode: "planning" })}
       />
     );
     return () => closePanel();
@@ -5646,6 +5659,8 @@ export function IssueDetail() {
                 onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
                 checkingMonitorNow={checkIssueMonitorNow.isPending}
                 documentDeepLink={documentDeepLink?.issueId === issue.id ? documentDeepLink : null}
+                canRequestPlan={canBoardWriteIssue(issue.companyId, boardAccess)}
+                onRequestPlan={() => updateIssue.mutate({ workMode: "planning" })}
               />
             </div>
           </ScrollArea>

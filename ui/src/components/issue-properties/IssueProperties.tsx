@@ -151,6 +151,11 @@ interface IssuePropertiesProps {
   onCheckMonitorNow?: () => void;
   checkingMonitorNow?: boolean;
   documentDeepLink?: IssuePropertiesDocumentDeepLink | null;
+  /** Whether the current user is authorized to request plan work (TVR-D04).
+   * The server still enforces authorization on the underlying update. */
+  canRequestPlan?: boolean;
+  /** Action for the Plan tab's empty-state "Ask agent to plan" CTA. */
+  onRequestPlan?: () => void;
 }
 
 export interface IssuePropertiesDocumentDeepLink {
@@ -198,6 +203,8 @@ export function IssueProperties({
   onCheckMonitorNow,
   checkingMonitorNow = false,
   documentDeepLink,
+  canRequestPlan = false,
+  onRequestPlan,
 }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const { isMobile } = useSidebar();
@@ -2619,7 +2626,14 @@ export function IssueProperties({
         : tabStrip}
       <TabsContent value="properties">{propertiesBody}</TabsContent>
       <TabsContent value="plans">
-        {paneTab === "plans" ? <IssuePropertiesPlansTab issue={issue} inline={inline} /> : null}
+        {paneTab === "plans" ? (
+          <IssuePropertiesPlansTab
+            issue={issue}
+            inline={inline}
+            canRequestPlan={canRequestPlan}
+            onRequestPlan={onRequestPlan}
+          />
+        ) : null}
       </TabsContent>
       <TabsContent value="artifacts">
         {paneTab === "artifacts" ? (

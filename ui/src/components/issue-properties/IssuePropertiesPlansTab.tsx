@@ -18,6 +18,14 @@ interface IssuePropertiesPlansTabProps {
   /** Retained for host parity with the other tabs; the Plans tab no longer
    * renders its own approval control (PAP-418). */
   inline?: boolean;
+  /** Whether the current user is authorized to request plan work. Mirrors the
+   * client-side write gate used for other issue mutations; the server still
+   * enforces authorization on the underlying update. When false the empty
+   * state renders guidance text only (TVR-D04). */
+  canRequestPlan?: boolean;
+  /** Action for the empty-state "Ask agent to plan" CTA. Wired by the host to
+   * put the task into planning mode so the composer can request a plan. */
+  onRequestPlan?: () => void;
 }
 
 function hasPendingPlanConfirmation(interactions: IssueThreadInteraction[] | undefined): boolean {
@@ -78,7 +86,7 @@ function OtherDocumentSection({ issueId, doc, locationHash }: { issueId: string;
  * PlanEntry/todo streaming is a flagged protocol dependency (demonstrated in
  * the /dev/task-chat-lab harness).
  */
-export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps) {
+export function IssuePropertiesPlansTab({ issue, canRequestPlan = false, onRequestPlan }: IssuePropertiesPlansTabProps) {
   const {
     data: planDocument,
     isLoading: planDocumentLoading,
@@ -143,19 +151,33 @@ export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps)
           </div>
         ) : planDocumentLoading || acceptedPlansLoading || documentsLoading ? (
           "Loading plan…"
-        ) : issue.workMode === "planning" ? (
-          <div className="space-y-2">
-            <p>This task is in plan mode but no plan document has been written yet.</p>
-            {pendingPlanConfirmation ? (
-              <p className="text-amber-foreground">
-                A plan confirmation is pending, but the plan document it should confirm is missing.
-              </p>
-            ) : null}
-          </div>
         ) : (
           <div className="space-y-2">
-            <p>No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.</p>
-            <p className="text-xs">The plan document, accepted plans, and revisions will appear here.</p>
+            {issue.workMode === "planning" ? (
+              <>
+                <p>This task is in plan mode but no plan document has been written yet.</p>
+                {pendingPlanConfirmation ? (
+                  <p className="text-amber-foreground">
+                    A plan confirmation is pending, but the plan document it should confirm is missing.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p>No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.</p>
+                <p className="text-xs">The plan document, accepted plans, and revisions will appear here.</p>
+              </>
+            )}
+            {canRequestPlan && onRequestPlan ? (
+              <button
+                type="button"
+                data-testid="plan-empty-state-ask-agent"
+                className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-accent/50"
+                onClick={onRequestPlan}
+              >
+                Ask agent to plan
+              </button>
+            ) : null}
           </div>
         )}
       </div>

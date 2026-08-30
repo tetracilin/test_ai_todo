@@ -51,6 +51,10 @@ interface TaskChatThreadViewProps {
   className?: string;
   /** When false, render the list without the scroll container (e.g. previews). */
   scroll?: boolean;
+  /** Scroll-container pinned-state report (see TaskMessageScroller). */
+  onPinnedChange?: (pinned: boolean) => void;
+  /** External scroll-to-latest request (see TaskMessageScroller). */
+  jumpSignal?: number;
 }
 
 function renderItem(
@@ -147,6 +151,8 @@ export function TaskChatThreadView({
   contentKey,
   className,
   scroll = true,
+  onPinnedChange,
+  jumpSignal,
 }: TaskChatThreadViewProps) {
   const body = (
     <div className={cn("mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-5 px-4 py-4", className)}>
@@ -174,7 +180,11 @@ export function TaskChatThreadView({
   if (!scroll) return body;
 
   return (
-    <TaskMessageScroller contentKey={contentKey ?? taskChatContentKey(items)}>
+    <TaskMessageScroller
+      contentKey={contentKey ?? taskChatContentKey(items)}
+      onPinnedChange={onPinnedChange}
+      jumpSignal={jumpSignal}
+    >
       {body}
     </TaskMessageScroller>
   );

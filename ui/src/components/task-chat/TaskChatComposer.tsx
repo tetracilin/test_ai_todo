@@ -202,6 +202,21 @@ export function TaskChatComposer({
     return () => window.removeEventListener("beforeunload", flushDraft);
   }, [draftKey]);
 
+  // Adopt an external work-mode change (e.g. the Plan tab's "Ask agent to
+  // plan" CTA puts the task into planning mode) so the chip and the submit
+  // effect follow the task's canonical mode. A pending user selection made via
+  // the chip / Shift+Tab is never clobbered — it is only adopted once it has
+  // been committed through onWorkModeChange at submit time.
+  const prevWorkModeRef = useRef(workMode);
+  useEffect(() => {
+    // Capture the previous value NOW: the updater below runs during the next
+    // render's state computation, by which point prevWorkModeRef has already
+    // been advanced — reading it there would never match `current`.
+    const previous = prevWorkModeRef.current;
+    setPendingMode((current) => (current === previous ? workMode : current));
+    prevWorkModeRef.current = workMode;
+  }, [workMode]);
+
   const modeMeta = workModeMetaFor(pendingMode);
   const canAcceptFiles = Boolean(onAttachImage || onImageUpload);
   const showAssignee = Boolean(enableReassign && reassignOptions && reassignOptions.length > 0);
