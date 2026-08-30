@@ -12,6 +12,7 @@ import {
   type IssueLabel,
 } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTaskChatRedesignEnabled } from "../../hooks/useTaskChatRedesignEnabled";
 import { accessApi } from "../../api/access";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
@@ -189,12 +190,10 @@ export function IssueProperties({
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const taskWatchdogsEnabled = experimentalSettings?.enableTaskWatchdogs === true;
-  // Classic Task Interface: gate the Properties | Plans | Artifacts tab shell.
-  // Flag ON renders the legacy stacked sections verbatim (no Tabs wrapper);
-  // flag OFF — including while settings load — renders the chat-style tab
-  // shell. This pane is always task-scoped, so the flag alone is a sufficient
-  // gate.
-  const taskChatShellEnabled = experimentalSettings?.enableClassicTaskInterface !== true;
+  // Canonical positive gate controls the Properties | Plans | Artifacts shell.
+  // The hook fails closed to the classic stacked sections while loading/error
+  // and when no QueryClient is available; Classic Task Interface still wins.
+  const { enabled: taskChatShellEnabled } = useTaskChatRedesignEnabled();
   // When hosted by the resizable PropertiesPanel, the tab strip portals into
   // the pane's header bar (left of the window controls). The slot only exists
   // once the panel has committed, hence the effect; inline hosts (mobile sheet)

@@ -437,6 +437,13 @@ function renderPropertiesWithQueryClient(container: HTMLDivElement, props: Compo
       queries: { retry: false },
     },
   });
+  // Most properties assertions exercise chat-shell behavior. Seed the explicit
+  // positive opt-in so those tests do not momentarily assert the now-default
+  // classic shell before their mocked settings request settles.
+  queryClient.setQueryData(queryKeys.instance.experimentalSettings, {
+    enableTaskChatRedesign: true,
+    enableClassicTaskInterface: false,
+  });
   const root = createRoot(container);
   act(() => {
     root.render(
@@ -498,6 +505,8 @@ describe("IssueProperties", () => {
     });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
     });
   });
 
@@ -508,6 +517,7 @@ describe("IssueProperties", () => {
   it("keeps the Plan tab visible for a planning-mode issue without a plan document", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     mockIssuesApi.listInteractions.mockResolvedValue([
@@ -573,6 +583,7 @@ describe("IssueProperties", () => {
     } satisfies IssueDocument;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     mockIssuesApi.getDocument.mockResolvedValue(planDocument);
@@ -856,8 +867,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).toContain("No assignee");
-    expect(container.textContent).not.toContain("No matches.");
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No assignee");
+      expect(container.textContent).not.toContain("No matches.");
+    });
 
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -866,8 +879,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("No assignee");
-    expect(container.textContent).toContain("No matches.");
+    await waitForAssertion(() => {
+      expect(container.textContent).not.toContain("No assignee");
+      expect(container.textContent).toContain("No matches.");
+    });
 
     act(() => root.unmount());
   });
@@ -915,8 +930,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("Add sub-task");
-    expect(container.textContent).not.toContain("Sub-tasks");
+    await waitForAssertion(() => {
+      expect(container.textContent).not.toContain("Add sub-task");
+      expect(container.textContent).not.toContain("Sub-tasks");
+    });
 
     act(() => root.unmount());
   });
@@ -1128,8 +1145,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
+    await waitForAssertion(() => {
+      expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).not.toBeNull();
+    });
     const removeButton = container.querySelector('button[aria-label="Remove PAP-2 as blocker"]');
-    expect(removeButton).not.toBeNull();
 
     await act(async () => {
       removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1182,10 +1201,12 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.querySelector('a[href="/issues/PAP-2"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).toBeNull();
+    await waitForAssertion(() => {
+      expect(container.querySelector('a[href="/issues/PAP-2"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="Actions for blocker PAP-2"]')).not.toBeNull();
+    });
     const blockerActions = container.querySelector('button[aria-label="Actions for blocker PAP-2"]');
-    expect(blockerActions).not.toBeNull();
 
     await act(async () => {
       blockerActions!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
@@ -1648,18 +1669,22 @@ describe("IssueProperties", () => {
     });
     await flush();
 
+    await waitForAssertion(() => {
+      expect(container.querySelector('button[aria-label="Copy pap-1-workspace to clipboard"]')).not.toBeNull();
+    });
     const branchCopyButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Copy pap-1-workspace to clipboard"]',
     );
-    expect(branchCopyButton).not.toBeNull();
 
     await act(async () => {
       branchCopyButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
-    expect(writeText).toHaveBeenCalledWith("pap-1-workspace");
-    expect(container.textContent).toContain("Copied");
+    await waitForAssertion(() => {
+      expect(writeText).toHaveBeenCalledWith("pap-1-workspace");
+      expect(container.textContent).toContain("Copied");
+    });
 
     act(() => root.unmount());
   });

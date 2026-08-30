@@ -1080,6 +1080,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.listAcceptedPlanDecompositions.mockResolvedValue([]);
     mockIssuesApi.getDocument.mockResolvedValue(null);
@@ -1166,6 +1167,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: true,
     });
     mockIssuesApi.get.mockResolvedValue(createIssue());
@@ -2127,6 +2129,7 @@ describe("IssueDetail", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: true,
+      enableTaskChatRedesign: true,
     });
 
     await act(async () => {
@@ -2148,6 +2151,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2177,6 +2181,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2220,6 +2225,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2244,6 +2250,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(createIssue({ originKind: "manual" }));
 
@@ -2752,7 +2759,13 @@ describe("IssueDetail", () => {
     }
   });
 
-  it("renders the task chat thread as the default thread", async () => {
+  it("renders the task chat thread when the positive redesign flag is enabled", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableExperimentalFileViewer: false,
+      enableExternalObjects: false,
+      enableTaskChatRedesign: true,
+    });
     mockIssuesApi.get.mockResolvedValue(createIssue());
 
     await act(async () => {

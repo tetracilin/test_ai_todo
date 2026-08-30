@@ -101,7 +101,7 @@ import {
 } from "../components/IssueChatThread";
 import { TaskChatThread } from "../components/TaskChatThread";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
-import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
+import { useTaskChatRedesignEnabled } from "../hooks/useTaskChatRedesignEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
 import { IssueContinuationHandoff } from "../components/IssueContinuationHandoff";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
@@ -750,8 +750,7 @@ function IssueDetailLoadingState({
   headerSeed: ReturnType<typeof readIssueDetailHeaderSeed>;
 }) {
   const identifier = headerSeed?.identifier ?? headerSeed?.id.slice(0, 8) ?? null;
-  const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const taskChatShellEnabled = !classicTaskInterfaceEnabled;
+  const { enabled: taskChatShellEnabled } = useTaskChatRedesignEnabled();
 
   return (
     <div
@@ -1134,12 +1133,12 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   externalReferences,
   linkCaseReferences,
 }: IssueDetailChatTabProps) {
-  // Seam for the Classic Task Interface (flag: enableClassicTaskInterface).
-  // Flag ON renders the legacy IssueChatThread verbatim; flag OFF (the
-  // default) renders the chat-style TaskChatThread. Both components share one
-  // prop type, so no cast is needed.
-  const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const ThreadComponent = classicTaskInterfaceEnabled ? IssueChatThread : TaskChatThread;
+  // Canonical Task Chat Redesign gate: positive opt-in enables TaskChatThread;
+  // Classic Task Interface remains a compatibility override. Both components
+  // share one prop type, so no cast is needed.
+  const { enabled: taskChatRedesignEnabled } = useTaskChatRedesignEnabled();
+  const classicTaskInterfaceEnabled = !taskChatRedesignEnabled;
+  const ThreadComponent = taskChatRedesignEnabled ? TaskChatThread : IssueChatThread;
   const { data: activity } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
@@ -1699,16 +1698,13 @@ function IssueDetailActivityTab({
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
-  // Classic Task Interface (flag: enableClassicTaskInterface): with the flag
-  // OFF (the default) the chat-style thread owns the center column — the
-  // legacy title/description block, sub-tasks table, plan decompositions and
-  // Documents section are gated off (plan lives in the properties-pane Plan
-  // tab). Flag ON restores the legacy page.
+  // Canonical Task Chat Redesign gate: positive opt-in lets the chat-style
+  // thread own the center column. The Classic Task Interface compatibility
+  // flag wins. Without a loaded positive opt-in, render the classic page.
   const {
-    enabled: classicTaskInterfaceEnabled,
-    loaded: classicTaskInterfaceLoaded,
-  } = useClassicTaskInterfaceEnabled();
-  const taskChatShellEnabled = !classicTaskInterfaceEnabled;
+    enabled: taskChatShellEnabled,
+    loaded: taskChatRedesignLoaded,
+  } = useTaskChatRedesignEnabled();
   // Chat-style: the page wrapper spans the full center pane so the thread's
   // scroll viewport (and its scrollbar) reaches the properties-pane border;
   // every non-thread section re-centers itself at the 60rem shell cap instead.
@@ -3691,7 +3687,7 @@ export function IssueDetail() {
 
     // The classic interface owns document links in its center-column
     // Documents section. Do not open its tab-less properties panel.
-    if (!classicTaskInterfaceLoaded || !taskChatShellEnabled) return false;
+    if (!taskChatRedesignLoaded || !taskChatShellEnabled) return false;
 
     if (isMobile) {
       setMobilePropsOpen(true);
@@ -3710,7 +3706,7 @@ export function IssueDetail() {
     }));
     return true;
   }, [
-    classicTaskInterfaceLoaded,
+    taskChatRedesignLoaded,
     isMobile,
     issue?.id,
     issueId,

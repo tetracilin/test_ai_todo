@@ -72,9 +72,10 @@ describe("PropertiesPanel", () => {
     vi.clearAllMocks();
   });
 
-  describe("classic task interface on (legacy panel)", () => {
+  describe("classic task interface compatibility override (legacy panel)", () => {
     beforeEach(() => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+        enableTaskChatRedesign: true,
         enableClassicTaskInterface: true,
       });
     });
@@ -98,9 +99,10 @@ describe("PropertiesPanel", () => {
     });
   });
 
-  describe("classic task interface off (default resizable pane)", () => {
+  describe("Task Chat Redesign on (resizable pane)", () => {
     beforeEach(() => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+        enableTaskChatRedesign: true,
         enableClassicTaskInterface: false,
       });
     });
