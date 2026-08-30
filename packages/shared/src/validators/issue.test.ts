@@ -266,6 +266,16 @@ describe("issue validators", () => {
     }).deliveryMode).toBe("comment");
   });
 
+  it("preserves the legacy notifyAgent flag for existing callers", () => {
+    const parsed = addIssueCommentSchema.parse({
+      body: "Compatibility note.",
+      notifyAgent: false,
+    });
+
+    expect(parsed.notifyAgent).toBe(false);
+    expect(parsed.deliveryMode).toBe("agent");
+  });
+
   it("accepts structured issue comment presentation and metadata", () => {
     const parsed = addIssueCommentSchema.parse({
       body: "Paperclip needs a disposition before this issue can continue.",

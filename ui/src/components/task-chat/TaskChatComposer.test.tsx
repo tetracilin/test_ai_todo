@@ -335,9 +335,15 @@ describe("TaskChatComposer", () => {
 
   it("posts comment-only delivery without changing work mode or invoking agent delivery", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onAddComment = vi.fn().mockResolvedValue(undefined);
     const onWorkModeChange = vi.fn().mockResolvedValue(undefined);
     render(
-      <TaskChatComposer onAdd={onAdd} workMode="standard" onWorkModeChange={onWorkModeChange} />,
+      <TaskChatComposer
+        onAdd={onAdd}
+        onAddComment={onAddComment}
+        workMode="standard"
+        onWorkModeChange={onWorkModeChange}
+      />,
     );
 
     const modeTrigger = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!;
@@ -360,7 +366,8 @@ describe("TaskChatComposer", () => {
     await flushAsync();
 
     expect(onWorkModeChange).not.toHaveBeenCalled();
-    expect(onAdd).toHaveBeenCalledWith("Leave this for the team.", undefined, undefined, "comment");
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(onAddComment).toHaveBeenCalledWith("Leave this for the team.");
   });
 
   it("passes reopen=true when the issue resumes-to-todo and the assignee is an agent", async () => {

@@ -12169,7 +12169,9 @@ export function issueRoutes(
     const actor = getActorInfo(req);
     const commentPresentation = req.body.presentation ??
       await deriveRecoveryCommentPresentation(req, issue.companyId, req.body.body);
-    const deliveryMode = req.body.deliveryMode;
+    // `notifyAgent: false` remains compatible with existing callers. The
+    // explicit delivery mode is used by redesigned Task Chat.
+    const deliveryMode = req.body.notifyAgent === false ? "comment" : req.body.deliveryMode;
     const isCommentOnly = deliveryMode === "comment";
     // Comment-only is durable thread context. It cannot resume work, reopen a
     // terminal issue, interrupt a run, or rebuild a closed execution workspace.
@@ -12707,7 +12709,7 @@ export function issueRoutes(
       // A comment-only post is intentionally thread-only. No agent wake is
       // created, including for mentions; Agent mode explicitly requests work.
       const skipWake =
-        deliveryMode === "comment" || selfComment || isClosedIssueStatus(wakeIssueSnapshot.status);
+        isCommentOnly || selfComment || isClosedIssueStatus(wakeIssueSnapshot.status);
       if (assigneeId && (reopened || !skipWake)) {
         if (reopened) {
           addWakeup(assigneeId, {

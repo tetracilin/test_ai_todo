@@ -586,6 +586,25 @@ describe.sequential("issue comment reopen routes", () => {
     ));
   });
 
+  it("keeps legacy notifyAgent=false comments thread-only on a closed issue", async () => {
+    mockIssueService.getById.mockResolvedValue(makeIssue("done"));
+
+    const res = await request(await installActor(createApp()))
+      .post("/api/issues/11111111-1111-4111-8111-111111111111/comments")
+      .send({ body: "Record this without starting work.", notifyAgent: false });
+
+    expect(res.status).toBe(201);
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "issue.comment_added",
+        details: expect.objectContaining({ deliveryMode: "comment" }),
+      }),
+    );
+  });
+
   it("allows default-open non-assignee POST comments on closed issues without reopening", async () => {
     mockIssueService.getById.mockResolvedValue(makeIssue("done"));
     mockIssueService.addComment.mockResolvedValue({
