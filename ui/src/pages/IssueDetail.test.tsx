@@ -15,6 +15,7 @@ import {
   readRecoveryReconcileWorkspaceId,
   shouldScrollIssueDetailToTopOnNavigation,
 } from "./IssueDetail";
+import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 
@@ -28,6 +29,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   listFeedbackVotes: vi.fn(),
   markRead: vi.fn(),
   update: vi.fn(),
+  launchAgentHelp: vi.fn(),
   previewTreeControl: vi.fn(),
   getTreeControlState: vi.fn(),
   listTreeHolds: vi.fn(),
@@ -1051,6 +1053,12 @@ describe("IssueDetail", () => {
     mockIssuesApi.listWorkProducts.mockResolvedValue([]);
     mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
     mockIssuesApi.markRead.mockResolvedValue({ id: "issue-1", lastReadAt: new Date().toISOString() });
+    mockIssuesApi.launchAgentHelp.mockResolvedValue({
+      launch_id: "ahl-1",
+      issue_id: "issue-1",
+      status: "queued",
+      accepted_at: "2026-04-21T00:00:00.000Z",
+    });
     mockIssuesApi.archiveFromInbox.mockResolvedValue({ id: "issue-1", archivedAt: new Date() });
     mockIssuesApi.unarchiveFromInbox.mockResolvedValue({ ok: true });
     mockIssuesApi.getTreeControlState.mockResolvedValue({ activePauseHold: null });
@@ -1134,6 +1142,92 @@ describe("IssueDetail", () => {
         String(call[0]).includes("React has detected a change in the order of Hooks"),
       ),
     ).toBe(false);
+  });
+
+  it("launches agent help without sending task metadata and prevents duplicate clicks", async () => {
+    const launchRequest = createDeferred<{
+      launch_id: string;
+      issue_id: string;
+      status: "queued";
+      accepted_at: string;
+    }>();
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockIssuesApi.launchAgentHelp.mockReturnValueOnce(launchRequest.promise);
+    const randomUuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const button = container.querySelector('button[aria-label="Get agent help"]') as HTMLButtonElement | null;
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button!.click();
+      button!.click();
+    });
+    await flushReact();
+
+    expect(mockIssuesApi.launchAgentHelp).toHaveBeenCalledTimes(1);
+    expect(mockIssuesApi.launchAgentHelp).toHaveBeenCalledWith(
+      "PAP-1",
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(button!.disabled).toBe(true);
+    expect(container.textContent).toContain("Launching agent help...");
+
+    launchRequest.resolve({
+      launch_id: "ahl-1",
+      issue_id: "issue-1",
+      status: "queued",
+      accepted_at: "2026-04-21T00:00:00.000Z",
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(container.textContent).toContain("Agent help queued");
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent help queued",
+      tone: "success",
+    }));
+    expect(randomUuid).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows safe agent-help failure state", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockIssuesApi.launchAgentHelp.mockRejectedValue(
+      new ApiError("provider token unavailable", 503, { code: "AGENT_LAUNCH_UNAVAILABLE" }),
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const button = container.querySelector('button[aria-label="Get agent help"]') as HTMLButtonElement | null;
+    await act(async () => {
+      button!.click();
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(container.textContent).toContain("Agent help failed. Retry.");
+    expect(mockPushToast).toHaveBeenCalledWith({
+      title: "Agent help failed",
+      body: "Agent help is unavailable. Retry shortly.",
+      tone: "error",
+    });
+    expect(container.textContent).not.toContain("provider token unavailable");
   });
 
   it("opens a closed desktop pane and routes an ordinary document to Artifacts on direct load", async () => {
