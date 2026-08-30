@@ -176,10 +176,38 @@ request shape, which is the gap that let this ship to the integration gate.
 - The frontend's `agentHelpFailureCopy` code list does not include any backend
   code, so backend error copy is always generic — noted under case 7 above.
 
-## 7. Conclusion
+## 7. Parallel implementation on an unmerged branch
 
-Backend (`2290c29be`) correctly implements `docs/specs/agent-help-handoff-contract.md`.
-Frontend (`a6f359b2c`) correctly implements `.claude/design-doc-agent-help-metadata-contract.md`.
-The two contracts are incompatible, so the combined feature does not work. The
-decomposer must reconcile the two contract documents (pick one, or align both
-implementations) and re-dispatch the losing side before this can pass QA.
+A second, complete backend implementation of the frontend's `/agent-help`
+contract exists on branch `t3-paperclip-aitodo/t_907cdaa8-agent-help-task-context-endpoint`
+(commit `60674daeb`, task `t_907cdaa8`, 16:14 UTC). It registers
+`POST /api/issues/:issueId/agent-help` (empty body + UUID `Idempotency-Key`),
+builds the `agent_help.task_context.v1` payload, and dispatches through the
+Hermes-only wakeup path — i.e. it is wire-compatible with the frontend
+(`t_32f37abe` / `t_efd75fc4`). This commit is **not** in `origin/main` and was
+**not** part of this verification's assigned parent set (t_32f37abe +
+t_5bf5dae1), so it is absent from the combined state I verified.
+
+Consequence for resolution: the decomposition produced two competing tracks —
+
+- Track A (contract 1, `/agent-help`): `t_718b81cc` (contract) → `t_907cdaa8`
+  (backend `60674daeb`) + `t_efd75fc4`/`t_32f37abe` (frontend).
+- Track B (contract 2, `/help`): `t_05d5f360` (contract) → `t_5bf5dae1`
+  (backend `2290c29be`) + `t_32f37abe` (frontend, which nevertheless
+  implemented `/agent-help`).
+
+This QA task was assigned the mismatched pair (frontend `/agent-help` from Track
+A, backend `/help` from Track B). The orchestrator must pick one track and merge
+the consistent pair — most plausibly Track A, since both a `/agent-help` backend
+and frontend already exist — rather than re-implementing either side.
+
+## 8. Conclusion
+
+Backend `2290c29be` (assigned to this task) implements
+`docs/specs/agent-help-handoff-contract.md` (`/help`); the frontend implements
+`.claude/design-doc-agent-help-metadata-contract.md` (`/agent-help`). The two
+are incompatible, so the combined pair assigned to this QA task does not work.
+A wire-compatible `/agent-help` backend (`60674daeb`, task `t_907cdaa8`) exists
+on an unmerged branch and would pair correctly with the frontend. The
+orchestrator must reconcile the two contract documents and select the
+consistent implementation track before this can pass QA.
