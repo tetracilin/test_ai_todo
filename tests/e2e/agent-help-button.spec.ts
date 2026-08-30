@@ -62,8 +62,21 @@ async function openTask(page: import("@playwright/test").Page, seed: Seed) {
   return button;
 }
 
+async function exposeAssignedAgent(page: import("@playwright/test").Page) {
+  await page.route("**/api/issues/*", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const response = await route.fetch();
+    const issue = await response.json() as Record<string, unknown>;
+    await route.fulfill({ response, json: { ...issue, assigneeAgentId: "agent-help-e2e" } });
+  });
+}
+
 test("Get agent help button shows launching + queued states and blocks duplicate launches", async ({ page }) => {
   const seed = await createAgentHelpSeed(page.request);
+  await exposeAssignedAgent(page);
 
   let releaseLaunch!: () => void;
   let capturedRequest: { postData: string | null; idempotencyKey: string | null } | null = null;
@@ -117,6 +130,7 @@ test("Get agent help button shows launching + queued states and blocks duplicate
 
 test("Get agent help button shows already-queued state when the server dedupes", async ({ page }) => {
   const seed = await createAgentHelpSeed(page.request);
+  await exposeAssignedAgent(page);
 
   await page.route("**/api/issues/*/agent-help", (route) =>
     route.fulfill({
@@ -136,6 +150,7 @@ test("Get agent help button shows already-queued state when the server dedupes",
 
 test("Get agent help button shows safe failure state without leaking the raw error", async ({ page }) => {
   const seed = await createAgentHelpSeed(page.request);
+  await exposeAssignedAgent(page);
 
   const routeUrls: string[] = [];
   await page.route("**/api/issues/*/agent-help", (route) => {
