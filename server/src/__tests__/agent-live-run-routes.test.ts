@@ -232,8 +232,6 @@ describe("agent live run routes", () => {
     });
     mockHeartbeatService.readLog.mockResolvedValue({
       runId: "run-1",
-      store: "local_file",
-      logRef: "logs/run-1.ndjson",
       content: "chunk",
       nextOffset: 5,
     });
@@ -366,13 +364,15 @@ describe("agent live run routes", () => {
       offset: 12,
       limitBytes: 64,
     });
+    // TVR-W06: the browser response must NOT carry the store type or the
+    // filesystem-shaped logRef — only the redacted content window.
     expect(res.body).toEqual({
       runId: "run-1",
-      store: "local_file",
-      logRef: "logs/run-1.ndjson",
       content: "chunk",
       nextOffset: 5,
     });
+    expect(res.body).not.toHaveProperty("logRef");
+    expect(res.body).not.toHaveProperty("store");
   });
 
   it("caps company live run polling by default", async () => {
