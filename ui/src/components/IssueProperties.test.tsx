@@ -36,6 +36,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   getDocument: vi.fn(),
   listAcceptedPlanDecompositions: vi.fn(),
   listAttachments: vi.fn(),
+  listArtifacts: vi.fn(),
   listDocuments: vi.fn(),
   listWorkProducts: vi.fn(),
   listInteractions: vi.fn(),
@@ -464,6 +465,7 @@ describe("IssueProperties", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    window.localStorage.clear();
     mockSidebarState.isMobile = false;
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -476,6 +478,7 @@ describe("IssueProperties", () => {
     mockIssuesApi.getDocument.mockResolvedValue(null);
     mockIssuesApi.listAcceptedPlanDecompositions.mockResolvedValue([]);
     mockIssuesApi.listAttachments.mockResolvedValue([]);
+    mockIssuesApi.listArtifacts.mockResolvedValue({ artifacts: [] });
     mockIssuesApi.listDocuments.mockResolvedValue([]);
     mockIssuesApi.listWorkProducts.mockResolvedValue([]);
     mockIssuesApi.listInteractions.mockResolvedValue([]);
@@ -547,6 +550,28 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("This task is in plan mode but no plan document has been written yet.");
       expect(container.textContent).toContain("A plan confirmation is pending, but the plan document it should confirm is missing.");
+    });
+
+    act(() => root.unmount());
+  });
+
+  it("keeps document tabs visible and restores a task-scoped empty Artifacts tab", async () => {
+    window.localStorage.setItem("taskChatRedesign.contextPaneTab:issue-1", "artifacts");
+    const root = renderProperties(container, {
+      issue: createIssue(),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+
+    await waitForAssertion(() => {
+      const planTab = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Plan");
+      const artifactsTab = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Artifacts");
+      expect(planTab).toBeDefined();
+      expect(artifactsTab?.getAttribute("data-state")).toBe("active");
+      expect(container.textContent).toContain("No artifact files. Use Open file to attach internal or MinIO storage content.");
     });
 
     act(() => root.unmount());

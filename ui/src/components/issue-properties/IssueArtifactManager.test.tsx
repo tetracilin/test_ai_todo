@@ -190,4 +190,12 @@ describe("IssueArtifactManager", () => {
     expect(iframe.className).toContain("min-h-0 flex-1");
     flushSync(() => root.unmount());
   });
+
+  it("surfaces a load error instead of a false empty state", async () => {
+    api.listArtifacts.mockRejectedValue(new Error("storage unavailable"));
+    const root = renderManager(container);
+    await waitForAssertion(() => expect(container.textContent).toContain("Could not load artifacts."));
+    expect(container.textContent).not.toContain("No artifact files.");
+    flushSync(() => root.unmount());
+  });
 });

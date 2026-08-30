@@ -206,9 +206,9 @@ export function IssueProperties({
     }
     setPaneHeaderSlot(document.getElementById(PROPERTIES_PANE_HEADER_SLOT_ID));
   }, [taskChatShellEnabled, inline]);
-  // Plan earns a tab as soon as an issue is in planning mode, even before the
-  // plan document arrives. This keeps an expected plan surface visible and
-  // lets its diagnostic empty state explain what is missing.
+  // Keep document surfaces predictable for every task. The tab bodies own
+  // their respective empty/error states; content must not be required merely
+  // to reveal a Plan or Artifacts tab.
   // Same query keys as the tab bodies, so these share their cached fetches.
   const { data: paneTabPlanDocument } = useIssuePlanDocument(
     taskChatShellEnabled ? issue.id : null,
@@ -234,28 +234,50 @@ export function IssueProperties({
   const paneTabStandaloneDocuments = (paneTabDocuments ?? []).filter(
     (doc) => !isArtifactReviewDocumentKey(doc.key),
   );
+  // Plan earns a tab as soon as an issue is in planning mode, even before the
+  // plan document arrives. Tabs render unconditionally, but this still drives
+  // the one-time auto-switch that surfaces the write-up next to the approval
+  // card. The user's own (or persisted) tab choice always wins.
   const hasPlanTab =
     Boolean(paneTabPlanDocument)
     || (paneTabAcceptedPlans?.length ?? 0) > 0
     || paneTabStandaloneDocuments.length > 0
     || issue.workMode === "planning";
-  // Artifacts covers the same three sources the tab body composes: work
-  // products, documents (redundant with the Plan tab, intentionally), and
-  // agent-created attachments. User comment uploads stay thread-only and
-  // no longer summon the tab.
-  // The tab is always available so users can attach the first artifact through
-  // its Open file action, rather than needing an existing artifact to reveal it.
-  const hasArtifactsTab = true;
-  const [paneTab, setPaneTab] = useState("properties");
-  // Once a plan document exists, surface it: switch the pane to the Plan tab so
-  // the write-up is exposed alongside the plan-approval card, instead of leaving
-  // the user on Properties. Only auto-switch until the user picks a tab by hand —
-  // after that their choice wins. Ref-guarded so it fires once per mount.
+  const paneTabStorageKey = `taskChatRedesign.contextPaneTab:${issue.id}`;
+  const readStoredPaneTab = () => {
+    if (typeof window === "undefined") return { tab: "properties" as const, stored: false };
+    try {
+      const stored = window.localStorage.getItem(paneTabStorageKey);
+      if (stored === "properties" || stored === "plans" || stored === "artifacts") {
+        return { tab: stored, stored: true };
+      }
+      return { tab: "properties" as const, stored: false };
+    } catch {
+      return { tab: "properties" as const, stored: false };
+    }
+  };
+  const [paneTab, setPaneTab] = useState<string>(() => readStoredPaneTab().tab);
+  // Store a task-scoped tab selection. A document deep-link may override it for
+  // its current navigation, but normal refreshes retain the reader's context.
   const paneTabUserChosenRef = useRef(false);
   const handlePaneTabChange = useCallback((value: string) => {
     paneTabUserChosenRef.current = true;
     setPaneTab(value);
-  }, []);
+    try {
+      window.localStorage.setItem(paneTabStorageKey, value);
+    } catch {
+      // Ignore storage failures; the selected tab remains usable this session.
+    }
+  }, [paneTabStorageKey]);
+  useEffect(() => {
+    const { tab, stored } = readStoredPaneTab();
+    // A persisted selection is an explicit choice: it must survive the
+    // auto-switch that would otherwise surface the Plan tab on first load.
+    paneTabUserChosenRef.current = stored;
+    setPaneTab(tab);
+  // The storage key is intentionally task-scoped. Do not reset on data refresh.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneTabStorageKey]);
   useEffect(() => {
     if (hasPlanTab && !paneTabUserChosenRef.current) {
       setPaneTab("plans");
@@ -2601,30 +2623,11 @@ export function IssueProperties({
   // Classic Task Interface ON: the legacy stacked pane, byte-for-byte.
   if (!taskChatShellEnabled) return propertiesBody;
 
-  // Chat-style with nothing to switch between: no tab strip — the header bar
-  // shows a plain title and the pane body is just the properties stack.
-  if (!hasPlanTab && !hasArtifactsTab) {
-    return (
-      <>
-        {paneHeaderSlot
-          ? createPortal(<span className="text-sm font-medium">Properties</span>, paneHeaderSlot)
-          : null}
-        {propertiesBody}
-      </>
-    );
-  }
-
-  // Flag ON: wrap the same body in a Properties | Plan | Artifacts tab shell
+  // Flag ON: wrap the same body in an always-present Properties | Plan | Artifacts tab shell
   // (v5 decision: singular "Plan", Docs merged into Artifacts). The Properties
   // tab is unchanged. Panel hosts portal the strip into the pane header bar;
   // portals keep React context, so the Tabs root still drives it.
-  // Fall back to Properties if the selected tab's content went away (or the
-  // selection was made on another issue).
-  const activePaneTab =
-    (paneTab === "plans" && !hasPlanTab)
-    || (paneTab === "artifacts" && !hasArtifactsTab)
-      ? "properties"
-      : paneTab;
+  const activePaneTab = paneTab;
   // In the pane header the strip stretches to the bar's full height and the
   // active underline drops to bottom-0, so it hugs the header's border line.
   const paneTabTriggerClass = paneHeaderSlot
@@ -2642,16 +2645,12 @@ export function IssueProperties({
       <TabsTrigger value="properties" className={paneTabTriggerClass}>
         Properties
       </TabsTrigger>
-      {hasPlanTab ? (
-        <TabsTrigger value="plans" className={paneTabTriggerClass}>
-          Plan
-        </TabsTrigger>
-      ) : null}
-      {hasArtifactsTab ? (
-        <TabsTrigger value="artifacts" className={paneTabTriggerClass}>
-          Artifacts
-        </TabsTrigger>
-      ) : null}
+      <TabsTrigger value="plans" className={paneTabTriggerClass}>
+        Plan
+      </TabsTrigger>
+      <TabsTrigger value="artifacts" className={paneTabTriggerClass}>
+        Artifacts
+      </TabsTrigger>
     </TabsList>
   );
   return (
@@ -2669,19 +2668,15 @@ export function IssueProperties({
           )
         : tabStrip}
       <TabsContent value="properties">{propertiesBody}</TabsContent>
-      {hasPlanTab ? (
-        <TabsContent value="plans">
-          <IssuePropertiesPlansTab issue={issue} inline={inline} />
-        </TabsContent>
-      ) : null}
-      {hasArtifactsTab ? (
-        <TabsContent value="artifacts">
-          <IssuePropertiesArtifactsTab
-            issue={issue}
-            documentDeepLink={documentDeepLink?.tab === "artifacts" ? documentDeepLink : null}
-          />
-        </TabsContent>
-      ) : null}
+      <TabsContent value="plans">
+        <IssuePropertiesPlansTab issue={issue} inline={inline} />
+      </TabsContent>
+      <TabsContent value="artifacts">
+        <IssuePropertiesArtifactsTab
+          issue={issue}
+          documentDeepLink={documentDeepLink?.tab === "artifacts" ? documentDeepLink : null}
+        />
+      </TabsContent>
     </Tabs>
   );
 }
