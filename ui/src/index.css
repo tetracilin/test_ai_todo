@@ -1983,7 +1983,11 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    reads on dark surfaces. A single hue covers both modes. */
 .status-chip {
   background-color: color-mix(in srgb, var(--sc) 15%, white);
-  color: color-mix(in srgb, var(--sc) 82%, black);
+  /* 60% base / 40% black: all current status hues (incl. the light gray
+     backlog/agent hue) clear WCAG 2.1 AA 4.5:1 on the 15% white fill; the
+     previous 82% mix failed for backlog (2.95:1), done (3.96:1), paused and
+     ask. Dark mode keeps its own 80%-white recipe (verified >= 4.5:1). */
+  color: color-mix(in srgb, var(--sc) 60%, black);
   border-color: var(--sc);
 }
 .dark .status-chip {

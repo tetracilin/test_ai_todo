@@ -416,15 +416,26 @@ export function InlineEditor({
 
   return (
     <DisplayTag
-      className={cn(
-        "cursor-pointer rounded hover:bg-accent/50 transition-colors overflow-hidden",
-        pad,
-        !value && "text-muted-foreground italic",
-        className,
-      )}
-      onClick={() => setEditing(true)}
+      className={cn("overflow-hidden", pad, className)}
     >
-      {value || placeholder}
+      {/*
+        Single-line display mode: the heading keeps its document-structure
+        semantics (h1/h2/...) while the edit affordance is a real <button> —
+        keyboard-operable (Enter/Space activate it natively) with an
+        accessible name that includes the visible text (label-in-name) plus
+        the "Edit" affordance hint. WCAG 2.1.1/4.1.2.
+      */}
+      <button
+        type="button"
+        className={cn(
+          "w-full cursor-pointer rounded text-left transition-colors hover:bg-accent/50",
+          !value && "text-muted-foreground italic",
+        )}
+        onClick={() => setEditing(true)}
+      >
+        <span className="sr-only">Edit </span>
+        {value || placeholder}
+      </button>
     </DisplayTag>
   );
 }

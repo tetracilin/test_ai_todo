@@ -12,7 +12,7 @@ export function TaskChatActivityReceipt({ item }: { item: TaskChatActivityItem }
       <Activity className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span className="font-medium text-foreground">{item.actor}</span>
       <span>{item.text}</span>
-      <time className="shrink-0 text-muted-foreground/70" dateTime={item.createdAtIso}>
+      <time className="shrink-0 text-muted-foreground" dateTime={item.createdAtIso}>
         · {timeAgo(item.createdAtIso)}
       </time>
     </div>
