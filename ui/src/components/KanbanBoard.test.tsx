@@ -188,6 +188,22 @@ describe("KanbanBoard", () => {
     expect(container.textContent).not.toContain("Issue 1");
   });
 
+  it("renders tag swimlanes as canonical issue references", () => {
+    const sharedIssue = createIssue(1, "todo");
+    const { container } = renderBoard({
+      issues: [sharedIssue],
+      swimlanes: [
+        { key: "backend", label: "Backend", issues: [sharedIssue] },
+        { key: "security", label: "Security", issues: [sharedIssue] },
+      ],
+    });
+
+    expect(container.querySelectorAll("[aria-label$='tag swimlane']")).toHaveLength(2);
+    expect(container.textContent).toContain("Backend");
+    expect(container.textContent).toContain("Security");
+    expect(container.querySelectorAll('a[href="/issues/PAP-1"]')).toHaveLength(2);
+  });
+
   it("gives every column a status-hued tone", () => {
     expect(getKanbanColumnTone("backlog").body).toContain("bg-muted/30");
     expect(getKanbanColumnTone("todo").body).toContain("amber");

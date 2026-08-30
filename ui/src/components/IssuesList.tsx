@@ -151,7 +151,7 @@ export type BoardColumnPageSize = KanbanColumnPageSize;
 export type IssueViewState = IssueFilterState & {
   sortField: IssueSortField;
   sortDir: "asc" | "desc";
-  groupBy: "status" | "priority" | "assignee" | "project" | "workspace" | "parent" | "none";
+  groupBy: "status" | "priority" | "assignee" | "project" | "workspace" | "parent" | "tag" | "none";
   viewMode: "list" | "board";
   nestingEnabled: boolean;
   collapsedGroups: string[];
@@ -368,6 +368,39 @@ function issueMatchesLocalSearch(issue: Issue, normalizedSearch: string): boolea
   ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }
 
+export type IssueTagGroup = { key: string; label: string; items: Issue[] };
+
+/** Multi-tag entries are references; mutations stay keyed to canonical issue IDs. */
+export function buildIssueTagGroups(
+  issues: Issue[],
+  labelNameById: ReadonlyMap<string, string>,
+): IssueTagGroup[] {
+  const groups = new Map<string, IssueTagGroup>();
+  for (const issue of issues) {
+    const tagIds = issue.labelIds ?? [];
+    if (tagIds.length === 0) {
+      const group = groups.get("__no_tag") ?? { key: "__no_tag", label: "No Tag", items: [] };
+      group.items.push(issue);
+      groups.set(group.key, group);
+      continue;
+    }
+    for (const tagId of tagIds) {
+      const group = groups.get(tagId) ?? {
+        key: tagId,
+        label: labelNameById.get(tagId) ?? tagId.slice(0, 8),
+        items: [],
+      };
+      group.items.push(issue);
+      groups.set(group.key, group);
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.key === "__no_tag") return 1;
+    if (b.key === "__no_tag") return -1;
+    return a.label.localeCompare(b.label);
+  });
+}
+
 function isActionableWorkflowStatus(status: IssueStatus): boolean {
   return status !== "done" && status !== "cancelled" && status !== "blocked";
 }
@@ -493,6 +526,11 @@ interface IssuesListProps {
   isLoadingMoreIssues?: boolean;
   mutedIssueIds?: Set<string>;
   issueBadgeById?: Map<string, string>;
+  /** Enables task-scoped tag grouping without changing non-task list controls. */
+  enableTagGrouping?: boolean;
+  filterLabelTitle?: string;
+  emptyStateMessage?: string;
+  clearEmptyStateFiltersLabel?: string;
   onLoadMoreIssues?: () => void;
   onSearchChange?: (search: string) => void;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
@@ -501,9 +539,11 @@ interface IssuesListProps {
 function IssueSearchInput({
   value,
   onDebouncedChange,
+  onClear,
 }: {
   value: string;
   onDebouncedChange?: (search: string) => void;
+  onClear?: () => void;
 }) {
   const [draftValue, setDraftValue] = useState(value);
   const lastCommittedValueRef = useRef(value);
@@ -527,7 +567,7 @@ function IssueSearchInput({
   }, [draftValue, onDebouncedChange]);
 
   return (
-    <div className="relative w-48 sm:w-64 md:w-80">
+    <div className="relative w-32 sm:w-64 md:w-80">
       <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={draftValue}
@@ -556,6 +596,20 @@ function IssueSearchInput({
         aria-label="Search tasks"
         data-page-search-target="true"
       />
+      {draftValue ? (
+        <button
+          type="button"
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            setDraftValue("");
+            lastCommittedValueRef.current = "";
+            onClear?.();
+          }}
+          aria-label="Clear search"
+        >
+          <CircleSlash2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -704,6 +758,10 @@ export function IssuesList({
   isLoadingMoreIssues = false,
   mutedIssueIds,
   issueBadgeById,
+  enableTagGrouping = false,
+  filterLabelTitle,
+  emptyStateMessage,
+  clearEmptyStateFiltersLabel,
   onLoadMoreIssues,
   onSearchChange,
   onUpdateIssue,
@@ -1194,6 +1252,10 @@ export function IssuesList({
     queryFn: () => issuesApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const labelNameById = useMemo(
+    () => new Map((labels ?? []).map((label) => [label.id, label.name])),
+    [labels],
+  );
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
   const boardHighVolume = viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
@@ -1278,6 +1340,9 @@ export function IssuesList({
           items: groups[key]!,
         }));
     }
+    if (viewState.groupBy === "tag") {
+      return buildIssueTagGroups(filtered, labelNameById);
+    }
     // assignee
     const groups = groupBy(
       filtered,
@@ -1304,6 +1369,7 @@ export function IssuesList({
     issueTitleMap,
     companyUserLabelMap,
     projectById,
+    labelNameById,
   ]);
 
   // Flattened visible order (group headers, then tree DFS per group —
@@ -1665,7 +1731,7 @@ export function IssuesList({
       ) : null}
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-2 sm:gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button size="sm" variant="outline" onClick={() => openCreateIssueDialog()}>
             <Plus className="h-4 w-4 sm:mr-1" />
@@ -1677,29 +1743,37 @@ export function IssuesList({
               setIssueSearch(nextSearch);
               onSearchChange?.(nextSearch);
             }}
+            onClear={() => {
+              setIssueSearch("");
+              onSearchChange?.("");
+            }}
           />
         </div>
 
-        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           {/* View mode toggle */}
-          <div className="flex items-center border border-border rounded-md overflow-hidden mr-1" role="group" aria-label="View mode">
+          <div className="mr-1 flex items-center overflow-hidden rounded-md border border-border" role="group" aria-label="Subtask view">
             <button
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${viewState.viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              type="button"
+              className={`flex h-8 items-center justify-center gap-1 px-2 transition-colors ${viewState.viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "list" })}
               title="List view"
               aria-label="List view"
               aria-pressed={viewState.viewMode === "list"}
             >
               <List className="h-3.5 w-3.5" />
+              <span className="text-xs">List</span>
             </button>
             <button
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${viewState.viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              type="button"
+              className={`flex h-8 items-center justify-center gap-1 px-2 transition-colors ${viewState.viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "board" })}
               title="Board view"
-              aria-label="Board view"
+              aria-label="Kanban view"
               aria-pressed={viewState.viewMode === "board"}
             >
               <SquareKanban className="h-3.5 w-3.5" />
+              <span className="text-xs">Kanban</span>
             </button>
           </div>
 
@@ -1811,6 +1885,7 @@ export function IssuesList({
             creators={creatorOptions}
             projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
             labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
+            labelTitle={filterLabelTitle}
             currentUserId={currentUserId}
             enableExternalObjectFilters={externalObjectsEnabled}
             enableRoutineVisibilityFilter={enableRoutineVisibilityFilter}
@@ -1865,8 +1940,8 @@ export function IssuesList({
             </Popover>
           )}
 
-          {/* Group (list view only) */}
-          {viewState.viewMode === "list" && (
+          {/* List supports all groups; Kanban supports tag swimlanes only. */}
+          {(viewState.viewMode === "list" || enableTagGrouping) && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group">
@@ -1876,15 +1951,21 @@ export function IssuesList({
               <PopoverContent align="end" className="w-44 p-0">
                 <div className="p-2 space-y-0.5">
                   {/* PAP-411: "priority" group-by option hidden behind SHOW_TASK_PRIORITY_UI (group logic stays dormant). */}
-                  {([
-                    ["status", "Status"],
-                    ["priority", "Priority"],
-                    ["assignee", "Responsible"],
-                    ["project", "Project"],
-                    ["workspace", "Workspace"],
-                    ["parent", "Parent Task"],
-                    ["none", "None"],
-                  ] as const)
+                  {(viewState.viewMode === "board"
+                    ? ([
+                      ["tag", "Tag swimlanes"],
+                      ["none", "None"],
+                    ] as const)
+                    : ([
+                      ["status", "Status"],
+                      ["priority", "Priority"],
+                      ["assignee", "Responsible"],
+                      ["project", "Project"],
+                      ["workspace", "Workspace"],
+                      ["parent", "Parent Task"],
+                      ...(enableTagGrouping ? [["tag", "Group by Tag"]] as const : []),
+                      ["none", "None"],
+                    ] as const))
                     .filter(([value]) => SHOW_TASK_PRIORITY_UI || value !== "priority")
                     .map(([value, label]) => (
                     <button
@@ -1917,13 +1998,22 @@ export function IssuesList({
           Some board columns are showing up to {ISSUE_BOARD_COLUMN_RESULT_LIMIT} tasks. Refine filters or search to reveal the rest.
         </p>
       )}
-      {!isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
-        <EmptyState
-          icon={CircleDot}
-          message="No tasks match the current filters or search."
-          action={createActionLabel}
-          onAction={() => openCreateIssueDialog()}
-        />
+      {!isLoading && !externalObjectFilterLoading && filtered.length === 0 && (
+        <div className="space-y-2">
+          <EmptyState
+            icon={CircleDot}
+            message={emptyStateMessage ?? "No tasks match the current filters or search."}
+            action={createActionLabel}
+            onAction={() => openCreateIssueDialog()}
+          />
+          {clearEmptyStateFiltersLabel && activeFilterCount > 0 ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" onClick={() => updateView(defaultIssueFilterState)}>
+                {clearEmptyStateFiltersLabel}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {viewState.viewMode === "board" ? (
@@ -1935,6 +2025,9 @@ export function IssuesList({
           collapsedStatuses={boardCollapsedStatuses}
           initialVisibleCount={viewState.boardColumnPageSize}
           revealIncrement={viewState.boardColumnPageSize}
+          swimlanes={viewState.groupBy === "tag"
+            ? groupedContent.map((group) => ({ key: group.key, label: group.label ?? "No Tag", issues: group.items }))
+            : undefined}
           onUpdateIssue={onUpdateIssue}
         />
       ) : (

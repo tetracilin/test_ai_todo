@@ -8,6 +8,7 @@ import type { Issue, Project } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IssuesList,
+  buildIssueTagGroups,
   issueAgeBucket,
   issueAgeBucketsCrossed,
   issueAgeSeparatorLabel,
@@ -170,6 +171,7 @@ vi.mock("./KanbanBoard", () => ({
     collapsedStatuses?: string[];
     initialVisibleCount?: number;
     revealIncrement?: number;
+    swimlanes?: Array<{ key: string; label: string; issues: Issue[] }>;
   }) => {
     mockKanbanBoard(props);
     return (
@@ -1244,6 +1246,86 @@ describe("IssuesList", () => {
     });
   });
 
+  it("restores task-scoped Kanban tag swimlanes without duplicating canonical totals", async () => {
+    const sharedSubtask = createIssue({
+      id: "subtask-shared",
+      identifier: "PAP-42",
+      title: "Shared subtask",
+      labelIds: ["backend", "security"],
+    });
+    const untaggedSubtask = createIssue({ id: "subtask-untagged", identifier: "PAP-43", title: "No tag subtask" });
+    localStorage.setItem(
+      "paperclip:issue-detail:parent-1:subissues-view:company-1",
+      JSON.stringify({ viewMode: "board", groupBy: "tag" }),
+    );
+    mockIssuesApi.listLabels.mockResolvedValue([
+      { id: "backend", name: "Backend", color: "blue" },
+      { id: "security", name: "Security", color: "purple" },
+    ]);
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[sharedSubtask, untaggedSubtask]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:issue-detail:parent-1:subissues-view"
+        enableTagGrouping
+        searchWithinLoadedIssues
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const call = mockKanbanBoard.mock.calls.at(-1)?.[0];
+      const swimlanes = call?.swimlanes ?? [];
+      expect(swimlanes.map((lane: { label: string }) => lane.label)).toEqual(["Backend", "Security", "No Tag"]);
+      expect(swimlanes[0]?.issues[0]).toBe(sharedSubtask);
+      expect(swimlanes[1]?.issues[0]).toBe(sharedSubtask);
+      expect(new Set(swimlanes.flatMap((lane: { issues: Issue[] }) => lane.issues.map((issue) => issue.id))).size).toBe(2);
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("persists a task-scoped List or Kanban choice and keeps both controls keyboard reachable", async () => {
+    const storageKey = "paperclip:issue-detail:parent-1:subissues-view:company-1";
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[createIssue({ id: "subtask-1", title: "Subtask" })]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:issue-detail:parent-1:subissues-view"
+        enableTagGrouping
+        searchWithinLoadedIssues
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.querySelector('[aria-label="List view"]')).not.toBeNull();
+      expect(container.querySelector('[aria-label="Kanban view"]')).not.toBeNull();
+    });
+
+    const kanbanButton = container.querySelector('[aria-label="Kanban view"]') as HTMLButtonElement;
+    expect(kanbanButton.tabIndex).toBe(0);
+    act(() => {
+      kanbanButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(JSON.parse(localStorage.getItem(storageKey) ?? "{}").viewMode).toBe("board");
+      expect(kanbanButton.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("uses compact cards and collapsed cold lanes for high-volume boards", async () => {
     localStorage.setItem(
       "paperclip:test-issues:company-1",
@@ -2134,6 +2216,26 @@ describe("IssuesList", () => {
     act(() => {
       root.unmount();
     });
+  });
+});
+
+describe("buildIssueTagGroups", () => {
+  it("uses synchronized canonical issue references and preserves unique source totals", () => {
+    const multiTagIssue = createIssue({
+      id: "issue-multi",
+      title: "Shared task",
+      labelIds: ["backend", "security"],
+    });
+    const untaggedIssue = createIssue({ id: "issue-none", title: "No tag task" });
+    const groups = buildIssueTagGroups(
+      [multiTagIssue, untaggedIssue],
+      new Map([["backend", "Backend"], ["security", "Security"]]),
+    );
+
+    expect(groups.map((group) => group.label)).toEqual(["Backend", "Security", "No Tag"]);
+    expect(groups[0]?.items[0]).toBe(multiTagIssue);
+    expect(groups[1]?.items[0]).toBe(multiTagIssue);
+    expect(new Set(groups.flatMap((group) => group.items.map((issue) => issue.id))).size).toBe(2);
   });
 });
 
