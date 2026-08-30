@@ -74,10 +74,17 @@ function registerModuleMocks() {
     builtInAgentService: () => ({ ensureCompanyDefaultAgentGrants: vi.fn() }),
     companySkillService: () => ({ listRuntimeSkillEntries: vi.fn() }),
     budgetService: () => ({}),
+    goalService: () => ({
+      getById: vi.fn(),
+      getDefaultCompanyGoal: vi.fn(),
+    }),
     heartbeatService: () => mockHeartbeatService,
     issueApprovalService: () => ({}),
     issueService: () => mockIssueService,
     logActivity: vi.fn(),
+    projectService: () => ({
+      getById: vi.fn(),
+    }),
     secretService: () => ({}),
     syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
     workspaceOperationService: () => ({}),
