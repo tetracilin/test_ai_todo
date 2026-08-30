@@ -52,7 +52,7 @@ export function ProjectStorageConfig({ project }: { project: Project }) {
   const save = useMutation({
     mutationFn: () => projectsApi.updateStorageConfig(project.id, {
       repoLocalFolder: repoLocalFolder.trim() || null,
-      nasFolder: configQuery.data?.minio.enabled ? nasFolder || null : null,
+      ...(configQuery.data?.minio.enabled ? { nasFolder: nasFolder || null } : {}),
     }),
     onSuccess: (config) => {
       setShowSaveError(null);
