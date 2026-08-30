@@ -48,6 +48,13 @@ export type ResolveRecoveryActionResponse = {
   recoveryAction: IssueRecoveryAction;
 };
 
+export type AgentHelpLaunchResponse = {
+  launch_id: string;
+  issue_id: string;
+  status: "queued" | "already_queued";
+  accepted_at: string;
+};
+
 export type ArtifactEditorSession = {
   actionUrl: string;
   formParameters: Record<string, string>;
@@ -178,6 +185,10 @@ export const issuesApi = {
     api.post<Issue>(`/companies/${companyId}/issues`, data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueUpdateResponse>(`/issues/${id}`, data),
+  launchAgentHelp: (id: string, idempotencyKey: string) =>
+    api.post<AgentHelpLaunchResponse>(`/issues/${id}/agent-help`, {}, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(`/issues/${id}/stalled-review-decision`, data),
   resolveRecoveryAction: (
