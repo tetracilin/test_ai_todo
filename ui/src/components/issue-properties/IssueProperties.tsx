@@ -244,10 +244,9 @@ export function IssueProperties({
   // products, documents (redundant with the Plan tab, intentionally), and
   // agent-created attachments. User comment uploads stay thread-only and
   // no longer summon the tab.
-  const hasArtifactsTab =
-    (paneTabWorkProducts?.length ?? 0) > 0
-    || paneTabStandaloneDocuments.length > 0
-    || selectAgentArtifactAttachments(paneTabAttachments, paneTabWorkProducts).length > 0;
+  // The tab is always available so users can attach the first artifact through
+  // its Open file action, rather than needing an existing artifact to reveal it.
+  const hasArtifactsTab = true;
   const [paneTab, setPaneTab] = useState("properties");
   // Once a plan document exists, surface it: switch the pane to the Plan tab so
   // the write-up is exposed alongside the plan-approval card, instead of leaving

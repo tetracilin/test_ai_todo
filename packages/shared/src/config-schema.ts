@@ -81,6 +81,19 @@ export const storageS3ConfigSchema = z.object({
   nasRootPrefix: z.string().optional(),
 }).passthrough();
 
+// Optional external-storage source (e.g. the NAS MinIO instance) surfaced by
+// the artifact "open file" flow alongside the primary/internal provider.
+export const storageExternalConfigSchema = z.object({
+  label: z.string().default("External storage"),
+  endpoint: z.string().min(1),
+  region: z.string().min(1).default("us-east-1"),
+  bucket: z.string().min(1),
+  prefix: z.string().default(""),
+  forcePathStyle: z.boolean().default(true),
+  accessKeySecretRef: z.string().optional(),
+  secretKeySecretRef: z.string().optional(),
+}).passthrough();
+
 export const storageConfigSchema = z.object({
   provider: z.enum(STORAGE_PROVIDERS).default("local_disk"),
   localDisk: storageLocalDiskConfigSchema.default({
@@ -92,6 +105,7 @@ export const storageConfigSchema = z.object({
     prefix: "",
     forcePathStyle: false,
   }),
+  external: storageExternalConfigSchema.optional(),
 }).passthrough();
 
 export const secretsLocalEncryptedConfigSchema = z.object({
@@ -204,6 +218,7 @@ export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type StorageConfig = z.infer<typeof storageConfigSchema>;
 export type StorageLocalDiskConfig = z.infer<typeof storageLocalDiskConfigSchema>;
 export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
+export type StorageExternalConfig = z.infer<typeof storageExternalConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
 export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;

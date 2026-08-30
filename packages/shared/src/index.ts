@@ -22,6 +22,7 @@ export {
 } from "./validators/decision.js";
 
 export { decisionEffectTargetIssueIds } from "./types/decision.js";
+export { aggregateSubtaskProgress } from "./issue-subtask-progress.js";
 
 export type {
   DecisionEffectStaleness,
@@ -378,6 +379,9 @@ export {
   CLASS3_STATIC_LEASE_ALLOWLIST,
   SECRET_SCOPES,
   STORAGE_PROVIDERS,
+  ARTIFACT_KINDS,
+  ARTIFACT_EDITABLE_FORMATS,
+  ARTIFACT_VERSION_SOURCES,
   BILLING_TYPES,
   FINANCE_EVENT_KINDS,
   FINANCE_DIRECTIONS,
@@ -564,6 +568,9 @@ export {
   type Class3StaticLeaseAllowlistKey,
   type SecretScope,
   type StorageProvider,
+  type ArtifactKind,
+  type ArtifactEditableFormat,
+  type ArtifactVersionSource,
   type BillingType,
   type CostStatus,
   type FinanceEventKind,
@@ -973,6 +980,7 @@ export type {
   ExternalObjectSummaryItem,
   CompactIssue,
   Issue,
+  IssueSubtaskProgress,
   IssueChangeReceiptEntry,
   IssueChanges,
   IssueAssigneeAdapterOverrides,
@@ -2389,6 +2397,7 @@ export {
   type StorageConfig,
   type StorageLocalDiskConfig,
   type StorageS3Config,
+  type StorageExternalConfig,
   type SecretsConfig,
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
@@ -2578,3 +2587,41 @@ export {
   isPaperclipDevRunnerCommand,
   rewriteUrlHostToLoopback,
 } from "./runtime-exposure/loopback-bind.js";
+
+export type {
+  Artifact,
+  ArtifactComment,
+  ArtifactVersionSummary,
+  ArtifactWithCurrentVersion,
+  ArtifactVersionsResponse,
+  ArtifactCommentsResponse,
+  ExternalStorageObject,
+  ExternalStorageSource,
+} from "./types/artifact-version.js";
+
+export {
+  artifactKindSchema,
+  artifactEditableFormatSchema,
+  artifactVersionSourceSchema,
+  ARTIFACT_NAME_MAX_LENGTH,
+  ARTIFACT_VERSION_NAME_MAX_LENGTH,
+  ARTIFACT_CHANGE_SUMMARY_MAX_LENGTH,
+  ARTIFACT_COMMENT_MAX_LENGTH,
+  createArtifactSchema,
+  openArtifactSchema,
+  saveMarkdownArtifactSchema,
+  createArtifactVersionSchema,
+  createArtifactEditorSessionSchema,
+  restoreArtifactVersionSchema,
+  createArtifactCommentSchema,
+  listExternalStorageObjectsSchema,
+  classifyArtifactFormat,
+  type CreateArtifact,
+  type OpenArtifact,
+  type SaveMarkdownArtifact,
+  type CreateArtifactVersion,
+  type CreateArtifactEditorSession,
+  type RestoreArtifactVersion,
+  type CreateArtifactComment,
+  type ListExternalStorageObjects,
+} from "./validators/artifact-version.js";

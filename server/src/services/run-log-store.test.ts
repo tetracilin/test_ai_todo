@@ -44,6 +44,16 @@ function createMemoryProvider() {
     async deleteObject(input) {
       objects.delete(input.objectKey);
     },
+    async listObjects(input) {
+      const prefix = input.prefix ?? "";
+      const limit = input.limit && input.limit > 0 ? input.limit : 1000;
+      const entries = [...objects.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(0, limit)
+        .map(([key, buf]) => ({ key, size: buf.length, lastModified: undefined }));
+      return { objects: entries, truncated: false };
+    },
   };
   return { provider, objects, calls };
 }

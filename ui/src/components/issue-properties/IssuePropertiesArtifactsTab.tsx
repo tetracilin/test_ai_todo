@@ -41,6 +41,7 @@ import { MarkdownBody } from "@/components/MarkdownBody";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/components/IssueDocumentAnnotations";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/lib/router";
+import { IssueArtifactManager } from "./IssueArtifactManager";
 
 interface IssuePropertiesArtifactsTabProps {
   issue: Issue;
@@ -414,16 +415,9 @@ export function IssuePropertiesArtifactsTab({ issue, documentDeepLink }: IssuePr
   const reviewDocsByKey = new Map((documents ?? []).map((doc) => [doc.key, doc]));
   const fileRows = selectAgentArtifactAttachments(attachments, workProducts);
 
-  if (workProductRows.length === 0 && documentRows.length === 0 && fileRows.length === 0) {
-    return (
-      <div className="px-1 py-6 text-sm text-muted-foreground">
-        No artifacts yet. Work products, documents, and agent-produced files will appear here.
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-2 py-2">
+      <IssueArtifactManager companyId={issue.companyId} issueId={issue.id} />
       {workProductRows.length > 0 ? (
         <>
           <SectionHeading>Work products</SectionHeading>

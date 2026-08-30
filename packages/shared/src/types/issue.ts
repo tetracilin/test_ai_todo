@@ -798,6 +798,17 @@ export interface Issue {
   status: IssueStatus;
   workMode: IssueWorkMode;
   priority: IssuePriority;
+  /**
+   * Manual progress percentage (0-100). Optional for compatibility with
+   * persisted/API issue shapes from before migration 0230; current rows expose
+   * this as 0 or greater. Parent issues expose aggregated child progress.
+   */
+  progress?: number;
+  /**
+   * Ordering position among siblings sharing the same parent. Optional for
+   * compatibility with persisted/API issue shapes from before migration 0230.
+   */
+  sortOrder?: number;
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
@@ -870,6 +881,20 @@ export interface Issue {
   updatedAt: Date;
 }
 
+/**
+ * Aggregated progress of a parent issue, derived from its direct visible
+ * children. `progress` is the mean of the children's `progress` values rounded
+ * to the nearest integer (0 when there are no children).
+ */
+export interface IssueSubtaskProgress {
+  /** Number of direct visible children. */
+  total: number;
+  /** Number of direct visible children with progress >= 100. */
+  completed: number;
+  /** Aggregated progress percentage (0-100). */
+  progress: number;
+}
+
 export type CompactIssue = Pick<
   Issue,
   | "id"
@@ -883,6 +908,8 @@ export type CompactIssue = Pick<
   | "status"
   | "workMode"
   | "priority"
+  | "progress"
+  | "sortOrder"
   | "reviewPolicy"
   | "assigneeAgentId"
   | "assigneeUserId"

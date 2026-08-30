@@ -206,6 +206,14 @@ export const queryKeys = {
         : (["issues", "cost-summary", issueId] as const),
     attachments: (issueId: string) => ["issues", "attachments", issueId] as const,
     attachmentPreview: (attachmentId: string) => ["issues", "attachment-preview", attachmentId] as const,
+    artifacts: (companyId: string, issueId: string) => ["issues", "artifacts", companyId, issueId] as const,
+    artifactStorageSources: (companyId: string) => ["issues", "artifact-storage-sources", companyId] as const,
+    externalArtifactObjects: (companyId: string, prefix: string) =>
+      ["issues", "external-artifact-objects", companyId, prefix] as const,
+    artifactVersions: (companyId: string, artifactId: string) =>
+      ["issues", "artifact-versions", companyId, artifactId] as const,
+    artifactComments: (companyId: string, artifactId: string) =>
+      ["issues", "artifact-comments", companyId, artifactId] as const,
     documents: (issueId: string) => ["issues", "documents", issueId] as const,
     document: (issueId: string, key: string) => ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) => ["issues", "document-revisions", issueId, key] as const,

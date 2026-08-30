@@ -3,12 +3,13 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
+import type { StorageProvider, GetObjectResult, HeadObjectResult, ListObjectsResult } from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
 
 interface S3ProviderConfig {
@@ -203,6 +204,28 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
           Key: key,
         }),
       );
+    },
+
+    async listObjects(input): Promise<ListObjectsResult> {
+      const keyPrefix = buildKey(prefix, input.prefix ?? "");
+      const limit = input.limit && input.limit > 0 ? input.limit : 1000;
+      const output = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: keyPrefix || undefined,
+          MaxKeys: limit,
+        }),
+      );
+      const objects = (output.Contents ?? []).map((entry) => ({
+        key: prefix && entry.Key ? entry.Key.slice(`${prefix}/`.length) : (entry.Key ?? ""),
+        size: entry.Size ?? 0,
+        lastModified: toDate(entry.LastModified),
+      }));
+      return {
+        objects,
+        truncated: Boolean(output.IsTruncated),
+        nextContinuationToken: output.NextContinuationToken,
+      };
     },
   };
 }

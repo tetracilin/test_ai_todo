@@ -18,3 +18,22 @@ export function createStorageProviderFromConfig(config: Config): StorageProvider
     secretKeySecretRef: config.storageS3SecretKeySecretRef,
   });
 }
+
+/**
+ * Build the optional external-storage provider (e.g. the NAS MinIO instance)
+ * for the artifact "open file" flow. Returns null when no external source is
+ * configured, so callers can treat it as absent rather than erroring.
+ */
+export function createExternalStorageProviderFromConfig(config: Config): StorageProvider | null {
+  const external = config.storageExternal;
+  if (!external) return null;
+  return createS3StorageProvider({
+    bucket: external.bucket,
+    region: external.region,
+    endpoint: external.endpoint,
+    prefix: external.prefix,
+    forcePathStyle: external.forcePathStyle,
+    accessKeySecretRef: external.accessKeySecretRef,
+    secretKeySecretRef: external.secretKeySecretRef,
+  });
+}

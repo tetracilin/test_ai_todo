@@ -22,6 +22,31 @@ read_secret() {
 read_secret POSTGRES_PASSWORD
 read_secret BETTER_AUTH_SECRET
 
+# Docker secrets are root-readable, while Paperclip intentionally runs as the
+# unprivileged node user. Copy storage credentials into its private runtime
+# directory, then replace the public reference name with that absolute path.
+materialize_storage_secret() {
+  variable_name="$1"
+  eval "secret_ref=\${$variable_name:-}"
+  [ -n "$secret_ref" ] || return 0
+  case "$secret_ref" in
+    /*) return 0 ;;
+  esac
+  secret_file="/run/secrets/$secret_ref"
+  [ -r "$secret_file" ] || return 0
+  runtime_dir=/paperclip/instances/default/runtime-secrets
+  runtime_file="$runtime_dir/$secret_ref"
+  mkdir -p "$runtime_dir"
+  cp "$secret_file" "$runtime_file"
+  chown node:node "$runtime_dir" "$runtime_file"
+  chmod 700 "$runtime_dir"
+  chmod 600 "$runtime_file"
+  export "$variable_name=$runtime_file"
+}
+
+materialize_storage_secret PAPERCLIP_STORAGE_EXTERNAL_ACCESS_KEY_SECRET_REF
+materialize_storage_secret PAPERCLIP_STORAGE_EXTERNAL_SECRET_KEY_SECRET_REF
+
 : "${POSTGRES_HOST:=db}"
 : "${POSTGRES_PORT:=5432}"
 : "${POSTGRES_USER:=paperclip}"

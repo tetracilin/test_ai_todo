@@ -127,5 +127,9 @@ export function createStorageService(provider: StorageProvider): StorageService 
       ensureCompanyPrefix(companyId, objectKey);
       await provider.deleteObject({ objectKey });
     },
+
+    async listObjects(input) {
+      return provider.listObjects(input);
+    },
   };
 }

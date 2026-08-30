@@ -451,6 +451,8 @@ const createIssueBaseSchema = z.object({
   workMode: z.enum(ISSUE_WORK_MODES).optional().default("standard"),
   harnessKind: z.enum(ISSUE_HARNESS_KINDS).optional().nullable(),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
+  progress: z.number().int().min(0).max(100).optional().default(0),
+  sortOrder: z.number().int().min(0).optional().default(0),
   reviewPolicy: z.enum(ISSUE_REVIEW_POLICIES).optional().nullable(),
   assigneeAgentId: z.string().guid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),
@@ -689,6 +691,11 @@ export const addIssueCommentSchema = z.object({
   authorType: issueCommentAuthorTypeSchema.optional(),
   presentation: issueCommentPresentationSchema.nullable().optional(),
   metadata: issueCommentMetadataSchema.nullable().optional(),
+  /**
+   * A comment-only post is durable thread context, not a request to wake the
+   * assigned agent. Agent mode keeps the historical comment-to-run behavior.
+   */
+  deliveryMode: z.enum(["agent", "comment"]).optional().default("agent"),
   reopen: z.boolean().optional(),
   resume: z.boolean().optional(),
   interrupt: z.boolean().optional(),

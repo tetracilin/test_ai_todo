@@ -333,6 +333,36 @@ describe("TaskChatComposer", () => {
     expect(onAdd).toHaveBeenCalledWith("do the plan", undefined, undefined);
   });
 
+  it("posts comment-only delivery without changing work mode or invoking agent delivery", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onWorkModeChange = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TaskChatComposer onAdd={onAdd} workMode="standard" onWorkModeChange={onWorkModeChange} />,
+    );
+
+    const modeTrigger = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!;
+    flushSync(() => {
+      modeTrigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+      modeTrigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      modeTrigger.click();
+    });
+    const commentOnly = document.body.querySelector<HTMLDivElement>(
+      '[data-testid="task-chat-composer-mode-comment"]',
+    );
+    expect(commentOnly).toBeTruthy();
+    flushSync(() => {
+      commentOnly!.click();
+    });
+
+    typeText("Leave this for the team.");
+    pressKey("Enter", { metaKey: true });
+    await flushAsync();
+    await flushAsync();
+
+    expect(onWorkModeChange).not.toHaveBeenCalled();
+    expect(onAdd).toHaveBeenCalledWith("Leave this for the team.", undefined, undefined, "comment");
+  });
+
   it("passes reopen=true when the issue resumes-to-todo and the assignee is an agent", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
     render(

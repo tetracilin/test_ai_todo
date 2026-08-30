@@ -1019,7 +1019,12 @@ type IssueDetailChatTabProps = {
     vote: "up" | "down",
     options?: { allowSharing?: boolean; reason?: string },
   ) => Promise<void>;
-  onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
+  onAdd: (
+    body: string,
+    reopen?: boolean,
+    reassignment?: CommentReassignment,
+    deliveryMode?: "agent" | "comment",
+  ) => Promise<void>;
   onImageUpload: (file: File) => Promise<string>;
   onAttachImage: (file: File) => Promise<IssueAttachment | void>;
   onInterruptQueued: (runId: string) => Promise<void>;
@@ -2735,8 +2740,17 @@ export function IssueDetail() {
   });
 
   const addComment = useMutation({
-    mutationFn: ({ body, reopen, interrupt }: { body: string; reopen?: boolean; interrupt?: boolean }) =>
-      issuesApi.addComment(issueId!, body, reopen, interrupt),
+    mutationFn: ({
+      body,
+      reopen,
+      interrupt,
+      deliveryMode = "agent",
+    }: {
+      body: string;
+      reopen?: boolean;
+      interrupt?: boolean;
+      deliveryMode?: "agent" | "comment";
+    }) => issuesApi.addComment(issueId!, body, reopen, interrupt, deliveryMode),
     onMutate: async ({ body, reopen, interrupt }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.comments(issueId!) });
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(issueId!) });
@@ -3989,12 +4003,17 @@ export function IssueDetail() {
       sharingPreferenceAtSubmit: feedbackDataSharingPreference,
     });
   }, [feedbackDataSharingPreference, feedbackVoteMutation]);
-  const handleChatAdd = useCallback(async (body: string, reopen?: boolean, reassignment?: CommentReassignment) => {
+  const handleChatAdd = useCallback(async (
+    body: string,
+    reopen?: boolean,
+    reassignment?: CommentReassignment,
+    deliveryMode: "agent" | "comment" = "agent",
+  ) => {
     if (reassignment) {
       await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
       return;
     }
-    await addComment.mutateAsync({ body, reopen });
+    await addComment.mutateAsync({ body, reopen, deliveryMode });
   }, [addComment, addCommentAndReassign]);
   const handleCommentImageUpload = useCallback(async (file: File) => {
     const attachment = await uploadAttachment.mutateAsync(file);

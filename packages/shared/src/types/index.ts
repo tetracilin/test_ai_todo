@@ -605,6 +605,7 @@ export type {
 export type {
   CompactIssue,
   Issue,
+  IssueSubtaskProgress,
   IssueChangeReceiptEntry,
   IssueChanges,
   IssueWorkMode,
