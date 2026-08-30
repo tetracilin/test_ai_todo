@@ -101,7 +101,7 @@ describe("TaskChatThread draft pass-through", () => {
   });
 
   it("forwards draftKey so the composer restores a task's saved draft", () => {
-    localStorage.setItem("task-chat-draft:issue-1", "half-written thought");
+    localStorage.setItem("task-chat-draft:issue-1:standard", "half-written thought");
 
     render(
       <TaskChatThread
