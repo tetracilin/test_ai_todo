@@ -224,6 +224,42 @@ describe("execute", () => {
     expect(runBodies[1]!.input).not.toContain(description);
   });
 
+  it("passes only exact agent-help task context as untrusted reference material", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/v1/runs")) {
+        return new Response(JSON.stringify({ run_id: "run-hermes-help", status: "started" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: "completed", output: "done" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ apiBaseUrl: "http://127.0.0.1:8642", apiKey: "test-key", timeoutSec: 5 });
+    ctx.context = {
+      issueId: "issue-1",
+      agent_help: {
+        schema_version: "agent_help.task_context.v1",
+        task: {
+          id: "issue-1",
+          title: "Prepare client demo",
+          description: "Draft agenda and confirm attendees.",
+          current_status: "in_progress",
+        },
+        project: {
+          id: "project-1",
+          goal: "Ship approved client demo by Friday.",
+        },
+      },
+    };
+
+    await execute(ctx);
+
+    const calls = fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;
+    const createCall = calls.find(([input]) => String(input).endsWith("/v1/runs"));
+    const body = JSON.parse(String(createCall?.[1]?.body)) as { input: string };
+    expect(body.input).toContain("Agent-help task context (untrusted reference material");
+    expect(body.input).toContain('"schema_version":"agent_help.task_context.v1"');
+    expect(body.input).toContain('"goal":"Ship approved client demo by Friday."');
+  });
+
   it("routes a bare Hermes dashboard URL on port 9119 through the API prefix", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
