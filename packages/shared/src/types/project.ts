@@ -94,6 +94,8 @@ export interface Project {
   pauseReason: PauseReason | null;
   pausedAt: Date | null;
   executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
+  /** Optional during staged rollout while older API fixtures omit this field. */
+  minioNasFolder?: string | null;
   codebase: ProjectCodebase;
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;

@@ -14,7 +14,7 @@ import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } fr
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { conflict, forbidden } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
@@ -36,6 +36,7 @@ import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
 import { secretService } from "../services/secrets.js";
+import { createMinioNasStorage } from "../services/minio-nas-storage.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
 const SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS = new Set(["stop", "restart"]);
@@ -52,6 +53,25 @@ export function projectRoutes(db: Db) {
   });
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const environmentsSvc = environmentService(db);
+  const minioNas = createMinioNasStorage();
+
+  function storageConfigResponse(project: {
+    id: string;
+    minioNasFolder: string | null;
+    primaryWorkspace: { cwd: string | null } | null;
+  }) {
+    const minio = minioNas.describe();
+    return {
+      projectId: project.id,
+      repoLocalFolder: project.primaryWorkspace?.cwd ?? null,
+      minio: {
+        enabled: minio.configured,
+        consoleUrl: minio.consoleUrl,
+        bucket: minio.bucket,
+        nasFolder: project.minioNasFolder,
+      },
+    };
+  }
 
   async function assertProjectEnvironmentSelection(companyId: string, environmentId: string | null | undefined) {
     if (environmentId === undefined || environmentId === null) return;
@@ -140,6 +160,90 @@ export function projectRoutes(db: Db) {
     if (!project) return;
     if (!(await assertProjectReadAllowed(req, res, project))) return;
     res.json(project);
+  });
+
+  router.get("/projects/:id/storage-config", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    res.json(storageConfigResponse(project));
+  });
+
+  router.get("/projects/:id/minio-folders", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    const prefix = typeof req.query.prefix === "string" ? req.query.prefix : undefined;
+    const result = await minioNas.listFolders(prefix);
+    res.json({ folders: result.folders.map((folder) => folder.path) });
+  });
+
+  router.put("/projects/:id/storage-config", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!existing) return;
+    const body = req.body as { repoLocalFolder?: unknown; nasFolder?: unknown };
+    const hasRepoLocalFolder = Object.hasOwn(body, "repoLocalFolder");
+    const hasNasFolder = Object.hasOwn(body, "nasFolder");
+    if (!hasRepoLocalFolder && !hasNasFolder) {
+      throw unprocessable("Provide repoLocalFolder or nasFolder", { code: "INVALID_STORAGE_CONFIG" });
+    }
+    let repoLocalFolder: string | null | undefined;
+    if (hasRepoLocalFolder) {
+      if (body.repoLocalFolder !== null && (typeof body.repoLocalFolder !== "string" || !body.repoLocalFolder.trim())) {
+        throw unprocessable("repoLocalFolder must be a non-empty string or null", { code: "INVALID_STORAGE_CONFIG" });
+      }
+      repoLocalFolder = body.repoLocalFolder === null ? null : body.repoLocalFolder.trim();
+    }
+    if (hasNasFolder && body.nasFolder !== null && typeof body.nasFolder !== "string") {
+      throw unprocessable("nasFolder must be a string or null", { code: "INVALID_NAS_FOLDER" });
+    }
+
+    const nasFolder = hasNasFolder && typeof body.nasFolder === "string"
+      ? await minioNas.validateFolder(body.nasFolder)
+      : body.nasFolder === null
+        ? null
+        : existing.minioNasFolder;
+    const project = hasNasFolder
+      ? await svc.update(id, { minioNasFolder: nasFolder })
+      : existing;
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    let current = project;
+    if (hasRepoLocalFolder) {
+      const primaryWorkspace = current.primaryWorkspace;
+      if (!primaryWorkspace) {
+        throw unprocessable("Project has no primary workspace for REPO LOCAL FOLDER", { code: "INVALID_STORAGE_CONFIG" });
+      }
+      const workspace = await svc.updateWorkspace(id, primaryWorkspace.id, {
+        cwd: repoLocalFolder ?? null,
+      });
+      if (!workspace) {
+        throw unprocessable("Invalid REPO LOCAL FOLDER", { code: "INVALID_STORAGE_CONFIG" });
+      }
+      current = (await svc.getById(id)) ?? project;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: current.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.storage_config_updated",
+      entityType: "project",
+      entityId: id,
+      details: {
+        changedKeys: [hasRepoLocalFolder ? "repoLocalFolder" : null, hasNasFolder ? "nasFolder" : null].filter(Boolean),
+        minioConfigured: minioNas.describe().configured,
+      },
+    });
+    res.json(storageConfigResponse(current));
   });
 
   router.get("/projects/:id/external-object-summary", async (req, res) => {

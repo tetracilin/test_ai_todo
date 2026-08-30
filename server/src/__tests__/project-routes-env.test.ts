@@ -26,6 +26,11 @@ const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockAccessService = vi.hoisted(() => ({
   decide: vi.fn(),
 }));
+const mockMinioNasStorage = vi.hoisted(() => ({
+  describe: vi.fn(),
+  listFolders: vi.fn(),
+  validateFolder: vi.fn(),
+}));
 
 vi.mock("../telemetry.js", () => ({
   getTelemetryClient: mockGetTelemetryClient,
@@ -46,6 +51,10 @@ vi.mock("../services/environments.js", () => ({
 
 vi.mock("../services/secrets.js", () => ({
   secretService: () => mockSecretService,
+}));
+
+vi.mock("../services/minio-nas-storage.js", () => ({
+  createMinioNasStorage: () => mockMinioNasStorage,
 }));
 
 vi.mock("../services/workspace-runtime.js", () => ({
@@ -163,6 +172,15 @@ describe("project env routes", () => {
     mockProjectService.listWorkspaces.mockResolvedValue([]);
     mockEnvironmentService.getById.mockReset();
     mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
+    mockMinioNasStorage.describe.mockReturnValue({
+      configured: true,
+      consoleUrl: "https://minio.example.test",
+      bucket: "nas",
+      endpoint: "https://minio-api.example.test",
+      rootFolder: "/projects",
+    });
+    mockMinioNasStorage.listFolders.mockReset();
+    mockMinioNasStorage.validateFolder.mockReset();
   });
 
   it("normalizes env bindings on create and logs only env keys", async () => {
@@ -229,5 +247,49 @@ describe("project env routes", () => {
         },
       }),
     );
+  });
+
+  it("reads and saves MinIO NAS folder configuration without replacing the local folder", async () => {
+    const project = buildProject({
+      minioNasFolder: null,
+      primaryWorkspace: { id: "workspace-1", cwd: "/srv/project" },
+    });
+    mockProjectService.getById.mockResolvedValue(project);
+    mockProjectService.update.mockResolvedValue({
+      ...project,
+      minioNasFolder: "/projects/alpha",
+    });
+    mockMinioNasStorage.validateFolder.mockResolvedValue("/projects/alpha");
+
+    const app = await createApp();
+    const response = await request(app)
+      .put("/api/projects/project-1/storage-config")
+      .send({ nasFolder: "/projects/alpha" });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toEqual({
+      projectId: "project-1",
+      repoLocalFolder: "/srv/project",
+      minio: {
+        enabled: true,
+        consoleUrl: "https://minio.example.test",
+        bucket: "nas",
+        nasFolder: "/projects/alpha",
+      },
+    });
+    expect(mockMinioNasStorage.validateFolder).toHaveBeenCalledWith("/projects/alpha");
+    expect(mockProjectService.update).toHaveBeenCalledWith("project-1", { minioNasFolder: "/projects/alpha" });
+    expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("rejects unauthorized MinIO folder listing for an actor without project read access", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject({ minioNasFolder: null }));
+    mockAccessService.decide.mockResolvedValue({ allowed: false });
+
+    const app = await createApp();
+    const response = await request(app).get("/api/projects/project-1/minio-folders");
+
+    expect(response.status).toBe(403);
+    expect(mockMinioNasStorage.listFolders).not.toHaveBeenCalled();
   });
 });

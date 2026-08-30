@@ -1590,6 +1590,13 @@
       "when": 1787382361755,
       "tag": "0228_mature_namora",
       "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1788065061183,
+      "tag": "0229_project_minio_nas_folder",
+      "breakpoints": true
     }
   ]
 }

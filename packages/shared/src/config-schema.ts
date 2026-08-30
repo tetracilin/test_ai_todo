@@ -77,6 +77,8 @@ export const storageS3ConfigSchema = z.object({
   // (e.g. /run/secrets/<name>) or, if absolute, is read as a file path directly.
   accessKeySecretRef: z.string().optional(),
   secretKeySecretRef: z.string().optional(),
+  consoleUrl: z.string().url().optional(),
+  nasRootPrefix: z.string().optional(),
 }).passthrough();
 
 export const storageConfigSchema = z.object({

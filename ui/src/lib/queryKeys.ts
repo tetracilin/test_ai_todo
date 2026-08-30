@@ -307,6 +307,8 @@ export const queryKeys = {
     list: (companyId: string, opts: { includeArchived?: boolean } = {}) =>
       ["projects", companyId, { includeArchived: opts.includeArchived === true }] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    storageConfig: (projectId: string) => ["projects", "storage-config", projectId] as const,
+    minioFolders: (projectId: string) => ["projects", "minio-folders", projectId] as const,
   },
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
