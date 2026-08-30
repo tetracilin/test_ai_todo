@@ -8,3 +8,16 @@ coverage
 data
 tmp
 *.log
+
+# Hermes kanban task worktrees. Each is a full copy of this repo; Dockerfile
+# line 56 is `COPY . .`, so without these the build context (and every layer
+# built from it) carries ~100 duplicate checkouts. This inflated the image
+# from ~6GB to 17.4GB.
+.worktrees
+.minio-nas-integration-*
+
+# Local build/report artifacts and backups that must never reach an image.
+report
+*.bundle
+**/backups
+deploy*/secrets

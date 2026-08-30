@@ -78,3 +78,6 @@ tests/storybook-visual/playwright-report/
 
 # K15 CI run artifacts
 report/k15-ci/
+
+.worktrees/
+.minio-nas-integration-*/

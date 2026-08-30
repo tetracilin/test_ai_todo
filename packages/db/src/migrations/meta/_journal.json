@@ -1618,6 +1618,13 @@
       "when": 1788069000001,
       "tag": "0232_company_artifact_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1788093000000,
+      "tag": "0233_discord_integration_authority",
+      "breakpoints": true
     }
   ]
 }
