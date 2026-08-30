@@ -2779,7 +2779,7 @@ export function IssueDetail() {
       reopen?: boolean;
       interrupt?: boolean;
       deliveryMode?: "agent" | "comment";
-    }) => issuesApi.addComment(issueId!, body, reopen, interrupt, deliveryMode),
+    }) => issuesApi.addComment(issueId!, body, reopen, interrupt, undefined, deliveryMode),
     onMutate: async ({ body, reopen, interrupt }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.comments(issueId!) });
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(issueId!) });
