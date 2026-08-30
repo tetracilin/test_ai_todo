@@ -3,6 +3,7 @@ import { Link } from "@/lib/router";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -15,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   SortableContext,
   useSortable,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { StatusIcon } from "./StatusIcon";
@@ -405,7 +407,11 @@ export function KanbanBoard({
   const collapsedStatusSet = useMemo(() => new Set(collapsedStatuses), [collapsedStatuses]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Keyboard alternative to drag (WCAG 2.1.1): Space starts a drag on the
+    // focused card, arrows move it, Enter/Space drops it into the target
+    // column — the same status change a pointer drag performs.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const columnIssues = useMemo(() => {

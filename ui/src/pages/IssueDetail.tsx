@@ -1725,6 +1725,20 @@ export function IssueDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
+  // The mobile "Open Properties, Plan, and Artifacts" trigger. Radix restores
+  // focus to the trigger only when opened via SheetTrigger; this Sheet is
+  // opened from a plain button, so restore focus ourselves on close (WCAG
+  // 2.4.3 / APG modal dialog pattern).
+  const mobilePropsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Generic opener capture: the sheet can also be opened via keyboard shortcut
+  // and the inbox toolbar, so remember whatever had focus at open time and
+  // give it back on close.
+  const mobilePropsOpenerRef = useRef<HTMLElement | null>(null);
+  const openMobileProps = useCallback(() => {
+    mobilePropsOpenerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setMobilePropsOpen(true);
+  }, []);
   const [documentDeepLink, setDocumentDeepLink] = useState<
     (IssuePropertiesDocumentDeepLink & { issueId: string }) | null
   >(null);
@@ -3698,7 +3712,7 @@ export function IssueDetail() {
     if (!taskChatRedesignLoaded || !taskChatShellEnabled) return false;
 
     if (isMobile) {
-      setMobilePropsOpen(true);
+      openMobileProps();
     } else {
       if (suppressPanelForFirstTask && issue?.id) {
         setFirstTaskPanelOverrideIssueId(issue.id);
@@ -3909,7 +3923,7 @@ export function IssueDetail() {
       if (!archiveFromInbox.isPending && issue?.id) archiveFromInbox.mutate(issue.id);
     },
     onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onProperties: () => openMobileProps(),
     onHide: () => {
       updateIssue.mutate(
         { hiddenAt: new Date().toISOString() },
@@ -3922,7 +3936,7 @@ export function IssueDetail() {
       if (!archiveFromInbox.isPending && issue?.id) archiveFromInbox.mutate(issue.id);
     },
     onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onProperties: () => openMobileProps(),
     onHide: () => {
       updateIssue.mutate(
         { hiddenAt: new Date().toISOString() },
@@ -4623,7 +4637,7 @@ export function IssueDetail() {
               <span className="truncate">{resolvedProject?.name ?? issue.project?.name ?? issue.projectId.slice(0, 8)}</span>
             </Link>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground px-1 -mx-1 py-0.5">
               <ProjectTile size="xs" />
               No project
             </span>
@@ -4670,7 +4684,8 @@ export function IssueDetail() {
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => setMobilePropsOpen(true)}
+                ref={mobilePropsTriggerRef}
+                onClick={openMobileProps}
                 title="Properties, Plan, and Artifacts"
                 aria-label="Open Properties, Plan, and Artifacts"
               >
@@ -5625,7 +5640,22 @@ export function IssueDetail() {
       </Dialog>
 
       {/* Mobile properties drawer */}
-      <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
+      <Sheet
+        open={mobilePropsOpen}
+        onOpenChange={(next) => {
+          setMobilePropsOpen(next);
+          if (next) return;
+          // Restore focus to the element that opened the sheet (Escape, X, or
+          // overlay close). Radix only does this for DialogTrigger-based
+          // opens; this sheet is opened from plain buttons/shortcuts.
+          const restore = mobilePropsOpenerRef.current ?? mobilePropsTriggerRef.current;
+          mobilePropsOpenerRef.current = null;
+          if (restore?.isConnected) {
+            // Defer one frame so the sheet's exit animation doesn't steal it.
+            requestAnimationFrame(() => restore.focus({ preventScroll: true }));
+          }
+        }}
+      >
         <SheetContent side="bottom" className="h-(--sz-100dvh) max-h-(--sz-100dvh) pb-(--sz-safe-bottom)">
           <SheetHeader>
             <SheetTitle className="text-sm">Properties, Plan, and Artifacts</SheetTitle>

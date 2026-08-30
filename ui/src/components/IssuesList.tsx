@@ -1733,7 +1733,7 @@ export function IssuesList({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button size="sm" variant="outline" onClick={() => openCreateIssueDialog()}>
+          <Button size="sm" variant="outline" aria-label={createButtonLabel} onClick={() => openCreateIssueDialog()}>
             <Plus className="h-4 w-4 sm:mr-1" />
             <span className="hidden sm:inline">{createButtonLabel}</span>
           </Button>
@@ -1785,6 +1785,7 @@ export function IssuesList({
               className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", viewState.nestingEnabled && "bg-accent")}
               onClick={() => updateView({ nestingEnabled: !viewState.nestingEnabled })}
               title={viewState.nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
+              aria-label={viewState.nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
             >
               <ListTree className="h-3.5 w-3.5" />
             </Button>
@@ -1799,6 +1800,7 @@ export function IssuesList({
                 className={cn("h-8 w-8 shrink-0", boardCompactCards && "bg-accent")}
                 onClick={() => updateView({ boardCardDensity: boardCompactCards ? "comfortable" : "compact" })}
                 title={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}
+                aria-label={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}
               >
                 <ChevronsDownUp className="h-3.5 w-3.5" />
               </Button>
@@ -1809,6 +1811,7 @@ export function IssuesList({
                 className={cn("h-8 w-8 shrink-0", boardCollapsedStatuses.length > 0 && "bg-accent")}
                 onClick={() => updateView({ boardColdLaneMode: boardCollapsedStatuses.length > 0 ? "expanded" : "collapsed" })}
                 title={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}
+                aria-label={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}
               >
                 <PanelTopClose className="h-3.5 w-3.5" />
               </Button>
@@ -1823,6 +1826,7 @@ export function IssuesList({
                       viewState.boardColumnPageSize !== KANBAN_COLUMN_DEFAULT_PAGE_SIZE && "bg-accent",
                     )}
                     title="Cards per column"
+                    aria-label="Cards per column"
                   >
                     <ListCollapse className="h-3.5 w-3.5" />
                     <span className="min-w-4 text-xs tabular-nums">{viewState.boardColumnPageSize}</span>
@@ -1861,6 +1865,7 @@ export function IssuesList({
                 })}
                 disabled={!boardDensityCustomized}
                 title="Reset board density"
+                aria-label="Reset board density"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </Button>
@@ -1897,7 +1902,7 @@ export function IssuesList({
           {viewState.viewMode === "list" && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Sort">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Sort" aria-label="Sort">
                   <ArrowUpDown className="h-3.5 w-3.5" />
                 </Button>
               </PopoverTrigger>
@@ -1944,7 +1949,7 @@ export function IssuesList({
           {(viewState.viewMode === "list" || enableTagGrouping) && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group" aria-label="Group">
                   <Layers className="h-3.5 w-3.5" />
                 </Button>
               </PopoverTrigger>
