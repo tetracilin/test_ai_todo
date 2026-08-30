@@ -45,6 +45,8 @@ type SeedIntakeOverrides = Partial<{
   intakeStatus: string;
   backlogIssueId: string | null;
   backlogStatusSnapshot: string | null;
+  redactedAt: Date | null;
+  archivedAt: Date | null;
 }>;
 
 /**
@@ -134,6 +136,7 @@ describeEmbeddedPostgres("development comment intake service", () => {
     const sourceIssueId = overrides.sourceIssueId ?? null;
     const backlogIssueId = overrides.backlogIssueId ?? null;
     const row = {
+      id: overrides.id ?? randomUUID(),
       companyId,
       sourceId,
       sourceCommentId: overrides.sourceCommentId ?? randomUUID(),
@@ -150,6 +153,8 @@ describeEmbeddedPostgres("development comment intake service", () => {
       intakeStatus: overrides.intakeStatus ?? "new",
       backlogIssueId,
       backlogStatusSnapshot: overrides.backlogStatusSnapshot ?? null,
+      redactedAt: overrides.redactedAt ?? null,
+      archivedAt: overrides.archivedAt ?? null,
     };
     const inserted = await db.insert(developmentCommentIntakes).values(row).returning();
     return inserted[0]!;
@@ -159,8 +164,11 @@ describeEmbeddedPostgres("development comment intake service", () => {
     const companyId = await seedCompany("ORD");
     const sourceId = await seedSource(companyId);
 
-    const equalTime1 = randomUUID();
-    const equalTime2 = randomUUID();
+    // Fixed uuids with a known byte ordering: `a2` < `b3` under Postgres uuid
+    // comparison (and under plain string comparison), so the DESC id
+    // tie-breaker below is deterministic rather than random-uuid dependent.
+    const lowerId = "00000000-0000-0000-0000-0000000000a2";
+    const higherId = "00000000-0000-0000-0000-0000000000b3";
     await seedIntake(companyId, sourceId, {
       sourceCommentId: "c-oldest",
       sourceCreatedAt: new Date("2026-08-01T00:00:00.000Z"),
@@ -180,13 +188,13 @@ describeEmbeddedPostgres("development comment intake service", () => {
     await seedIntake(companyId, sourceId, {
       sourceCommentId: "c-t1-a",
       sourceCreatedAt: new Date("2026-08-10T00:00:00.000Z"),
-      id: equalTime1,
+      id: lowerId,
       dedupeKey: "k-t1-a",
     });
     await seedIntake(companyId, sourceId, {
       sourceCommentId: "c-t1-b",
       sourceCreatedAt: new Date("2026-08-10T00:00:00.000Z"),
-      id: equalTime2,
+      id: higherId,
       dedupeKey: "k-t1-b",
     });
 
@@ -196,7 +204,8 @@ describeEmbeddedPostgres("development comment intake service", () => {
     expect(result.items.map((item) => item.source.commentId)).toEqual([
       "c-newest",
       "c-mid",
-      equalTime2 > equalTime1 ? "c-t1-b" : "c-t1-a",
+      "c-t1-b",
+      "c-t1-a",
       "c-oldest",
     ]);
     expect(result.nextCursor).toBeNull();
@@ -371,7 +380,9 @@ describeEmbeddedPostgres("development comment intake service", () => {
     });
     await seedIntake(companyId, sourceId, {
       sourceCommentId: "c-b",
-      kind: "complaint",
+      // Same kind as c-a so a limit-1 page under the "suggestion" filter has a
+      // second row and therefore mints a next cursor.
+      kind: "suggestion",
       sourceCreatedAt: new Date("2026-08-04T00:00:00.000Z"),
       sourceUpdatedAt: new Date("2026-08-04T00:00:00.000Z"),
       dedupeKey: "k-cur-2",
@@ -423,6 +434,7 @@ describeEmbeddedPostgres("development comment intake service", () => {
       sourceCommentId: "c-archived",
       requestBody: "expired body",
       intakeStatus: "archived",
+      archivedAt: new Date("2026-08-25T00:00:00.000Z"),
       dedupeKey: "k-arch",
     });
     const live = await seedIntake(companyId, sourceId, {

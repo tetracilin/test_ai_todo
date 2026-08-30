@@ -73,31 +73,62 @@ export function commentIntakeService(db: Db) {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`comment-intake:${source.id}`}, 0))`);
         const current = await tx.select().from(commentIntakeCheckpoints)
           .where(eq(commentIntakeCheckpoints.sourceId, source.id)).then((rows) => rows[0] ?? null);
-        const overlapFrom = current?.highWatermarkOccurredAt
-          ? new Date(current.highWatermarkOccurredAt.getTime() - OVERLAP_MS)
+        // Two-part resume inside the fixed `createdAt ASC, id ASC` scan order:
+        //
+        // 1. New work strictly after the last processed row (durable keyset).
+        //    A comment inserted during a prior tick's read has
+        //    `createdAt > watermark` (insert time always beats the previous
+        //    snapshot), so this never skips it, and it keeps the scan
+        //    progressing even when more than a page of candidates falls inside
+        //    a single poll window (a pure overlap replay would re-read the
+        //    same oldest page forever).
+        // 2. A bounded 5-minute replay window at-or-before the watermark so an
+        //    *edited* source comment is re-read even though its keyset position
+        //    does not move — edits surface as sourceChanged and transition the
+        //    intake to `triaged` (contract §4). Unchanged replays are no-ops
+        //    thanks to the SHA-256 identity key.
+        const watermarkAt = current?.highWatermarkOccurredAt;
+        const watermarkId = current?.highWatermarkId ?? null;
+        const newWorkAfter = watermarkAt && watermarkId
+          ? sql`(${issueComments.createdAt}, ${issueComments.id}) > (${watermarkAt.toISOString()}::timestamptz, ${watermarkId}::uuid)`
+          : undefined;
+        const replayFrom = watermarkAt
+          ? new Date(watermarkAt.getTime() - OVERLAP_MS)
           : null;
-        // Five-minute overlap intentionally replays prior items; the SHA-256
-        // identity key makes reprocessing safe across restarts and races.
-        const watermarkClause = overlapFrom ? gte(issueComments.createdAt, overlapFrom) : undefined;
-        const comments = await tx.select({
-          id: issueComments.id,
-          issueId: issueComments.issueId,
-          authorUserId: issueComments.authorUserId,
-          body: issueComments.body,
-          createdAt: issueComments.createdAt,
-          updatedAt: issueComments.updatedAt,
-        })
-          .from(issueComments)
-          .innerJoin(authUsers, eq(authUsers.id, issueComments.authorUserId))
-          .innerJoin(issues, and(eq(issues.id, issueComments.issueId), eq(issues.companyId, source.companyId)))
-          .where(and(
-            eq(issueComments.companyId, source.companyId),
-            isNull(issueComments.authorAgentId),
-            isNull(issueComments.deletedAt),
-            watermarkClause,
-          ))
-          .orderBy(asc(issueComments.createdAt), asc(issueComments.id))
-          .limit(MAX_PAGE_SIZE);
+        const replayWindow = replayFrom && watermarkAt && watermarkId
+          ? and(
+              gte(issueComments.createdAt, replayFrom),
+              sql`(${issueComments.createdAt}, ${issueComments.id}) <= (${watermarkAt.toISOString()}::timestamptz, ${watermarkId}::uuid)`,
+            )
+          : undefined;
+
+        const selectComments = (bound: ReturnType<typeof and> | undefined) =>
+          tx.select({
+            id: issueComments.id,
+            issueId: issueComments.issueId,
+            authorUserId: issueComments.authorUserId,
+            body: issueComments.body,
+            createdAt: issueComments.createdAt,
+            updatedAt: issueComments.updatedAt,
+          })
+            .from(issueComments)
+            .innerJoin(authUsers, eq(authUsers.id, issueComments.authorUserId))
+            .innerJoin(issues, and(eq(issues.id, issueComments.issueId), eq(issues.companyId, source.companyId)))
+            .where(and(
+              eq(issueComments.companyId, source.companyId),
+              isNull(issueComments.authorAgentId),
+              isNull(issueComments.deletedAt),
+              bound,
+            ))
+            .orderBy(asc(issueComments.createdAt), asc(issueComments.id))
+            .limit(MAX_PAGE_SIZE);
+
+        // Replays run first so new-work candidates are counted/created last and
+        // become the watermark; replay rows always sit at-or-before the
+        // previous watermark and can never advance it.
+        const freshComments = await selectComments(newWorkAfter);
+        const replayComments = replayWindow ? await selectComments(replayWindow) : [];
+        const comments = [...replayComments, ...freshComments];
 
         let candidateCount = 0;
         let createdCount = 0;
@@ -137,10 +168,53 @@ export function commentIntakeService(db: Db) {
             updatedAt: now,
           };
           if (existing) {
-            duplicateCount += 1;
             const sourceChanged =
               existing.contentFingerprint !== baseValues.contentFingerprint
               || existing.sourceUpdatedAt.getTime() !== comment.updatedAt.getTime();
+            // Stalled-intake recovery (contract §6, acceptance #6): the
+            // previous tick inserted this intake row but crashed before its
+            // backlog issue was created (`intake_status = "new"`, no backlog
+            // link). Resume the create now — the stable
+            // `comment-intake:<intakeId>:v1` idempotency key makes the resume
+            // safe against double-creation if the process dies again mid-create.
+            if (!rejected && existing.intakeStatus === "new" && !existing.backlogIssueId) {
+              if (sourceChanged) {
+                // The source was edited before the backlog landed; persist the
+                // latest content so the create reflects current text.
+                await tx.update(developmentCommentIntakes).set({
+                  ...baseValues,
+                  intakeStatus: "new",
+                  dismissedReasonCode: null,
+                  redactedAt: null,
+                }).where(eq(developmentCommentIntakes.id, existing.id));
+              }
+              let deduplicated = false;
+              const backlog = await issueService(tx as unknown as Db).create(source.companyId, {
+                title: `[${parsed.kind}] ${parsed.subject}`,
+                description: backlogDescription({
+                  sourceIssueId: comment.issueId,
+                  sourceCreatedAt: comment.createdAt,
+                  kind: parsed.kind,
+                  requestBody: parsed.requestBody,
+                }),
+                status: "backlog",
+                originKind: "comment_intake",
+                originId: existing.id,
+                idempotencyKey: `comment-intake:${existing.id}:v1`,
+                onDeduplicated: () => { deduplicated = true; },
+              });
+              await tx.update(developmentCommentIntakes).set({
+                backlogIssueId: backlog.id,
+                backlogStatusSnapshot: backlog.status,
+                backlogUpdatedAt: backlog.updatedAt,
+                intakeStatus: deduplicated ? "duplicate" : "backlog_created",
+                updatedAt: now,
+              }).where(eq(developmentCommentIntakes.id, existing.id));
+              if (deduplicated) duplicateCount += 1;
+              else createdCount += 1;
+              continue;
+            }
+            duplicateCount += 1;
             // A normal overlap replays unchanged source rows. It must remain a
             // no-op: only an edited source with already-created work requires
             // triage instead of silently replacing backlog content.
@@ -152,7 +226,10 @@ export function commentIntakeService(db: Db) {
               dismissedReasonCode: rejected ? "secret_detected" : null,
               redactedAt: rejected ? now : existing.redactedAt,
             }).where(eq(developmentCommentIntakes.id, existing.id));
-            if (rejected) rejectedCount += 1;
+            if (rejected) {
+              rejectedCount += 1;
+              partial = true;
+            }
             else updatedCount += 1;
             continue;
           }
@@ -197,7 +274,7 @@ export function commentIntakeService(db: Db) {
           else createdCount += 1;
         }
 
-        const last = comments.at(-1);
+        const last = freshComments.at(-1);
         await tx.insert(commentIntakeCheckpoints).values({
           sourceId: source.id,
           cursor: last?.id ?? current?.cursor ?? null,
