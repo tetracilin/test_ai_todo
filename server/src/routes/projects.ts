@@ -184,6 +184,7 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    if (!(await assertProjectReadAllowed(req, res, existing))) return;
     const body = req.body as { repoLocalFolder?: unknown; nasFolder?: unknown };
     const hasRepoLocalFolder = Object.hasOwn(body, "repoLocalFolder");
     const hasNasFolder = Object.hasOwn(body, "nasFolder");
