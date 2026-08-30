@@ -28,7 +28,7 @@ interface S3ProviderConfig {
  * looked up under the deployment secrets directories (Docker secrets mount
  * at /run/secrets/<name>).
  */
-function resolveSecretReference(ref: string): string {
+export function resolveSecretReference(ref: string): string {
   const trimmed = ref.trim();
   if (!trimmed) throw unprocessable("Storage credential secret reference is empty");
 
@@ -52,6 +52,21 @@ function resolveSecretReference(ref: string): string {
   throw unprocessable(
     `Storage credential secret reference not found: "${trimmed}" (searched: ${secretsDirs.join(", ")})`,
   );
+}
+
+export function resolveS3Credentials(
+  config: Pick<S3ProviderConfig, "accessKeySecretRef" | "secretKeySecretRef">,
+) {
+  const accessKeyId = config.accessKeySecretRef
+    ? resolveSecretReference(config.accessKeySecretRef)
+    : undefined;
+  const secretAccessKey = config.secretKeySecretRef
+    ? resolveSecretReference(config.secretKeySecretRef)
+    : undefined;
+  if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
+    throw unprocessable("accessKeySecretRef and secretKeySecretRef must be set together");
+  }
+  return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
 }
 
 function normalizePrefix(prefix: string | undefined): string {
@@ -106,24 +121,14 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
   if (!bucket) throw unprocessable("S3 storage bucket is required");
   if (!region) throw unprocessable("S3 storage region is required");
 
-  const accessKeyId = config.accessKeySecretRef
-    ? resolveSecretReference(config.accessKeySecretRef)
-    : undefined;
-  const secretAccessKey = config.secretKeySecretRef
-    ? resolveSecretReference(config.secretKeySecretRef)
-    : undefined;
-  if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
-    throw unprocessable("accessKeySecretRef and secretKeySecretRef must be set together");
-  }
+  const credentials = resolveS3Credentials(config);
 
   const prefix = normalizePrefix(config.prefix);
   const client = new S3Client({
     region,
     endpoint: config.endpoint,
     forcePathStyle: Boolean(config.forcePathStyle),
-    ...(accessKeyId && secretAccessKey
-      ? { credentials: { accessKeyId, secretAccessKey } }
-      : {}),
+    ...(credentials ? { credentials } : {}),
   });
 
   return {

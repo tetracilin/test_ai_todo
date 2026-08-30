@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import { derivePaperclipViteHmrPort, type DeploymentExposure, type DeploymentMode } from "@paperclipai/shared";
 import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
-import type { StorageService, StorageProvider } from "./storage/types.js";
+import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
@@ -286,7 +286,7 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
-    externalStorage?: StorageProvider | null;
+    externalStorage?: StorageService | null;
     feedbackExportService?: {
       flushPendingFeedbackTraces(input?: {
         companyId?: string;
@@ -587,7 +587,7 @@ export async function createApp(
   }));
   api.use(artifactRoutes(db, opts.storageService, opts.externalStorage ?? null));
   if (process.env.PAPERCLIP_WOPI_STAGING_ENABLED === "true") {
-    api.use(wopiRoutes(db, opts.storageService, wopiSessions));
+    api.use(wopiRoutes(db, opts.storageService, wopiSessions, opts.externalStorage ?? null));
   }
   api.use(schedulingRoutes(db));
   app.use(mcpGatewayProtocolRoutes(toolGateway));

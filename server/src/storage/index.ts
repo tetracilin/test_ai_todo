@@ -24,6 +24,11 @@ export function createStorageServiceFromConfig(config: Config): StorageService {
   return createStorageService(createStorageProviderFromConfig(config));
 }
 
+export function createExternalStorageServiceFromConfig(config: Config): StorageService | null {
+  const provider = createExternalStorageProviderFromConfig(config);
+  return provider ? createStorageService(provider) : null;
+}
+
 export function getStorageService(): StorageService {
   const config = loadConfig();
   const signature = signatureForConfig(config);
@@ -34,5 +39,4 @@ export function getStorageService(): StorageService {
   return cachedStorageService;
 }
 
-export { createExternalStorageProviderFromConfig };
 export type { StorageService, StorageProvider, PutFileResult } from "./types.js";

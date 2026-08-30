@@ -3,6 +3,7 @@ import type {
   IssueThreadInteractionKind,
   IssueThreadInteractionResolverPolicy,
   PauseReason,
+  CompanyArtifactStorage,
 } from "../constants.js";
 
 export interface InteractionResolverKindGovernance {
@@ -26,6 +27,7 @@ export interface Company {
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
   attachmentMaxBytes: number;
+  artifactStorage: CompanyArtifactStorage;
   defaultResponsibleUserId: string | null;
   requireBoardApprovalForNewAgents: boolean;
   interactionResolverGovernance: InteractionResolverGovernance;

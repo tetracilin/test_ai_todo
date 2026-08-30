@@ -56,9 +56,14 @@ function sessionForRequest(store: WopiSessionStore, req: Request, res: Response)
   return session;
 }
 
-export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessionStore) {
+export function wopiRoutes(
+  db: Db,
+  storage: StorageService,
+  sessions: WopiSessionStore,
+  externalStorage: StorageService | null = null,
+) {
   const router = Router();
-  const artifacts = artifactService(db, storage, null);
+  const artifacts = artifactService(db, storage, { label: "External storage", storage: externalStorage });
 
   router.post("/companies/:companyId/artifacts/:artifactId/editor-sessions", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -10,7 +10,7 @@ import {
   restoreArtifactVersionSchema,
   saveMarkdownArtifactSchema,
 } from "@paperclipai/shared";
-import type { StorageProvider, StorageService } from "../storage/types.js";
+import type { StorageService } from "../storage/types.js";
 import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
 import { artifactService, type ArtifactActor } from "../services/artifacts.js";
@@ -52,12 +52,12 @@ function handleMulterError(err: unknown, res: Response): boolean {
 export function artifactRoutes(
   db: Db,
   storage: StorageService,
-  externalProvider: StorageProvider | null,
+  externalStorage: StorageService | null,
 ) {
   const router = Router();
   const svc = artifactService(db, storage, {
     label: "External storage",
-    provider: externalProvider,
+    storage: externalStorage,
   });
 
   const upload = multer({
@@ -77,7 +77,7 @@ export function artifactRoutes(
           id: "external",
           label: "External storage",
           provider: "s3" as const,
-          configured: externalProvider !== null,
+          configured: externalStorage !== null,
         },
       ],
     });

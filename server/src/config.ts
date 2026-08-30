@@ -95,6 +95,8 @@ export interface Config {
   storageS3ForcePathStyle: boolean;
   storageS3AccessKeySecretRef: string | undefined;
   storageS3SecretKeySecretRef: string | undefined;
+  storageS3ConsoleUrl: string | undefined;
+  storageS3NasRootPrefix: string | undefined;
   storageExternal?: ExternalStorageConfig;
   feedbackExportBackendUrl: string | undefined;
   feedbackExportBackendToken: string | undefined;
@@ -170,6 +172,14 @@ export function loadConfig(): Config {
   const storageS3SecretKeySecretRef =
     process.env.PAPERCLIP_STORAGE_S3_SECRET_KEY_SECRET_REF?.trim() ||
     fileStorage?.s3?.secretKeySecretRef?.trim() ||
+    undefined;
+  const storageS3ConsoleUrl =
+    process.env.PAPERCLIP_STORAGE_S3_CONSOLE_URL?.trim() ||
+    fileStorage?.s3?.consoleUrl?.trim() ||
+    undefined;
+  const storageS3NasRootPrefix =
+    process.env.PAPERCLIP_STORAGE_S3_NAS_ROOT_PREFIX?.trim() ||
+    fileStorage?.s3?.nasRootPrefix?.trim() ||
     undefined;
 
   // Optional external-storage source (e.g. the NAS MinIO instance) surfaced by
@@ -397,6 +407,8 @@ export function loadConfig(): Config {
     storageS3ForcePathStyle,
     storageS3AccessKeySecretRef,
     storageS3SecretKeySecretRef,
+    storageS3ConsoleUrl,
+    storageS3NasRootPrefix,
     storageExternal,
     feedbackExportBackendUrl,
     feedbackExportBackendToken,

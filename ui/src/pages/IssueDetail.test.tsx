@@ -15,6 +15,7 @@ import {
   readRecoveryReconcileWorkspaceId,
   shouldScrollIssueDetailToTopOnNavigation,
 } from "./IssueDetail";
+import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 
@@ -28,6 +29,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   listFeedbackVotes: vi.fn(),
   markRead: vi.fn(),
   update: vi.fn(),
+  stopActiveRun: vi.fn(),
   previewTreeControl: vi.fn(),
   getTreeControlState: vi.fn(),
   listTreeHolds: vi.fn(),
@@ -2605,6 +2607,210 @@ describe("IssueDetail", () => {
     expect(mockHeartbeatsApi.cancel).toHaveBeenCalledTimes(2);
     expect(mockHeartbeatsApi.cancel.mock.invocationCallOrder[1])
       .toBeLessThan(mockIssuesApi.update.mock.invocationCallOrder[1]);
+  });
+
+  it("confirms task cancellation before stopping its active agent", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({
+      status: "in_progress",
+      assigneeAgentId: "agent-1",
+      executionRunId: "run-active-1",
+    }));
+    mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([{
+      id: "run-active-1",
+      status: "running",
+      invocationSource: "agent",
+      triggerDetail: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      agentId: "agent-1",
+      agentName: "CodexCoder",
+      adapterType: "codex",
+    }]);
+    mockIssuesApi.stopActiveRun.mockResolvedValue({
+      issue: createIssue({ status: "cancelled", executionRunId: "run-active-1" }),
+      run: { id: "run-active-1", status: "cancelled" },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const moreButton = container.querySelector('button[aria-label="More task actions"]') as HTMLButtonElement | null;
+    expect(moreButton).toBeTruthy();
+    await act(async () => {
+      moreButton!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await flushReact();
+
+    const openCancelButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Cancel task...");
+    expect(openCancelButton).toBeTruthy();
+    await act(async () => {
+      openCancelButton!.click();
+    });
+    await flushReact();
+
+    expect(mockIssuesApi.stopActiveRun).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Cancel task?");
+    const confirmCancelButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Cancel task");
+    expect(confirmCancelButton).toBeTruthy();
+    await act(async () => {
+      confirmCancelButton!.click();
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.stopActiveRun).toHaveBeenCalledWith("PAP-1");
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Task cancelled",
+      tone: "success",
+    }));
+  });
+
+  it("offers cancellation for a scheduled retry", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({
+      status: "in_progress",
+      assigneeAgentId: "agent-1",
+      executionRunId: "run-retry-1",
+    }));
+    mockHeartbeatsApi.activeRunForIssue.mockResolvedValue({
+      id: "run-retry-1",
+      status: "scheduled_retry",
+      invocationSource: "automation",
+      triggerDetail: "system",
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      agentId: "agent-1",
+      agentName: "CodexCoder",
+      adapterType: "codex",
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const moreButton = container.querySelector('button[aria-label="More task actions"]') as HTMLButtonElement | null;
+    await act(async () => {
+      moreButton!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await flushReact();
+
+    expect(Array.from(container.querySelectorAll("button"))
+      .some((button) => button.textContent?.trim() === "Cancel task...")).toBe(true);
+  });
+
+  it("hides task cancellation when no cancellable agent run remains", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({
+      status: "in_progress",
+      assigneeAgentId: "agent-1",
+      executionRunId: "run-finished-1",
+    }));
+    mockHeartbeatsApi.activeRunForIssue.mockResolvedValue({
+      id: "run-finished-1",
+      status: "failed",
+      invocationSource: "agent",
+      triggerDetail: null,
+      startedAt: null,
+      finishedAt: "2026-04-21T00:01:00.000Z",
+      createdAt: "2026-04-21T00:00:00.000Z",
+      agentId: "agent-1",
+      agentName: "CodexCoder",
+      adapterType: "codex",
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const moreButton = container.querySelector('button[aria-label="More task actions"]') as HTMLButtonElement | null;
+    await act(async () => {
+      moreButton!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await flushReact();
+
+    expect(Array.from(container.querySelectorAll("button"))
+      .some((button) => button.textContent?.trim() === "Cancel task...")).toBe(false);
+  });
+
+  it("reports an already-stopped task without leaving its confirmation open", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({
+      status: "in_progress",
+      assigneeAgentId: "agent-1",
+      executionRunId: "run-active-1",
+    }));
+    mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([{
+      id: "run-active-1",
+      status: "running",
+      invocationSource: "agent",
+      triggerDetail: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      agentId: "agent-1",
+      agentName: "CodexCoder",
+      adapterType: "codex",
+    }]);
+    mockIssuesApi.stopActiveRun.mockRejectedValue(
+      new ApiError("Task agent is already stopped", 409, { error: "Task agent is already stopped" }),
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const moreButton = container.querySelector('button[aria-label="More task actions"]') as HTMLButtonElement | null;
+    await act(async () => {
+      moreButton!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await flushReact();
+
+    const openCancelButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Cancel task...");
+    await act(async () => {
+      openCancelButton!.click();
+    });
+    await flushReact();
+
+    const confirmCancelButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Cancel task");
+    await act(async () => {
+      confirmCancelButton!.click();
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Task already stopped",
+      tone: "warn",
+    }));
+    expect(container.textContent).not.toContain("Cancel task?");
   });
 
   it("reports partial success when run finalization stops the run but task status update fails", async () => {

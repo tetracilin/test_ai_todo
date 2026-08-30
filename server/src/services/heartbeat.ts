@@ -19590,7 +19590,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         .where(
           and(
             eq(heartbeatRuns.agentId, agentId),
-            eq(heartbeatRuns.status, "running"),
+            inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
           ),
         )
         .orderBy(desc(heartbeatRuns.startedAt))
@@ -19605,7 +19605,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         .where(
           and(
             eq(heartbeatRuns.agentId, agentId),
-            eq(heartbeatRuns.status, "running"),
+            inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
           ),
         )
         .orderBy(desc(heartbeatRuns.startedAt))
