@@ -1053,6 +1053,7 @@ describe("IssueDetail", () => {
     mockIssuesApi.listWorkProducts.mockResolvedValue([]);
     mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
     mockIssuesApi.markRead.mockResolvedValue({ id: "issue-1", lastReadAt: new Date().toISOString() });
+    mockIssuesApi.launchAgentHelp.mockReset();
     mockIssuesApi.launchAgentHelp.mockResolvedValue({
       launch_id: "ahl-1",
       issue_id: "issue-1",
@@ -1151,7 +1152,7 @@ describe("IssueDetail", () => {
       status: "queued";
       accepted_at: string;
     }>();
-    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockIssuesApi.get.mockResolvedValue(createIssue({ assigneeAgentId: "agent-1" }));
     mockIssuesApi.launchAgentHelp.mockReturnValueOnce(launchRequest.promise);
     const randomUuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
 
@@ -1199,7 +1200,7 @@ describe("IssueDetail", () => {
   });
 
   it("shows safe agent-help failure state", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockIssuesApi.get.mockResolvedValue(createIssue({ assigneeAgentId: "agent-1" }));
     mockIssuesApi.launchAgentHelp.mockRejectedValue(
       new ApiError("provider token unavailable", 503, { code: "AGENT_LAUNCH_UNAVAILABLE" }),
     );
@@ -1228,6 +1229,31 @@ describe("IssueDetail", () => {
       tone: "error",
     });
     expect(container.textContent).not.toContain("provider token unavailable");
+  });
+
+  it("disables agent help with an accessible reason when no agent is assigned", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({ assigneeAgentId: null }));
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const button = container.querySelector('button[aria-label="Get agent help"]') as HTMLButtonElement | null;
+    expect(button).toBeTruthy();
+    expect(button!.disabled).toBe(true);
+    expect(button!.getAttribute("aria-describedby")).toMatch(/^agent-help-unavailable-(mobile|desktop)$/);
+    expect(container.textContent).toContain("Assign an agent to this task first.");
+
+    await act(async () => {
+      button!.click();
+    });
+    expect(mockIssuesApi.launchAgentHelp).not.toHaveBeenCalled();
   });
 
   it("opens a closed desktop pane and routes an ordinary document to Artifacts on direct load", async () => {

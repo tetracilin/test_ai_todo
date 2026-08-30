@@ -4448,6 +4448,17 @@ export function IssueDetail() {
   const canRestoreSubtree = canShowSubtreeControls && activeCancelHolds.length > 0;
   const isTerminalIssue = issue.status === "done" || issue.status === "cancelled";
   const isAgentOwnedNonTerminalIssue = Boolean(issue.assigneeAgentId) && !isTerminalIssue;
+  const agentHelpIneligibleReason = !issue.assigneeAgentId
+    ? "Assign an agent to this task first."
+    : issue.status === "backlog" || isTerminalIssue
+      ? "Agent help is available only for active tasks."
+      : null;
+  const canRequestAgentHelp = agentHelpIneligibleReason === null;
+  const requestAgentHelp = () => {
+    if (!canRequestAgentHelp || agentHelpLaunchPendingRef.current) return;
+    agentHelpLaunchPendingRef.current = true;
+    launchAgentHelp.mutate();
+  };
   const canPauseLeafWork = canManageTreeControl && childIssues.length === 0 && !activePauseHold && !isTerminalIssue;
   const canResumeLeafWork = canManageTreeControl && childIssues.length === 0 && activePauseHold?.isRoot === true;
   const treeControlScope: "leaf" | "subtree" = childIssues.length === 0 ? "leaf" : "subtree";
@@ -4728,18 +4739,19 @@ export function IssueDetail() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (agentHelpLaunchPendingRef.current) return;
-                  agentHelpLaunchPendingRef.current = true;
-                  launchAgentHelp.mutate();
-                }}
-                disabled={launchAgentHelp.isPending}
+                onClick={requestAgentHelp}
+                disabled={!canRequestAgentHelp || launchAgentHelp.isPending}
                 aria-label="Get agent help"
+                aria-describedby={agentHelpIneligibleReason ? "agent-help-unavailable-mobile" : undefined}
+                title={agentHelpIneligibleReason ?? undefined}
               >
                 {agentHelpLaunchState === "launching"
                   ? "Launching agent help..."
                   : "Get agent help"}
               </Button>
+              {agentHelpIneligibleReason ? (
+                <span id="agent-help-unavailable-mobile" className="sr-only">{agentHelpIneligibleReason}</span>
+              ) : null}
               {agentHelpLaunchState === "queued" ? (
                 <span className="sr-only" role="status">Agent help queued</span>
               ) : null}
@@ -4806,18 +4818,19 @@ export function IssueDetail() {
               variant="outline"
               size="sm"
               className="ml-1"
-              onClick={() => {
-                if (agentHelpLaunchPendingRef.current) return;
-                agentHelpLaunchPendingRef.current = true;
-                launchAgentHelp.mutate();
-              }}
-              disabled={launchAgentHelp.isPending}
+              onClick={requestAgentHelp}
+              disabled={!canRequestAgentHelp || launchAgentHelp.isPending}
               aria-label="Get agent help"
+              aria-describedby={agentHelpIneligibleReason ? "agent-help-unavailable-desktop" : undefined}
+              title={agentHelpIneligibleReason ?? undefined}
             >
               {agentHelpLaunchState === "launching"
                 ? "Launching agent help..."
                 : "Get agent help"}
             </Button>
+            {agentHelpIneligibleReason ? (
+              <span id="agent-help-unavailable-desktop" className="sr-only">{agentHelpIneligibleReason}</span>
+            ) : null}
             {agentHelpLaunchState === "queued" ? (
               <span className="ml-2 text-xs text-muted-foreground" role="status">
                 Agent help queued
