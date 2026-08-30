@@ -1,5 +1,8 @@
 import type {
   Project,
+  ProjectHomepageCreator,
+  ProjectHomepageData,
+  ProjectHomepageResourceConfig,
   ProjectWorkspace,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
@@ -25,6 +28,25 @@ export const projectsApi = {
     return api.get<Project[]>("/companies/" + encodeURIComponent(companyId) + "/projects" + (query ? "?" + query : ""));
   },
   get: (id: string, companyId?: string) => api.get<Project>(projectPath(id, companyId)),
+  homepage: (id: string, companyId?: string) =>
+    api.get<ProjectHomepageData>(projectPath(id, companyId, "/homepage")),
+  addHomepageResource: (
+    id: string,
+    data: { title: string; url: string },
+    companyId?: string,
+  ) =>
+    api.post<ProjectHomepageResourceConfig & { addedBy: ProjectHomepageCreator }>(
+      projectPath(id, companyId, "/homepage/resources"),
+      data,
+    ),
+  updateHomepageChannels: (
+    id: string,
+    data: { discordUrl: string | null; whatsappUrl: string | null },
+    companyId?: string,
+  ) => api.patch<{ discordUrl: string | null; whatsappUrl: string | null }>(
+    projectPath(id, companyId, "/homepage/channels"),
+    data,
+  ),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Project>(`/companies/${companyId}/projects`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>

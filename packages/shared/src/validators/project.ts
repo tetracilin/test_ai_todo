@@ -116,6 +116,21 @@ const projectFields = {
   archivedAt: z.string().datetime().optional().nullable(),
 };
 
+const safeExternalUrlSchema = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, "URL must use HTTP or HTTPS");
+
+export const addProjectHomepageResourceSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  url: safeExternalUrlSchema,
+});
+
+export const updateProjectHomepageChannelsSchema = z.object({
+  discordUrl: safeExternalUrlSchema.nullable(),
+  whatsappUrl: safeExternalUrlSchema.nullable(),
+});
+
 export const createProjectSchema = z.object({
   ...projectFields,
   workspace: createProjectWorkspaceSchema.optional(),

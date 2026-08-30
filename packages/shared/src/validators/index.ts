@@ -371,7 +371,9 @@ export {
 } from "./agent.js";
 
 export {
+  addProjectHomepageResourceSchema,
   createProjectSchema,
+  updateProjectHomepageChannelsSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
   updateProjectWorkspaceSchema,

@@ -14,6 +14,46 @@ export interface ProjectGoalRef {
   title: string;
 }
 
+export interface ProjectHomepageResourceConfig {
+  id: string;
+  title: string;
+  url: string;
+  addedByUserId: string;
+  addedAt: string;
+}
+
+export interface ProjectHomepageConfig {
+  discordUrl?: string | null;
+  whatsappUrl?: string | null;
+  resources?: ProjectHomepageResourceConfig[];
+}
+
+export interface ProjectHomepageCreator {
+  id: string;
+  name: string;
+}
+
+export interface ProjectHomepageData {
+  project: { id: string; name: string };
+  goals: Array<{ id: string; title: string; href: string }>;
+  resources: Array<ProjectHomepageResourceConfig & { addedBy: ProjectHomepageCreator }>;
+  channels: { discordUrl: string | null; whatsappUrl: string | null };
+  documents: Array<{
+    id: string;
+    title: string;
+    type: string;
+    creator: ProjectHomepageCreator;
+    href: string;
+  }>;
+  artifacts: Array<{
+    id: string;
+    title: string;
+    type: string;
+    creator: ProjectHomepageCreator;
+    href: string;
+  }>;
+}
+
 /**
  * Lightweight per-project budget summary surfaced on the projects list payload
  * (IA Phase 4 — PAP-60). Reflects the active `billed_cents` budget policy scoped
@@ -90,6 +130,7 @@ export interface Project {
   targetDate: string | null;
   color: string | null;
   icon: string | null;
+  homepageConfig?: ProjectHomepageConfig | null;
   env: AgentEnvConfig | null;
   pauseReason: PauseReason | null;
   pausedAt: Date | null;

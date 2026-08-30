@@ -1,15 +1,29 @@
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  addProjectHomepageResourceSchema,
   createProjectSchema,
   createProjectWorkspaceSchema,
   findWorkspaceCommandDefinition,
   isUuidLike,
   matchWorkspaceRuntimeServiceToCommand,
+  updateProjectHomepageChannelsSchema,
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
 } from "@paperclipai/shared";
+import {
+  artifacts,
+  authUsers,
+  documents,
+  goals,
+  issueDocuments,
+  issues,
+  projectGoals,
+  projectMemberships,
+} from "@paperclipai/db";
 import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
@@ -117,6 +131,31 @@ export function projectRoutes(db: Db) {
     return rows.filter((_, index) => decisions[index]?.allowed);
   }
 
+  async function assertJoinedProjectMember(project: { id: string; companyId: string }, userId: string | null) {
+    if (!userId) return false;
+    const rows = await db
+      .select({ id: projectMemberships.id })
+      .from(projectMemberships)
+      .where(and(
+        eq(projectMemberships.projectId, project.id),
+        eq(projectMemberships.companyId, project.companyId),
+        eq(projectMemberships.userId, userId),
+        eq(projectMemberships.state, "joined"),
+      ));
+    return rows.length > 0;
+  }
+
+  async function loadUserNames(userIds: string[]) {
+    const names = new Map<string, string>();
+    if (userIds.length === 0) return names;
+    const rows = await db
+      .select({ id: authUsers.id, name: authUsers.name })
+      .from(authUsers)
+      .where(inArray(authUsers.id, userIds));
+    for (const row of rows) names.set(row.id, row.name ?? "Unknown");
+    return names;
+  }
+
   router.param("id", async (req, _res, next, rawId) => {
     try {
       req.params.id = await normalizeProjectReference(req, rawId);
@@ -148,6 +187,194 @@ export function projectRoutes(db: Db) {
     if (!project) return;
     const summary = await externalObjectsSvc.getProjectSummary(project.id);
     res.json(summary);
+  });
+
+  router.get("/projects/:id/homepage", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    const memberId: string | null = req.actor.type === "board"
+      ? (req.actor.userId ?? null)
+      : req.actor.type === "agent"
+        ? (req.actor.onBehalfOfUserId ?? null)
+        : null;
+    if (!(await assertJoinedProjectMember(project, memberId))) {
+      res.status(403).json({ error: "You must be a project member to view its homepage" });
+      return;
+    }
+
+    const goalRows = await db
+      .select({ id: goals.id, title: goals.title })
+      .from(projectGoals)
+      .innerJoin(goals, eq(goals.id, projectGoals.goalId))
+      .where(and(eq(projectGoals.projectId, project.id), eq(projectGoals.companyId, project.companyId)))
+      .orderBy(goals.title);
+
+    const config = project.homepageConfig ?? null;
+
+    const memberRows = await db
+      .select({ userId: projectMemberships.userId })
+      .from(projectMemberships)
+      .where(and(
+        eq(projectMemberships.projectId, project.id),
+        eq(projectMemberships.companyId, project.companyId),
+        eq(projectMemberships.state, "joined"),
+      ));
+    const memberUserIds = memberRows.map((row) => row.userId);
+    const userNames = await loadUserNames(memberUserIds);
+
+    const resources = (config?.resources ?? []).map((resource) => ({
+      ...resource,
+      addedBy: { id: resource.addedByUserId, name: userNames.get(resource.addedByUserId) ?? "Unknown" },
+    }));
+
+    const projectIssues = await db
+      .select({ id: issues.id, identifier: issues.identifier })
+      .from(issues)
+      .where(and(eq(issues.projectId, project.id), eq(issues.companyId, project.companyId)));
+    const issueIds = projectIssues.map((issue) => issue.id);
+    const identifierByIssueId = new Map(projectIssues.map((issue) => [issue.id, issue.identifier]));
+
+    let documentList: Array<{
+      id: string;
+      title: string;
+      type: string;
+      creator: { id: string; name: string };
+      href: string;
+    }> = [];
+    if (issueIds.length > 0 && memberUserIds.length > 0) {
+      const documentRows = await db
+        .select({
+          id: documents.id,
+          title: documents.title,
+          format: documents.format,
+          createdByUserId: documents.createdByUserId,
+          issueId: issueDocuments.issueId,
+          key: issueDocuments.key,
+        })
+        .from(issueDocuments)
+        .innerJoin(documents, eq(documents.id, issueDocuments.documentId))
+        .where(and(
+          eq(issueDocuments.companyId, project.companyId),
+          inArray(issueDocuments.issueId, issueIds),
+          inArray(documents.createdByUserId, memberUserIds),
+        ));
+      documentList = documentRows
+        .filter((row) => row.id !== null && row.issueId !== null && row.key !== null)
+        .map((row) => {
+          const issueId = row.issueId!;
+          const identifier = identifierByIssueId.get(issueId) ?? issueId;
+          return {
+            id: row.id!,
+            title: row.title ?? "Untitled document",
+            type: row.format ?? "markdown",
+            creator: { id: row.createdByUserId ?? "", name: userNames.get(row.createdByUserId ?? "") ?? "Unknown" },
+            href: `/issues/${encodeURIComponent(identifier)}#document-${encodeURIComponent(row.key!)}`,
+          };
+        });
+    }
+
+    let artifactsList: Array<{
+      id: string;
+      title: string;
+      type: string;
+      creator: { id: string; name: string };
+      href: string;
+    }> = [];
+    if (issueIds.length > 0 && memberUserIds.length > 0) {
+      const artifactRows = await db
+        .select({
+          id: artifacts.id,
+          name: artifacts.name,
+          contentType: artifacts.contentType,
+          issueId: artifacts.issueId,
+          createdByUserId: artifacts.createdByUserId,
+        })
+        .from(artifacts)
+        .where(and(
+          eq(artifacts.companyId, project.companyId),
+          inArray(artifacts.issueId, issueIds),
+          inArray(artifacts.createdByUserId, memberUserIds),
+        ));
+      artifactsList = artifactRows.map((row) => {
+        const identifier = identifierByIssueId.get(row.issueId) ?? row.issueId;
+        return {
+          id: row.id,
+          title: row.name,
+          type: row.contentType,
+          creator: { id: row.createdByUserId ?? "", name: userNames.get(row.createdByUserId ?? "") ?? "Unknown" },
+          href: `/issues/${encodeURIComponent(identifier)}#artifact-${encodeURIComponent(row.id)}`,
+        };
+      });
+    }
+
+    res.json({
+      project: { id: project.id, name: project.name },
+      goals: goalRows.map((goal) => ({ ...goal, href: `/goals/${goal.id}` })),
+      resources,
+      channels: {
+        discordUrl: config?.discordUrl ?? null,
+        whatsappUrl: config?.whatsappUrl ?? null,
+      },
+      documents: documentList,
+      artifacts: artifactsList,
+    });
+  });
+
+  router.post("/projects/:id/homepage/resources", validate(addProjectHomepageResourceSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    const memberId: string | null = req.actor.type === "board"
+      ? (req.actor.userId ?? null)
+      : req.actor.type === "agent"
+        ? (req.actor.onBehalfOfUserId ?? null)
+        : null;
+    if (!(await assertJoinedProjectMember(project, memberId))) {
+      res.status(403).json({ error: "You must be a project member to update its homepage" });
+      return;
+    }
+
+    const { title, url } = req.body as { title: string; url: string };
+    const config = project.homepageConfig ?? {};
+    const resource = {
+      id: randomUUID(),
+      title,
+      url,
+      addedByUserId: memberId!,
+      addedAt: new Date().toISOString(),
+    };
+    await svc.update(project.id, {
+      homepageConfig: { ...config, resources: [...(config.resources ?? []), resource] },
+    });
+    const userNames = await loadUserNames([memberId!]);
+    res.status(201).json({
+      ...resource,
+      addedBy: { id: memberId!, name: userNames.get(memberId!) ?? "Unknown" },
+    });
+  });
+
+  router.patch("/projects/:id/homepage/channels", validate(updateProjectHomepageChannelsSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    if (!(await assertProjectReadAllowed(req, res, project))) return;
+    const memberId: string | null = req.actor.type === "board"
+      ? (req.actor.userId ?? null)
+      : req.actor.type === "agent"
+        ? (req.actor.onBehalfOfUserId ?? null)
+        : null;
+    if (!(await assertJoinedProjectMember(project, memberId))) {
+      res.status(403).json({ error: "You must be a project member to update its homepage" });
+      return;
+    }
+
+    const { discordUrl, whatsappUrl } = req.body as { discordUrl: string | null; whatsappUrl: string | null };
+    const config = project.homepageConfig ?? {};
+    await svc.update(project.id, { homepageConfig: { ...config, discordUrl, whatsappUrl } });
+    res.json({ discordUrl, whatsappUrl });
   });
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
