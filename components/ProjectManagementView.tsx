@@ -8,6 +8,7 @@ import { TrashIcon } from './icons/TrashIcon';
 import { EditIcon } from './icons/EditIcon';
 import { XIcon } from './icons/XIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
+import { ProjectHomepageView } from './ProjectHomepageView';
 
 const emptyProject: Omit<Project, 'id' | 'creatorId' | 'createdAt' | 'updatedAt'> = {
     name: '',
@@ -150,6 +151,7 @@ export const ProjectManagementView: React.FC = () => {
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<Partial<Project> | null>(null);
+    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
     const handleOpenModal = (project?: Project) => {
         setEditingProject(project || emptyProject);
@@ -180,6 +182,10 @@ export const ProjectManagementView: React.FC = () => {
         }
     }
 
+    if (selectedProjectId) {
+        return <ProjectHomepageView projectId={selectedProjectId} onBack={() => setSelectedProjectId(null)} />;
+    }
+
     return (
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
             {isModalOpen && editingProject && (
@@ -205,12 +211,15 @@ export const ProjectManagementView: React.FC = () => {
                     <tbody>
                         {projects.length > 0 ? projects.map(p => (
                             <tr key={p.id} className="border-b dark:border-border-dark hover:bg-gray-50 dark:hover:bg-gray-600/20">
-                                <th scope="row" className="px-6 py-4 font-medium whitespace-nowrap">{p.name}</th>
+                                <th scope="row" className="px-6 py-4 font-medium whitespace-nowrap">
+                                    <button onClick={() => setSelectedProjectId(p.id)} className="text-left hover:text-primary hover:underline">{p.name}</button>
+                                </th>
                                 <td className="px-6 py-4">{p.code}</td>
                                 <td className="px-6 py-4">{p.contractId}</td>
                                 <td className="px-6 py-4">{p.status}</td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end space-x-2">
+                                        <button onClick={() => setSelectedProjectId(p.id)} className="px-2 py-1 text-sm text-primary hover:underline">Open</button>
                                         <button onClick={() => handleOpenModal(p)} className="p-2 text-text-secondary hover:text-primary rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"><EditIcon className="w-5 h-5"/></button>
                                         <button onClick={() => handleDelete(p.id)} className="p-2 text-text-secondary hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50"><TrashIcon className="w-5 h-5"/></button>
                                     </div>
