@@ -136,6 +136,7 @@ import { computePauseAffectsSummary } from "../lib/interrupt-handoff";
 import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { useIssuePlanDocument } from "../hooks/useIssuePlanDocument";
 import { IssueRunLedger } from "../components/IssueRunLedger";
+import { IssueWorkerLog } from "../components/IssueWorkerLog";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal, type GalleryMediaItem } from "../components/ImageGalleryModal";
@@ -1728,9 +1729,11 @@ export function IssueDetail() {
   >(null);
   const [fileViewerPromptOpen, setFileViewerPromptOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
-  // Redesign: the center tab strip is hidden, so chat is the only surface —
-  // deep links that would switch tabs (e.g. #document- hashes) stay on chat.
-  const resolvedDetailTab = taskChatShellEnabled ? "chat" : detailTab;
+  // The redesigned shell owns Activity & Comments, while Worker Log remains a
+  // separate, explicitly selected surface. Legacy detail tabs stay unchanged.
+  const resolvedDetailTab = taskChatShellEnabled
+    ? detailTab === "worker-log" ? "worker-log" : "chat"
+    : detailTab;
   const [handoffFocusSignal, setHandoffFocusSignal] = useState(0);
   const [pendingApprovalAction, setPendingApprovalAction] = useState<{
     approvalId: string;
@@ -5222,9 +5225,18 @@ export function IssueDetail() {
         onValueChange={setDetailTab}
         className={taskChatShellEnabled ? (isMobile ? undefined : "min-h-0 flex-1") : "space-y-3"}
       >
-        {/* Redesign: the chat IS the page — the Chat/Activity/Related-work tab
-            strip is hidden and the thread renders as the only surface. */}
-        {taskChatShellEnabled ? null : (
+        {taskChatShellEnabled ? (
+          <TabsList variant="line" className={cn("w-full justify-start gap-1", shellSectionClass)}>
+            <TabsTrigger value="chat" className="gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Activity &amp; Comments
+            </TabsTrigger>
+            <TabsTrigger value="worker-log" className="gap-1.5">
+              <ActivityIcon className="h-3.5 w-3.5" />
+              Worker Log
+            </TabsTrigger>
+          </TabsList>
+        ) : (
         <TabsList variant="line" className={cn("w-full justify-start gap-1", shellSectionClass)}>
           <TabsTrigger value="chat" className="gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
@@ -5393,6 +5405,19 @@ export function IssueDetail() {
             />
           ) : null}
         </TabsContent>
+
+        {taskChatShellEnabled ? (
+          <TabsContent value="worker-log" className={cn("min-h-0", shellSectionClass)}>
+            {resolvedDetailTab === "worker-log" ? (
+              <IssueWorkerLog
+                issueId={issue.id}
+                issueStatus={issue.status}
+                agentMap={agentMap}
+                hasLiveRuns={hasLiveRuns}
+              />
+            ) : null}
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="activity" className={shellSectionClass}>
           {detailTab === "activity" ? (
