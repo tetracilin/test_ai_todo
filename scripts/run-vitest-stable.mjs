@@ -26,6 +26,7 @@ const nonServerProjects = [
   "@paperclipai/adapter-codex-local",
   "@paperclipai/adapter-openclaw-gateway",
   "@paperclipai/adapter-opencode-local",
+  "@paperclipai/adapter-notebooklm-local",
   "@paperclipai/plugin-sdk",
   "@paperclipai/create-paperclip-plugin",
   "@paperclipai/ui",

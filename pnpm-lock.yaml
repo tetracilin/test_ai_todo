@@ -75,6 +75,9 @@ importers:
       '@paperclipai/adapter-kimi-local':
         specifier: workspace:*
         version: link:../packages/adapters/kimi-local
+      '@paperclipai/adapter-notebooklm-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/notebooklm-local
       '@paperclipai/adapter-openclaw-gateway':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw-gateway
@@ -282,6 +285,22 @@ importers:
     devDependencies:
       '@types/node':
         specifier: ^22.19.21
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/adapters/notebooklm-local:
+    dependencies:
+      '@paperclipai/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
         version: 22.20.1
       typescript:
         specifier: ^5.7.3
@@ -747,6 +766,9 @@ importers:
       '@paperclipai/adapter-kimi-local':
         specifier: workspace:*
         version: link:../packages/adapters/kimi-local
+      '@paperclipai/adapter-notebooklm-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/notebooklm-local
       '@paperclipai/adapter-openclaw-gateway':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw-gateway
@@ -919,6 +941,9 @@ importers:
       '@paperclipai/adapter-kimi-local':
         specifier: workspace:*
         version: link:../packages/adapters/kimi-local
+      '@paperclipai/adapter-notebooklm-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/notebooklm-local
       '@paperclipai/adapter-openclaw-gateway':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw-gateway
