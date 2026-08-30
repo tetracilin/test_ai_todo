@@ -154,6 +154,8 @@ interface KanbanBoardProps {
   collapsedStatuses?: string[];
   initialVisibleCount?: number;
   revealIncrement?: number;
+  /** Each lane contains references to canonical issues. Updates stay issue-ID based. */
+  swimlanes?: Array<{ key: string; label: string; issues: Issue[] }>;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -390,6 +392,7 @@ export function KanbanBoard({
   collapsedStatuses = [],
   initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
   revealIncrement = KANBAN_COLUMN_REVEAL_INCREMENT,
+  swimlanes,
   onUpdateIssue,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -452,6 +455,31 @@ export function KanbanBoard({
 
   function handleDragOver(_event: DragOverEvent) {
     // Could be used for visual feedback; keeping simple for now
+  }
+
+  if (swimlanes) {
+    return (
+      <div className="space-y-5" aria-label="Kanban tag swimlanes">
+        {swimlanes.map((swimlane) => (
+          <section key={swimlane.key} aria-label={`${swimlane.label} tag swimlane`} className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-border pb-1">
+              <h4 className="text-sm font-medium">{swimlane.label}</h4>
+              <span className="text-xs text-muted-foreground">{swimlane.issues.length}</span>
+            </div>
+            <KanbanBoard
+              issues={swimlane.issues}
+              agents={agents}
+              liveIssueIds={liveIssueIds}
+              compactCards={compactCards}
+              collapsedStatuses={collapsedStatuses}
+              initialVisibleCount={initialVisibleCount}
+              revealIncrement={revealIncrement}
+              onUpdateIssue={onUpdateIssue}
+            />
+          </section>
+        ))}
+      </div>
+    );
   }
 
   return (

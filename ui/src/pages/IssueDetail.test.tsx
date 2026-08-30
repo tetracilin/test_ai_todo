@@ -1339,6 +1339,9 @@ describe("IssueDetail", () => {
       expect.objectContaining({
         createIssueLabel: "Sub-task",
         showProgressSummary: true,
+        enableTagGrouping: true,
+        filterLabelTitle: "Tags",
+        clearEmptyStateFiltersLabel: "Clear filters",
       }),
     );
   });

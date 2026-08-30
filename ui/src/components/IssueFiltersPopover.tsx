@@ -66,6 +66,7 @@ export function IssueFiltersPopover({
   iconOnly = false,
   workspaces,
   creators,
+  labelTitle = "Labels",
 }: {
   state: IssueFilterState;
   onChange: (patch: Partial<IssueFilterState>) => void;
@@ -80,6 +81,8 @@ export function IssueFiltersPopover({
   iconOnly?: boolean;
   workspaces?: WorkspaceOption[];
   creators?: CreatorOption[];
+  /** Product surfaces may call backend labels "Tags" without changing IDs. */
+  labelTitle?: string;
 }) {
   const [creatorSearch, setCreatorSearch] = useState("");
   const creatorOptions = creators ?? [];
@@ -115,7 +118,13 @@ export function IssueFiltersPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={buttonVariant} size={iconOnly ? "icon" : "sm"} className={`text-xs ${iconOnly ? "relative h-8 w-8 shrink-0" : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`} title={iconOnly ? (activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter") : undefined}>
+        <Button
+          variant={buttonVariant}
+          size={iconOnly ? "icon" : "sm"}
+          className={`text-xs ${iconOnly ? "relative h-8 w-8 shrink-0" : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`}
+          title={iconOnly ? (activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter") : undefined}
+          aria-label={iconOnly ? (activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter") : undefined}
+        >
           <Filter className={iconOnly ? "h-3.5 w-3.5" : "h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1"} />
           {!iconOnly && <span className="hidden sm:inline">{activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}</span>}
           {!iconOnly && activeFilterCount > 0 ? <span className="ml-0.5 text-(length:--text-nano) font-medium sm:hidden">{activeFilterCount}</span> : null}
@@ -144,7 +153,7 @@ export function IssueFiltersPopover({
                 className="text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => onChange(defaultIssueFilterState)}
               >
-                Clear
+                Clear filters
               </button>
             ) : null}
           </div>
@@ -320,7 +329,7 @@ export function IssueFiltersPopover({
             <div className="min-w-0 space-y-3">
               {labels && labels.length > 0 ? (
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Labels</span>
+                  <span className="text-xs text-muted-foreground">{labelTitle}</span>
                   <div className="max-h-32 space-y-0.5 overflow-y-auto">
                     {labels.map((label) => (
                       <label key={label.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">

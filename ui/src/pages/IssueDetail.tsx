@@ -2661,6 +2661,10 @@ export function IssueDetail() {
           defaultSortField="workflow"
           showProgressSummary
           parentIssueIdForCostSummary={issue.id}
+          enableTagGrouping
+          filterLabelTitle="Tags"
+          emptyStateMessage="No subtasks match current search and filters."
+          clearEmptyStateFiltersLabel="Clear filters"
           onUpdateIssue={handleChildIssueUpdate}
         />
       ) : null,
@@ -5065,6 +5069,10 @@ export function IssueDetail() {
             defaultSortField="workflow"
             showProgressSummary
             parentIssueIdForCostSummary={issue.id}
+            enableTagGrouping
+            filterLabelTitle="Tags"
+            emptyStateMessage="No subtasks match current search and filters."
+            clearEmptyStateFiltersLabel="Clear filters"
             onUpdateIssue={handleChildIssueUpdate}
           />
         </div>
