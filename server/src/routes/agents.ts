@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
+import { agents as agentsTable, agentWakeupRequests, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   agentSkillSyncSchema,
@@ -50,12 +50,14 @@ import {
   builtInAgentService,
   companySkillService,
   budgetService,
+  goalService,
   heartbeatService,
   ISSUE_LIST_DEFAULT_LIMIT,
   issueApprovalService,
   issueRecoveryActionService,
   issueService,
   logActivity,
+  projectService,
   syncInstructionsBundleConfigFromFilePath,
   workspaceOperationService,
 } from "../services/index.js";
@@ -160,7 +162,10 @@ import { assertEnvironmentSelectionForCompany } from "./environment-selection.js
 import { recoveryService } from "../services/recovery/service.js";
 import { resolveCoreTrustPreset } from "../services/trust-preset-resolver.js";
 import { readObject } from "../lib/objects.js";
-import { listInvalidOrgChainDescendantIds } from "../services/agent-invokability.js";
+import {
+  evaluateAgentInvokabilityFromDb,
+  listInvalidOrgChainDescendantIds,
+} from "../services/agent-invokability.js";
 import { logger } from "../middleware/logger.js";
 import {
   AGENT_PROFILE_CHANGE_CONSENT_FIELDS,
@@ -221,6 +226,25 @@ function readRunIssueId(context: Record<string, unknown> | null) {
   const paperclipIssue = readObject(context?.paperclipIssue);
   const nestedIssueId = paperclipIssue?.id;
   return typeof nestedIssueId === "string" && isUuidLike(nestedIssueId) ? nestedIssueId : null;
+}
+
+// --- Agent-help handoff (contract: docs/specs/agent-help-handoff-contract.md) --
+//
+// The "ask agent for help" action: a board user's free-text message is merged
+// server-side with canonical task/project/goal/agent records and dispatched
+// through the wakeup path — the Hermes-only LLM invocation channel. The client
+// never supplies task metadata, and the handler never blocks on model output.
+// Exactly one route exists (POST /issues/:issueId/help, mounted at /api).
+
+const AGENT_HELP_ELIGIBLE_STATUSES = new Set(["todo", "in_progress", "in_review", "blocked"]);
+const AGENT_HELP_PENDING_WAKE_STATUSES = new Set(["queued", "deferred_issue_execution", "coalesced"]);
+const AGENT_HELP_ACTIVE_RUN_STATUSES = new Set(["queued", "running", "scheduled_retry"]);
+const AGENT_HELP_MAX_MESSAGE_CHARS = 4000;
+const AGENT_HELP_MAX_IDEMPOTENCY_KEY_CHARS = 200;
+const AGENT_HELP_TIME_BUCKET_MS = 10_000;
+
+function agentHelpError(status: number, code: string, message: string, details?: Record<string, unknown>): HttpError {
+  return new HttpError(status, message, { code, ...details });
 }
 
 export function agentRoutes(
@@ -312,6 +336,8 @@ export function agentRoutes(
   const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const budgets = budgetService(db);
+  const projectsSvc = projectService(db);
+  const goalsSvc = goalService(db);
   const environmentsSvc = environmentService(db);
   const environmentRuntime = environmentRuntimeService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
@@ -5223,6 +5249,274 @@ export function agentRoutes(
       agentName: agent.name,
       adapterType: agent.adapterType,
       outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
+    });
+  });
+
+  // Resolve the project and goal for a help request using the same fallback
+  // chain the task detail view uses (issues.ts resolveIssueProjectAndGoal):
+  // issue-level goal, else project goal, else the default company goal.
+  async function resolveAgentHelpProjectAndGoal(issue: {
+    companyId: string;
+    projectId: string | null;
+    goalId: string | null;
+  }) {
+    const projectPromise = issue.projectId ? projectsSvc.getById(issue.projectId) : Promise.resolve(null);
+    const directGoalPromise = issue.goalId ? goalsSvc.getById(issue.goalId) : Promise.resolve(null);
+    const [project, directGoal] = await Promise.all([projectPromise, directGoalPromise]);
+
+    if (directGoal) {
+      return { project, goal: directGoal };
+    }
+
+    const projectGoalId = project?.goalId ?? project?.goalIds[0] ?? null;
+    if (projectGoalId) {
+      const projectGoal = await goalsSvc.getById(projectGoalId);
+      return { project, goal: projectGoal };
+    }
+
+    if (!issue.projectId) {
+      const defaultGoal = await goalsSvc.getDefaultCompanyGoal(issue.companyId);
+      return { project, goal: defaultGoal };
+    }
+
+    return { project, goal: null };
+  }
+
+  // The structured metadata payload handed to the assignee agent (§5 of the
+  // contract). Nullable columns are emitted as JSON null, never omitted, so the
+  // agent-side consumer can rely on a stable key set.
+  function buildAgentHelpPayload(input: {
+    issue: {
+      id: string;
+      identifier: string | null;
+      issueNumber: number | null;
+      title: string;
+      description: string | null;
+      status: string;
+    };
+    project: { id: string; name: string } | null;
+    goal: { id: string; title: string; description: string | null } | null;
+    assignedAgent: { id: string; name: string };
+    message: string;
+    requestedByUserId: string;
+  }) {
+    return {
+      kind: "agent_help_request",
+      message: input.message,
+      requestedByUserId: input.requestedByUserId,
+      task: {
+        id: input.issue.id,
+        identifier: input.issue.identifier,
+        issueNumber: input.issue.issueNumber,
+        title: input.issue.title,
+        description: input.issue.description,
+        status: input.issue.status,
+      },
+      project:
+        input.project === null
+          ? null
+          : {
+              id: input.project.id,
+              name: input.project.name,
+              goal:
+                input.goal === null
+                  ? null
+                  : {
+                      id: input.goal.id,
+                      title: input.goal.title,
+                      description: input.goal.description,
+                    },
+            },
+      assignedAgent: {
+        id: input.assignedAgent.id,
+        name: input.assignedAgent.name,
+      },
+    };
+  }
+
+  // Server-side idempotency for duplicate/rapid clicks (§6 of the contract):
+  // a repeated request whose key still maps to an in-flight help wake returns
+  // the existing wake instead of creating a second run. This complements the
+  // wakeup layer's own task-scope coalescing and the client-side button
+  // debounce.
+  async function findPendingAgentHelpWake(companyId: string, key: string) {
+    const row = await db
+      .select({
+        id: agentWakeupRequests.id,
+        status: agentWakeupRequests.status,
+        runId: agentWakeupRequests.runId,
+      })
+      .from(agentWakeupRequests)
+      .where(and(eq(agentWakeupRequests.companyId, companyId), eq(agentWakeupRequests.idempotencyKey, key)))
+      .orderBy(desc(agentWakeupRequests.createdAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!row || !AGENT_HELP_PENDING_WAKE_STATUSES.has(row.status ?? "")) return null;
+    return row;
+  }
+
+  async function readAgentHelpWakeupSkipReason(companyId: string, key: string) {
+    const row = await db
+      .select({ reason: agentWakeupRequests.reason })
+      .from(agentWakeupRequests)
+      .where(and(eq(agentWakeupRequests.companyId, companyId), eq(agentWakeupRequests.idempotencyKey, key)))
+      .orderBy(desc(agentWakeupRequests.createdAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    return typeof row?.reason === "string" && row.reason.length > 0 ? row.reason : null;
+  }
+
+  router.post("/issues/:issueId/help", async (req, res) => {
+    assertAuthenticated(req);
+    assertBoard(req);
+
+    // The client supplies only the human message (and an optional
+    // idempotency key). Every task metadata field is loaded from canonical
+    // server records below — never from the request body.
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const rawMessage = typeof body.message === "string" ? body.message : null;
+    const message = rawMessage?.trim() ?? "";
+    if (!message || Array.from(message).length > AGENT_HELP_MAX_MESSAGE_CHARS) {
+      throw agentHelpError(400, "invalid_help_message", "Provide a help message between 1 and 4000 characters.");
+    }
+
+    let idempotencyKey: string | null = null;
+    if (typeof body.idempotencyKey === "string" && body.idempotencyKey.trim().length > 0) {
+      idempotencyKey = body.idempotencyKey.trim();
+      if (Array.from(idempotencyKey).length > AGENT_HELP_MAX_IDEMPOTENCY_KEY_CHARS) {
+        throw agentHelpError(400, "invalid_help_message", "Idempotency key must be at most 200 characters.");
+      }
+    }
+
+    const rawId = req.params.issueId as string;
+    const identifier = normalizeIssueIdentifier(rawId);
+    const issueSvc = issueService(db);
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawId),
+      "Issue not found",
+    );
+    if (!issue) return;
+
+    const actor = getActorInfo(req);
+
+    if (!AGENT_HELP_ELIGIBLE_STATUSES.has(issue.status)) {
+      throw agentHelpError(409, "task_status_ineligible", "Task status does not allow agent help", {
+        status: issue.status,
+      });
+    }
+
+    // Resolution is strictly the current assignee: no fallback, no auto-assign.
+    if (!issue.assigneeAgentId) {
+      throw agentHelpError(409, "task_unassigned", "Assign an agent to this task before requesting help");
+    }
+
+    const assignedAgent = await svc.getById(issue.assigneeAgentId);
+    if (!assignedAgent || assignedAgent.companyId !== issue.companyId) {
+      throw agentHelpError(409, "agent_not_invokable", "Assigned agent is not available for this task", {
+        agentId: issue.assigneeAgentId,
+      });
+    }
+    const invokability = await evaluateAgentInvokabilityFromDb(db, assignedAgent);
+    if (!invokability.invokable) {
+      throw agentHelpError(409, "agent_not_invokable", invokability.message, {
+        agentId: issue.assigneeAgentId,
+        status: assignedAgent.status,
+        reason: invokability.reason,
+        invalidOrgChain: invokability.invalidOrgChain,
+        ...invokability.details,
+      });
+    }
+
+    // Synthesize a deterministic key when the client omits one, so identical
+    // rapid clicks within a 10-second window collapse to a single wake.
+    idempotencyKey ??= `agent_help:${issue.id}:${Math.floor(Date.now() / AGENT_HELP_TIME_BUCKET_MS)}`;
+
+    const pendingWake = await findPendingAgentHelpWake(issue.companyId, idempotencyKey);
+    if (pendingWake) {
+      const existingRun = pendingWake.runId ? await heartbeat.getRun(pendingWake.runId) : null;
+      if (existingRun && AGENT_HELP_ACTIVE_RUN_STATUSES.has(existingRun.status)) {
+        res.status(202).json({
+          status: "queued",
+          run: { id: existingRun.id, status: existingRun.status },
+          wakeupRequestId: pendingWake.id,
+          agent: { id: assignedAgent.id, name: assignedAgent.name },
+        });
+        return;
+      }
+      res.status(202).json({
+        status: "skipped",
+        reason: "duplicate",
+        wakeupRequestId: pendingWake.id,
+        agent: { id: assignedAgent.id, name: assignedAgent.name },
+      });
+      return;
+    }
+
+    const { project, goal } = await resolveAgentHelpProjectAndGoal(issue);
+    const payload = buildAgentHelpPayload({
+      issue: {
+        id: issue.id,
+        identifier: issue.identifier,
+        issueNumber: issue.issueNumber,
+        title: issue.title,
+        description: issue.description,
+        status: issue.status,
+      },
+      project,
+      goal,
+      assignedAgent: { id: assignedAgent.id, name: assignedAgent.name },
+      message,
+      requestedByUserId: actor.actorId,
+    });
+
+    // Indirect invocation: enqueue a wakeup for the assignee. The LLM call
+    // happens later inside executeRun, exactly as for every other agent run;
+    // this handler never blocks on model output. Errors from the wakeup layer
+    // (company inactive, budget block, invokability) propagate as the standard
+    // { error, code?, details? } shape; a null return means the wakeup layer
+    // skipped the request (e.g. scheduling suppressed) and we report it as a
+    // 202 skipped response per §6.
+    const run = await heartbeat.wakeup(assignedAgent.id, {
+      source: "on_demand",
+      triggerDetail: "manual",
+      reason: "human_agent_help",
+      idempotencyKey,
+      requestedByActorType: "user",
+      requestedByActorId: actor.actorId,
+      payload,
+      contextSnapshot: { issueId: issue.id, triggeredBy: "user", helpRequest: true },
+    });
+
+    if (!run) {
+      const skipReason = await readAgentHelpWakeupSkipReason(issue.companyId, idempotencyKey);
+      res.status(202).json({
+        status: "skipped",
+        reason: skipReason ?? "wakeup_skipped",
+        agent: { id: assignedAgent.id, name: assignedAgent.name },
+      });
+      return;
+    }
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: run.id,
+      action: "agent_help.requested",
+      entityType: "issue",
+      entityId: issue.id,
+      issueId: issue.id,
+      details: { agentId: assignedAgent.id, runId: run.id, idempotencyKey },
+    });
+
+    res.status(202).json({
+      status: "queued",
+      run: { id: run.id, status: run.status },
+      wakeupRequestId: run.wakeupRequestId ?? null,
+      agent: { id: assignedAgent.id, name: assignedAgent.name },
     });
   });
 
