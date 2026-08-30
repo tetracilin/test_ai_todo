@@ -1,114 +1,193 @@
-import type { Client, TextBasedChannel } from "discord.js";
-import { HandlerContext } from "./handlers.js";
-import { issueUrl } from "./issueUrl.js";
+import type { Client, TextBasedChannel, User } from "discord.js";
+import type {
+  DiscordDelivery,
+  DiscordDeliveryAcknowledgement,
+  DiscordNotificationEvent,
+  DiscordIntegrationClient,
+} from "./discordIntegrationClient.js";
 
-/**
- * Polling-based inbound notifier. Paperclip has no outbound webhook for issue
- * events reachable by a standalone service, so this bridge polls each linked
- * user's Mine inbox and diffs against locally-stored watch state to detect:
- *   - status changes
- *   - new comments (any author — agent or human, dashboard or chat)
- *   - newly-opened pending interactions (e.g. request_confirmation)
- *
- * First poll after a link only establishes a baseline; it does not notify,
- * so linking doesn't dump the user's entire history into Discord.
- */
-export function startNotifier(
-  client: Client,
-  ctx: HandlerContext,
-  pollIntervalSeconds: number,
-): NodeJS.Timeout {
-  const tick = () => {
-    pollOnce(client, ctx).catch((err) => console.error("notifier poll failed:", err));
-  };
-  tick();
-  return setInterval(tick, pollIntervalSeconds * 1000);
+const ALLOWED_MENTIONS = { parse: [] as [] };
+
+type DiscordError = Error & {
+  status?: number;
+  statusCode?: number;
+  httpStatus?: number;
+  retry_after?: number;
+  retryAfter?: number;
+  code?: number | string;
+};
+
+function text(value: unknown, maximum = 300): string {
+  if (typeof value !== "string") return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maximum ? `${normalized.slice(0, maximum - 1)}…` : normalized;
 }
 
-export async function pollOnce(client: Client, ctx: HandlerContext): Promise<void> {
-  const links = ctx.store.getAllLinks();
-  for (const link of links) {
-    if (!link.notifyChannelId) continue;
-    let issues;
-    try {
-      issues = await ctx.paperclip.getMineInbox(link.paperclipUserId);
-    } catch (err) {
-      console.error(`notifier: failed to fetch Mine inbox for ${link.paperclipUserId}:`, err);
+function changed(event: DiscordNotificationEvent, field: string): string {
+  const before = text(event.before?.[field], 80) || "unset";
+  const after = text(event.after?.[field], 80) || "unset";
+  return `${before} → ${after}`;
+}
+
+/** Formats only allowlisted outbox fields; event bodies and credentials never reach Discord. */
+export function formatDiscordNotification(event: DiscordNotificationEvent): string {
+  const title = text(event.after?.title, 160) || text(event.before?.title, 160) || "Untitled task";
+  let detail: string;
+  switch (event.eventType) {
+    case "issue.status_changed":
+      detail = `Status: ${changed(event, "status")}`;
+      break;
+    case "issue.assignee_changed":
+      detail = `Assignee: ${changed(event, "assignee")}`;
+      break;
+    case "issue.priority_changed":
+      detail = `Priority: ${changed(event, "priority")}`;
+      break;
+    case "issue.comment_created":
+      detail = `Comment: ${text(event.after?.commentExcerpt, 300) || "New comment"}`;
+      break;
+    case "issue.blocked":
+      detail = "Task blocked";
+      break;
+    case "issue.unblocked":
+      detail = "Task unblocked";
+      break;
+    case "issue.completed":
+      detail = "Task completed";
+      break;
+    case "issue.created":
+      detail = "Task created";
+      break;
+  }
+  const actor = text(event.actor, 80) || "Paperclip";
+  return `**${text(event.issueIdentifier, 80)}** ${title}\n${detail}\nBy ${actor} · ${event.occurredAt}\n<${event.issueUrl}>`;
+}
+
+function httpStatus(error: unknown): number | undefined {
+  const candidate = error as DiscordError;
+  return candidate?.status ?? candidate?.statusCode ?? candidate?.httpStatus;
+}
+
+function retryAfterSeconds(error: unknown): number | undefined {
+  const candidate = error as DiscordError;
+  const raw = candidate?.retry_after ?? candidate?.retryAfter;
+  return typeof raw === "number" && raw >= 0 ? raw : undefined;
+}
+
+export function failureAcknowledgement(error: unknown): DiscordDeliveryAcknowledgement {
+  const status = httpStatus(error);
+  const errorCode = status ? `discord_http_${status}` : "discord_network_error";
+  if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
+    return { outcome: "terminal_failure", errorCode };
+  }
+  return {
+    outcome: "retryable_failure",
+    errorCode,
+    retryAfterSeconds: retryAfterSeconds(error),
+  };
+}
+
+function shouldSuppress(delivery: DiscordDelivery): boolean {
+  const { event, recipient } = delivery;
+  return (
+    event.eventType === "issue.created" &&
+    event.origin === "discord" &&
+    recipient.type === "channel" &&
+    recipient.id === event.originDiscordChannelId
+  );
+}
+
+async function sendDelivery(client: Client, delivery: DiscordDelivery): Promise<string> {
+  const payload = { content: formatDiscordNotification(delivery.event), allowedMentions: ALLOWED_MENTIONS };
+  if (delivery.recipient.type === "dm") {
+    const user = (await client.users.fetch(delivery.recipient.id)) as User;
+    const message = await user.send(payload);
+    return message.id;
+  }
+  const channel = (await client.channels.fetch(delivery.recipient.id)) as TextBasedChannel | null;
+  if (!channel || !("send" in channel)) {
+    const error = new Error("Discord channel is not sendable") as DiscordError;
+    error.status = 404;
+    throw error;
+  }
+  const message = await channel.send(payload);
+  return message.id;
+}
+
+async function acknowledge(
+  paperclip: DiscordIntegrationClient,
+  delivery: DiscordDelivery,
+  result: DiscordDeliveryAcknowledgement,
+): Promise<void> {
+  await paperclip.acknowledgeDiscordDelivery(delivery.event.id, delivery.id, result);
+}
+
+/** Processes committed outbox deliveries. Failure acknowledgment never throws into source issue actions. */
+export async function deliverPendingOnce(client: Client, paperclip: DiscordIntegrationClient): Promise<void> {
+  const deliveries = await paperclip.getPendingDiscordDeliveries();
+  for (const delivery of deliveries) {
+    if (shouldSuppress(delivery)) {
+      await acknowledge(paperclip, delivery, { outcome: "suppressed" });
       continue;
     }
 
-    for (const issue of issues) {
-      const prior = ctx.store.getWatchState(link.discordUserId, issue.id);
-      const interactions = await ctx.paperclip
-        .listInteractions(issue.id)
-        .catch(() => [] as Awaited<ReturnType<typeof ctx.paperclip.listInteractions>>);
-      const pendingIds = interactions.filter((i) => i.status === "pending").map((i) => i.id);
-
-      const comments = await ctx.paperclip.getComments(issue.id, { order: "desc" }).catch(() => []);
-      const latestCommentId = comments[0]?.id ?? null;
-
-      if (!prior) {
-        // Baseline only — don't notify on first sight of an issue.
-        ctx.store.upsertWatchState({
-          discordUserId: link.discordUserId,
-          issueId: issue.id,
-          lastStatus: issue.status,
-          lastCommentId: latestCommentId,
-          lastSeenInteractionIds: pendingIds,
-          updatedAt: new Date().toISOString(),
+    let discordMessageId: string;
+    try {
+      discordMessageId = await sendDelivery(client, delivery);
+    } catch (error) {
+      const result = failureAcknowledgement(error);
+      try {
+        await acknowledge(paperclip, delivery, result);
+      } catch (acknowledgementError) {
+        console.error("discord delivery acknowledgement failed", {
+          eventId: delivery.event.id,
+          deliveryId: delivery.id,
+          errorCode: httpStatus(acknowledgementError) ? `paperclip_http_${httpStatus(acknowledgementError)}` : "paperclip_network_error",
         });
-        continue;
       }
+      console.warn("discord delivery failed", {
+        eventId: delivery.event.id,
+        deliveryId: delivery.id,
+        eventType: delivery.event.eventType,
+        outcome: result.outcome,
+        errorCode: result.errorCode,
+      });
+      continue;
+    }
 
-      const messages: string[] = [];
-      const url = issueUrl(issue.identifier, ctx.issuePrefix, ctx.dashboardUrl);
-
-      if (prior.lastStatus !== issue.status) {
-        messages.push(`**${issue.identifier}** changed status: \`${prior.lastStatus}\` → \`${issue.status}\` — <${url}>`);
-      }
-
-      if (latestCommentId && latestCommentId !== prior.lastCommentId) {
-        const newComments = prior.lastCommentId
-          ? await ctx.paperclip
-              .getComments(issue.id, { after: prior.lastCommentId, order: "asc" })
-              .catch(() => [])
-          : [];
-        for (const c of newComments) {
-          const author = c.authorAgentId ? "agent" : c.onBehalfOfUserId || c.authorUserId ? "human" : "system";
-          const body = c.body.length > 300 ? `${c.body.slice(0, 300)}…` : c.body;
-          messages.push(`**${issue.identifier}** new comment [${author}]: ${body} — <${url}>`);
-        }
-      }
-
-      const newPendingIds = pendingIds.filter((id) => !prior.lastSeenInteractionIds.includes(id));
-      for (const id of newPendingIds) {
-        const interaction = interactions.find((i) => i.id === id);
-        messages.push(
-          `**${issue.identifier}** has a new pending ${interaction?.kind ?? "interaction"}: ${interaction?.title ?? ""} — <${url}>`,
-        );
-      }
-
-      if (messages.length > 0) {
-        await sendToChannel(client, link.notifyChannelId, messages.join("\n"));
-      }
-
-      ctx.store.upsertWatchState({
-        discordUserId: link.discordUserId,
-        issueId: issue.id,
-        lastStatus: issue.status,
-        lastCommentId: latestCommentId,
-        lastSeenInteractionIds: pendingIds,
-        updatedAt: new Date().toISOString(),
+    try {
+      await acknowledge(paperclip, delivery, { outcome: "delivered", discordMessageId });
+      console.info("discord delivery delivered", {
+        eventId: delivery.event.id,
+        deliveryId: delivery.id,
+        eventType: delivery.event.eventType,
+      });
+    } catch (error) {
+      console.error("discord delivery acknowledgement failed", {
+        eventId: delivery.event.id,
+        deliveryId: delivery.id,
+        errorCode: httpStatus(error) ? `paperclip_http_${httpStatus(error)}` : "paperclip_network_error",
       });
     }
   }
 }
 
-async function sendToChannel(client: Client, channelId: string, content: string): Promise<void> {
-  const channel = (await client.channels.fetch(channelId).catch(() => null)) as TextBasedChannel | null;
-  if (!channel || !("send" in channel)) {
-    console.error(`notifier: channel ${channelId} not found or not sendable`);
-    return;
-  }
-  await channel.send(content);
+/** Polls only durable delivery records; issue events are never inferred from polling. */
+export function startDeliveryWorker(client: Client, paperclip: DiscordIntegrationClient, pollIntervalSeconds: number): NodeJS.Timeout {
+  let running = false;
+  const tick = () => {
+    if (running) return;
+    running = true;
+    void deliverPendingOnce(client, paperclip)
+      .catch((error) => {
+        console.error("discord delivery poll failed", {
+          errorCode: httpStatus(error) ? `paperclip_http_${httpStatus(error)}` : "paperclip_network_error",
+        });
+      })
+      .finally(() => {
+        running = false;
+      });
+  };
+  tick();
+  return setInterval(tick, pollIntervalSeconds * 1000);
 }
