@@ -558,6 +558,7 @@ describe("IssueProperties", () => {
   it("keeps Plan and Artifacts tabs visible for an empty task and restores its selected tab", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     const issue = createIssue({ id: "issue-empty" });
@@ -598,6 +599,7 @@ describe("IssueProperties", () => {
   it("keeps empty document tabs useful when their content cannot load", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     mockIssuesApi.getDocument.mockRejectedValue(new ApiError("Plan unavailable", 500, null));
