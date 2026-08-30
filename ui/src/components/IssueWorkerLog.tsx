@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, Issue } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
+import { Skeleton } from "@/components/ui/skeleton";
 import { activityApi, type RunForIssue } from "../api/activity";
 import { ApiError } from "../api/client";
 import { heartbeatsApi, type ActiveRunForIssue } from "../api/heartbeats";
@@ -13,6 +14,14 @@ import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data"
 const LOG_CHUNK_BYTES = 64_000;
 const MAX_LOADED_CHUNKS = 8;
 const ACTIVE_RUN_STATUSES = new Set(["queued", "running"]);
+const TERMINAL_STATUS_LABELS: Record<string, string> = {
+  succeeded: "Succeeded",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  interrupted: "Interrupted",
+  timed_out: "Timed out",
+  scheduled_retry: "Scheduled retry",
+};
 
 type WorkerLogRun = Pick<RunForIssue, "runId" | "status" | "agentId" | "startedAt" | "finishedAt" | "createdAt" | "retryOfRunId">;
 
@@ -40,6 +49,10 @@ type IssueWorkerLogContentProps = {
 
 function isActiveRun(run: Pick<WorkerLogRun, "status">) {
   return ACTIVE_RUN_STATUSES.has(run.status);
+}
+
+function runStatusLabel(status: string) {
+  return TERMINAL_STATUS_LABELS[status] ?? status.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatRunDate(value: string | Date | null | undefined) {
@@ -87,7 +100,7 @@ function runLabel(run: WorkerLogRun, agentMap: ReadonlyMap<string, Pick<Agent, "
   return [
     run.runId.slice(0, 8),
     agent,
-    run.status,
+    runStatusLabel(run.status),
     durationSlot,
     retry,
     formatRunDate(run.startedAt ?? run.createdAt),
@@ -175,6 +188,9 @@ export function IssueWorkerLogContent({
   const [search, setSearch] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const viewportRef = useRef<HTMLPreElement>(null);
+  // Guards against a stale in-flight log read resolving after the user switched
+  // runs: pages/results from a deselected run are dropped instead of applied.
+  const activeRunIdRef = useRef<string | null>(selectedRunId);
   const selectedRun = allRuns.find((run) => run.runId === selectedRunId) ?? null;
   const isSelectedRunLive = Boolean(selectedRun && isActiveRun(selectedRun));
   const loadedContent = redactFilesystemPaths(pages.map((page) => page.content).join(""));
@@ -193,27 +209,30 @@ export function IssueWorkerLogContent({
   }, [allRuns, preferredRunId, selectedRunId]);
 
   const fetchPage = useCallback(async (offset: number, replace: boolean) => {
-    if (!selectedRunId) return;
+    const runId = selectedRunId;
+    if (!runId) return;
     setLoading(true);
     setError(null);
     try {
-      const page = await loadLog(selectedRunId, offset, LOG_CHUNK_BYTES);
+      const page = await loadLog(runId, offset, LOG_CHUNK_BYTES);
+      const loadedPage = { ...page, content: page.content ?? "", offset };
       setPages((current) => {
-        const loadedPage = { ...page, content: page.content ?? "", offset };
+        if (activeRunIdRef.current !== runId) return current;
         if (replace) return [loadedPage];
         if (current.some((item) => item.offset === offset)) {
-          return current.map((item) => item.offset === offset ? loadedPage : item);
+          return current.map((item) => (item.offset === offset ? loadedPage : item));
         }
         return [...current, loadedPage].slice(-MAX_LOADED_CHUNKS);
       });
     } catch (cause) {
-      setError(logErrorMessage(cause));
+      if (activeRunIdRef.current === runId) setError(logErrorMessage(cause));
     } finally {
-      setLoading(false);
+      if (activeRunIdRef.current === runId) setLoading(false);
     }
   }, [loadLog, selectedRunId]);
 
   useEffect(() => {
+    activeRunIdRef.current = selectedRunId;
     setPages([]);
     setError(null);
     setSearch("");
@@ -264,10 +283,29 @@ export function IssueWorkerLogContent({
 
   return (
     <section aria-label="Worker log" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-medium">Worker Log</h3>
-          <p className="text-xs text-muted-foreground">Redacted execution evidence. Raw output is shown as plain text.</p>
+          {selectedRun ? (
+            <span
+              role={isSelectedRunLive ? "status" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs",
+                isSelectedRunLive
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  : "border-border bg-muted/40 text-muted-foreground",
+              )}
+            >
+              {isSelectedRunLive ? (
+                <>
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse" />
+                  {runStatusLabel(selectedRun.status)} · live
+                </>
+              ) : (
+                <>Terminal · {runStatusLabel(selectedRun.status)}</>
+              )}
+            </span>
+          ) : null}
         </div>
         {selectedRun ? (
           <Link
@@ -320,18 +358,30 @@ export function IssueWorkerLogContent({
         </div>
       ) : null}
 
-      <pre
-        ref={viewportRef}
-        onScroll={handleScroll}
-        aria-live={isSelectedRunLive && autoFollow ? "polite" : "off"}
-        aria-label="Worker log output"
-        className={cn("max-h-96 overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-5 text-foreground", wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre")}
-      >
-        {loading && pages.length === 0 ? "Loading worker log…" : displayContent || (isSelectedRunLive ? "No output yet. This run is still active." : "No output was recorded for this run.")}
-      </pre>
+      {loading && pages.length === 0 ? (
+        <div role="status" aria-label="Loading worker log" className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+      ) : (
+        <pre
+          ref={viewportRef}
+          onScroll={handleScroll}
+          aria-live={isSelectedRunLive && autoFollow ? "polite" : "off"}
+          aria-busy={loading}
+          aria-label="Worker log output"
+          className={cn("max-h-96 overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-5 text-foreground", wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre")}
+        >
+          {displayContent || (isSelectedRunLive ? "No output yet. This run is still active." : "No output was recorded for this run.")}
+        </pre>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{new TextEncoder().encode(loadedContent).length.toLocaleString()} bytes loaded{pages.length >= MAX_LOADED_CHUNKS ? " (loading limit reached)" : ""}</span>
+        <span>
+          {new TextEncoder().encode(loadedContent).length.toLocaleString()} bytes loaded{pages.length >= MAX_LOADED_CHUNKS ? " (loading limit reached)" : ""}
+          {loading && pages.length > 0 ? <span role="status" className="ml-2">Loading more…</span> : null}
+        </span>
         {canLoadMore ? <button type="button" disabled={loading} onClick={() => void fetchPage(nextOffset!, false)} className="rounded-md border border-border px-2 py-1 disabled:opacity-50">Load more</button> : null}
       </div>
     </section>
