@@ -66,6 +66,14 @@ describe("isSandboxProviderSupportedForAdapter", () => {
       }),
     ]);
   });
+
+  it("keeps notebooklm_local on the host-local environment only", () => {
+    expect(adapterSupportsRemoteManagedEnvironments("notebooklm_local")).toBe(false);
+    expect(supportedEnvironmentDriversForAdapter("notebooklm_local")).toEqual(["local"]);
+    expect(
+      isSandboxProviderSupportedForAdapter("notebooklm_local", "fake-plugin", ["fake-plugin"]),
+    ).toBe(false);
+  });
 });
 
 describe("getEnvironmentCapabilities reusable leases default", () => {

@@ -40,7 +40,8 @@ export function isEnabledAdapterType(type: string): boolean {
  * any non-"coming soon" adapter from the display registry.
  */
 export function isValidAdapterType(type: string): boolean {
-  return type === "hermes_gateway" && !getAdapterDisplay(type).comingSoon;
+  return (type === "hermes_gateway" || type === "notebooklm_local")
+    && !getAdapterDisplay(type).comingSoon;
 }
 
 /**
@@ -75,7 +76,7 @@ export function listSelectableAdapterOptions(
   adapters: UIAdapterModule[] = listUIAdapters(),
 ): AdapterOptionMetadata[] {
   return listAdapterOptions(labelFor, adapters).filter(
-    (option) => option.value === "hermes_gateway",
+    (option) => option.value === "hermes_gateway" || option.value === "notebooklm_local",
   );
 }
 

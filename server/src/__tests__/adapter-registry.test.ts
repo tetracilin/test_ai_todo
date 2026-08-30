@@ -67,8 +67,50 @@ describe("server adapter registry", () => {
     expect(findServerAdapter("gemini_local")).toBeNull();
   });
 
-  it("offers Hermes Gateway as the sole built-in AI adapter", () => {
-    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
+  it("offers only the K10-approved Hermes Gateway and NotebookLM adapters", () => {
+    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual([
+      "hermes_gateway",
+      "notebooklm_local",
+    ]);
+  });
+
+  // NLM-A01 (card t_8dd5eb9e): T3 approved keeping the built-in `process`
+  // adapter operator-only for the NotebookLM Phase 0 MVP — it must stay
+  // registered (so an operator-created agent still runs) but must NOT appear
+  // in the selectable set the K10 Hermes-only policy exposes to normal
+  // hire/create flows. `notebooklm_local` may only join the selectable set
+  // in a later, separately-approved phase. See
+  // doc/NOTEBOOKLM_ONBOARDING.md and
+  // outputs/hermes/2026/08/2026-08-28-notebooklm-adapter-action-plan-review.md.
+  it("keeps the built-in process adapter registered but not selectable (NLM-A01 operator-only policy)", () => {
+    expect(findServerAdapter("process")).not.toBeNull();
+    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).not.toContain("process");
+  });
+
+  // NLM-A06 (card t_0f2715c3): notebooklm_local registers as a real builtin
+  // adapter (server execute/testEnvironment/config-schema, shared constants,
+  // UI, CLI). T3's A01 approval permits exposing this dedicated adapter only
+  // after Phase 0 GO (A02) and passing registration/policy tests (this card).
+  // Broad process selection remains forbidden.
+  it("registers and selects notebooklm_local without broadening process access (NLM-A06 K10 policy)", () => {
+    const adapter = findServerAdapter("notebooklm_local");
+    expect(adapter).not.toBeNull();
+    expect(adapter?.supportsLocalAgentJwt).toBe(false);
+    expect(listSelectableServerAdapters().map((entry) => entry.type)).toEqual([
+      "hermes_gateway",
+      "notebooklm_local",
+    ]);
+    expect(listSelectableServerAdapters().map((entry) => entry.type)).not.toContain("process");
+  });
+
+  // NLM-A10: generic heartbeat/recovery may invoke this adapter again, but
+  // each invocation is a fresh nlm process. Absence of both hooks is the
+  // explicit no-op session-resume contract; do not add a fake codec or ID.
+  it("keeps notebooklm_local one-shot with no session codec or session management", () => {
+    const adapter = requireServerAdapter("notebooklm_local");
+
+    expect(adapter.sessionCodec).toBeUndefined();
+    expect(adapter.sessionManagement).toBeUndefined();
   });
 
   it("exposes adapter model profiles when adapters declare them", async () => {
