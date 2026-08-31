@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /root/projects/t3-paperclip-Aitodo/.worktrees/t_6d8a4f84/server
+
+
+ Test Files  3 passed (3)
+      Tests  23 passed (23)
+   Start at  10:47:57
+   Duration  5.56s (transform 3.37s, setup 408ms, import 5.21s, tests 223ms, environment 0ms)
+

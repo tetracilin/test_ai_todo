@@ -1,0 +1,10 @@
+
+ RUN  v4.1.10 /root/projects/t3-paperclip-Aitodo/.worktrees/t_6d8a4f84/server
+
+[10:48:24] [31mERROR[39m: [36mcomment intake source poll failed[39m [90m{"sourceId":"638e2790-24cd-4a9f-99d4-e69d498391a9","companyId":"b9a247b0-1a5c-4940-b391-bdc1c2c7e7c7","errorCode":"database_error"}[39m
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  10:48:07
+   Duration  19.32s (transform 7.49s, setup 212ms, import 11.87s, tests 6.84s, environment 0ms)
+
