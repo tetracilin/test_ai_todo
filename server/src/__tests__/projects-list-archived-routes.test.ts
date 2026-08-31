@@ -107,4 +107,81 @@ describeEmbeddedPostgres("project list archived route defaults", () => {
     expect(res.status).toBe(200);
     expect(res.body.map((project: { id: string }) => project.id)).toEqual([activeProjectId, archivedProjectId]);
   });
+
+  // Regression: the list query previously had no ORDER BY, so Postgres was free to
+  // return any row order and this route's responses were unstable.
+  it("sorts archived projects last even when they were created first", async () => {
+    const companyId = randomUUID();
+    const archivedProjectId = randomUUID();
+    const activeProjectId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    // The archived project is the oldest row, so ordering on `createdAt` alone would
+    // place it first. Archived projects must still sort after active ones.
+    await db.insert(projects).values([
+      {
+        id: archivedProjectId,
+        companyId,
+        name: "Archived Project",
+        status: "completed",
+        createdAt: new Date("2020-01-01T00:00:00.000Z"),
+        archivedAt: new Date("2020-02-01T00:00:00.000Z"),
+      },
+      {
+        id: activeProjectId,
+        companyId,
+        name: "Active Project",
+        status: "in_progress",
+        createdAt: new Date("2024-01-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const app = createApp(db, boardActor(companyId));
+    const res = await request(app).get(`/api/companies/${companyId}/projects?includeArchived=true`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((project: { id: string }) => project.id)).toEqual([
+      activeProjectId,
+      archivedProjectId,
+    ]);
+  });
+
+  it("returns a stable order for projects sharing a createdAt timestamp", async () => {
+    const companyId = randomUUID();
+    // Rows inserted in a single statement share `now()`, so `createdAt` cannot break
+    // the tie on its own; `id` has to close the total order.
+    const sharedCreatedAt = new Date("2024-05-05T00:00:00.000Z");
+    const projectIds = [randomUUID(), randomUUID(), randomUUID()];
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values(
+      projectIds.map((id, index) => ({
+        id,
+        companyId,
+        name: `Project ${index}`,
+        status: "in_progress",
+        createdAt: sharedCreatedAt,
+      })),
+    );
+
+    const app = createApp(db, boardActor(companyId));
+    const expectedOrder = [...projectIds].sort();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const res = await request(app).get(`/api/companies/${companyId}/projects`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((project: { id: string }) => project.id)).toEqual(expectedOrder);
+    }
+  });
 });
