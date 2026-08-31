@@ -24,6 +24,7 @@ const EVENT_LABELS: Record<DiscordNotificationPreference["eventType"], string> =
   "issue.assignee_changed": "Task assignee changed",
   "issue.priority_changed": "Task priority changed",
   "issue.comment_created": "Task comment added",
+  "issue.mentioned": "Task mentioned",
   "issue.blocked": "Task blocked",
   "issue.unblocked": "Task unblocked",
   "issue.completed": "Task completed",

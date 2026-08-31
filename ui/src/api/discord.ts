@@ -6,6 +6,7 @@ export const DISCORD_NOTIFICATION_EVENTS = [
   "issue.assignee_changed",
   "issue.priority_changed",
   "issue.comment_created",
+  "issue.mentioned",
   "issue.blocked",
   "issue.unblocked",
   "issue.completed",

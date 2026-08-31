@@ -35,6 +35,14 @@ const linkedSettings = {
   link: { status: "linked" as const, discordUserId: "discord-user-1" },
 };
 
+const linkedMentionSettings = {
+  ...linkedSettings,
+  preferences: [
+    ...linkedSettings.preferences,
+    { eventType: "issue.mentioned" as const, enabled: false, deliveryMode: "dm" as const, channelId: null },
+  ],
+};
+
 async function flushReact() {
   await act(async () => {
     await Promise.resolve();
@@ -119,6 +127,28 @@ describe("DiscordSettingsPanel", () => {
 
     expect(mockDiscordApi.updatePreferences).toHaveBeenCalledWith("company-1", [
       { eventType: "issue.created", enabled: true, deliveryMode: "channel", channelId: "channel-1" },
+    ]);
+    expect(container.textContent).toContain("Discord notification preferences saved.");
+  });
+
+  it("renders and saves mention notification preferences returned by settings", async () => {
+    mockDiscordApi.getSettings.mockResolvedValue(linkedMentionSettings);
+    await render();
+
+    const mention = [...container.querySelectorAll("label")].find((element) => element.textContent?.includes("Task mentioned"));
+    const enabled = mention?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(mention).toBeTruthy();
+    expect(enabled).not.toBeNull();
+    await act(async () => click(enabled));
+    await flushReact();
+
+    const save = [...container.querySelectorAll("button")].find((element) => element.textContent?.includes("Save notification preferences"));
+    await act(async () => click(save!));
+    await flushReact();
+
+    expect(mockDiscordApi.updatePreferences).toHaveBeenCalledWith("company-1", [
+      { eventType: "issue.created", enabled: false, deliveryMode: "dm", channelId: null },
+      { eventType: "issue.mentioned", enabled: true, deliveryMode: "dm", channelId: null },
     ]);
     expect(container.textContent).toContain("Discord notification preferences saved.");
   });
