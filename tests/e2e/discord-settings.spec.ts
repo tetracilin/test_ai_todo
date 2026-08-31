@@ -42,6 +42,8 @@ async function mockDiscordApi(page: Page, current: DiscordSettings) {
 
     if (request.method() === "GET" && url.pathname.endsWith("/settings")) return response(current);
     if (request.method() === "POST" && url.pathname.endsWith("/link-codes")) {
+      const payload = request.postDataJSON() as { companyId: string };
+      expect(payload.companyId).toBeTruthy();
       return response({ code: "browser-link-code", expiresAt: "2030-01-01T00:00:00.000Z" }, 201);
     }
     if (request.method() === "PATCH" && url.pathname.endsWith("/preferences")) {
@@ -79,7 +81,13 @@ test.describe("Discord profile settings", () => {
     await mockDiscordApi(page, settings());
     await page.goto(`/${company.prefix}/company/settings/instance/profile`);
     await expect(page.getByRole("heading", { name: "Discord notifications" })).toBeVisible();
-    await page.getByRole("button", { name: "Create link code" }).click();
+    await Promise.all([
+      page.waitForResponse(
+        (response) => response.request().method() === "POST"
+          && new URL(response.url()).pathname.endsWith("/integrations/discord/link-codes"),
+      ),
+      page.getByRole("button", { name: "Create link code" }).click(),
+    ]);
     await expect(page.getByText("browser-link-code", { exact: true })).toBeVisible();
   });
 
@@ -87,7 +95,7 @@ test.describe("Discord profile settings", () => {
     const current = settings(true);
     await mockDiscordApi(page, current);
     await page.goto(`/${company.prefix}/company/settings/instance/profile`);
-    await page.getByLabel("Task created").check();
+    await page.getByRole("checkbox", { name: "Task created", exact: true }).check();
     await page.getByLabel("Task created delivery").selectOption("channel");
     await page.getByLabel("Task created channel").selectOption("channel-1");
     await page.getByRole("button", { name: "Save notification preferences" }).click();
