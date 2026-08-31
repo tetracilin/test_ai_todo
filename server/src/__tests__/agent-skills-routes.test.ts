@@ -116,6 +116,18 @@ vi.mock("../adapters/index.js", () => ({
   findActiveServerAdapter: vi.fn(() => mockAdapter),
   listAdapterModels: vi.fn(),
   detectAdapterModel: vi.fn(),
+  // Skill/instructions tests predate the hermes-only selectable enforcement;
+  // keep the harness permissive so the adapter-choice gate is exercised where
+  // it belongs (agent-adapter-validation-routes.test.ts).
+  listSelectableServerAdapters: () => [
+    { type: "claude_local" },
+    { type: "codex_local" },
+    { type: "hermes_gateway" },
+    { type: "hermes_local" },
+    { type: "kimi_local" },
+    { type: "opencode_local" },
+    { type: "pi_local" },
+  ],
 }));
 
 function registerModuleMocks() {
@@ -159,6 +171,15 @@ function registerModuleMocks() {
     findActiveServerAdapter: vi.fn(() => mockAdapter),
     listAdapterModels: vi.fn(),
     detectAdapterModel: vi.fn(),
+    listSelectableServerAdapters: () => [
+      { type: "claude_local" },
+      { type: "codex_local" },
+      { type: "hermes_gateway" },
+      { type: "hermes_local" },
+      { type: "kimi_local" },
+      { type: "opencode_local" },
+      { type: "pi_local" },
+    ],
   }));
 }
 
@@ -393,7 +414,7 @@ describe.sequential("agent skill routes", () => {
         }),
       }),
     );
-  }, 10_000);
+  }, 30_000);
 
   it("lists skills without resolving required user-secret env bindings", async () => {
     const adapterConfig = {

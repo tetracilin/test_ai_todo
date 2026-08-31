@@ -7821,6 +7821,71 @@ registerCurrentRoute({
   }),
 });
 
+// ─── Issue subtasks, project storage, and task-stop routes ───────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/subtasks",
+  tags: ["issues"],
+  summary: "List subtasks for an issue",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/subtasks/progress",
+  tags: ["issues"],
+  summary: "Get subtask progress for an issue",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{id}/storage-config",
+  tags: ["projects"],
+  summary: "Get the storage configuration for a project",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{id}/minio-folders",
+  tags: ["projects"],
+  summary: "List MinIO NAS folders for a project",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({ prefix: z.string().optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/projects/{id}/storage-config",
+  tags: ["projects"],
+  summary: "Update the storage configuration for a project",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(z.object({
+      repoLocalFolder: z.string().nullable().optional(),
+      nasFolder: z.string().nullable().optional(),
+    })),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{issueId}/active-run/stop",
+  tags: ["issues"],
+  summary: "Stop the active run for an issue",
+  request: { params: z.object({ issueId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

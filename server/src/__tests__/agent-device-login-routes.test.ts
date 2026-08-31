@@ -419,7 +419,7 @@ describe("adapter device-login routes", () => {
     const app = await createApp();
     const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter({
-      type: "gemini_local",
+      type: "hermes_local",
       execute: async () => {
         throw new Error("not used");
       },
@@ -436,15 +436,15 @@ describe("adapter device-login routes", () => {
     });
     try {
       const res = await request(app)
-        .post(loginPath(COMPANY_1, "gemini_local"))
+        .post(loginPath(COMPANY_1, "hermes_local"))
         .send({ environmentId: SANDBOX_ENV_1 });
 
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body).toMatchObject({ environmentId: SANDBOX_ENV_1, status: "starting" });
       expect(harness.acquisitions).toHaveLength(1);
-      expect(harness.acquisitions[0]).toMatchObject({ adapterType: "gemini_local" });
+      expect(harness.acquisitions[0]).toMatchObject({ adapterType: "hermes_local" });
     } finally {
-      unregisterServerAdapter("gemini_local");
+      unregisterServerAdapter("hermes_local");
     }
   });
 

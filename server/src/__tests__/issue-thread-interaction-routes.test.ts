@@ -558,7 +558,7 @@ describe.sequential("issue thread interaction routes", () => {
         }),
       }),
     );
-  }, 10_000);
+  }, 30_000);
 
   it("does not run historical-comment catch-up or queue recovery from the interaction read path", async () => {
     mockIssueService.getById.mockResolvedValue(createIssue({

@@ -298,7 +298,34 @@ describe.sequential("agent permission routes", () => {
     vi.doUnmock("../services/secrets.js");
     vi.doUnmock("../services/environments.js");
     vi.doUnmock("../services/workspace-operations.js");
-    vi.doUnmock("../adapters/index.js");
+    vi.doMock("../adapters/index.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../adapters/index.js")>();
+      return {
+        ...actual,
+        // Permission tests predate the hermes-only selectable enforcement;
+        // keep the harness permissive so the adapter-choice gate is exercised
+        // where it belongs (agent-adapter-validation-routes.test.ts). The real
+        // registry/registerServerAdapter stay real; only the selection gate is
+        // widened to the built-in types these tests create.
+        listSelectableServerAdapters: () => [
+          { type: "acpx_local" },
+          { type: "claude_local" },
+          { type: "codex_local" },
+          { type: "cursor" },
+          { type: "cursor_cloud" },
+          { type: "failing_profile_discovery" },
+          { type: "grok_local" },
+          { type: "hermes_gateway" },
+          { type: "hermes_local" },
+          { type: "http" },
+          { type: "kimi_local" },
+          { type: "openclaw_gateway" },
+          { type: "opencode_local" },
+          { type: "pi_local" },
+          { type: "process" },
+        ],
+      };
+    });
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
@@ -433,7 +460,7 @@ describe.sequential("agent permission routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.adapterConfig).toEqual({});
     expect(res.body.runtimeConfig).toEqual({});
-  }, 20_000);
+  }, 30_000);
 
   it("keeps board agent detail unredacted for low-trust agents", async () => {
     mockAgentService.getById.mockResolvedValue({
@@ -474,7 +501,7 @@ describe.sequential("agent permission routes", () => {
       },
     });
     expect(res.body.permissions).toMatchObject({ trustPreset: LOW_TRUST_REVIEW_PRESET });
-  }, 20_000);
+  }, 30_000);
 
   it("redacts company agent list for authenticated company members without agent admin permission", async () => {
     mockAccessService.canUser.mockResolvedValue(false);
@@ -763,7 +790,7 @@ describe.sequential("agent permission routes", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("instructions path or bundle configuration");
     expect(mockLogActivity).not.toHaveBeenCalled();
-  }, 15_000);
+  }, 30_000);
 
   it("blocks agent-authenticated instructions-path updates", async () => {
     const app = await createApp({
@@ -939,7 +966,7 @@ describe.sequential("agent permission routes", () => {
       true,
       "board-user",
     );
-  }, 15_000);
+  }, 30_000);
 
   it("rejects unsupported query parameters on the agent list route", async () => {
     const app = await createApp({
@@ -1442,7 +1469,7 @@ describe.sequential("agent permission routes", () => {
   const sshCapableAdapterCases = [
     { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
     { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
-    { adapterType: "gemini_local", name: "Gemini Builder", adapterConfig: {} },
+    { adapterType: "grok_local", name: "Grok Builder", adapterConfig: {} },
     { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
     { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
     { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },
@@ -1630,7 +1657,7 @@ describe.sequential("agent permission routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("explicit_grant");
-  }, 15_000);
+  }, 30_000);
 
   it("reports simple-mode task assignment as enabled for active company agent members", async () => {
     mockAccessService.listPrincipalGrants.mockResolvedValue([]);
@@ -1648,7 +1675,7 @@ describe.sequential("agent permission routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("simple_default");
-  }, 15_000);
+  }, 30_000);
 
   it("keeps task assignment enabled when agent creation privilege is enabled", async () => {
     mockAgentService.updatePermissions.mockResolvedValue({

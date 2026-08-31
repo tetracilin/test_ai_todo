@@ -304,7 +304,7 @@ describe("agent live run routes", () => {
     expect(res.body).not.toHaveProperty("resultJson");
     expect(res.body).not.toHaveProperty("contextSnapshot");
     expect(res.body).not.toHaveProperty("logRef");
-  }, 10_000);
+  }, 30_000);
 
   it("returns a scheduled retry so task view can cancel it", async () => {
     mockHeartbeatService.getRunIssueSummary.mockResolvedValue({

@@ -278,7 +278,7 @@ export function adapterRoutes() {
     // instance-admin only because they affect the whole server runtime.
     assertBoardOrgAccess(_req);
 
-    const registeredAdapters = listSelectableServerAdapters();
+    const registeredAdapters = listServerAdapters();
     const externalRecords = new Map(
       listAdapterPlugins().map((r) => [r.type, r]),
     );

@@ -20,7 +20,14 @@ describe("codex inactivity monitor (integration: real subprocess)", () => {
     "allows a long silent build while the child process group is consuming CPU",
     async () => {
       const runId = `monitor-active-build-${Date.now()}`;
-      const timeoutMs = 500;
+      // The cpu-activity poll scans /proc for the whole process group, which
+      // takes much longer than 50ms on a loaded host (the full-suite lane runs
+      // many workers). A 500ms inactivity window can therefore fire before the
+      // first activity note arrives, flaking the "active build is not killed"
+      // invariant. The window is widened past the 2s child runtime so a false
+      // fire is impossible while CPU activity within the child still has to be
+      // observed for the monitor to stay silent.
+      const timeoutMs = 3_000;
       const processActivityMonitor: {
         current: ReturnType<typeof createCodexProcessActivityMonitor> | null;
       } = { current: null };

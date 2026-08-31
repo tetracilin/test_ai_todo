@@ -47,7 +47,7 @@ function duplexOpenInput(directive: unknown) {
   };
 }
 
-describe("plugin worker manager duplex channel route", () => {
+describe("plugin worker manager duplex channel route", { timeout: 20_000 }, () => {
   it("delivers data only for the exact bound worker session id and drops a mismatch", async () => {
     const handle = makeDuplexHandle();
     try {

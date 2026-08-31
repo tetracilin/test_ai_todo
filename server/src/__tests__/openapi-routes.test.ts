@@ -72,6 +72,12 @@ const explicitOpenApiCoverageExclusions = new Set([
   "cases.ts",
   // Smoke lab routes are experimental and not yet represented in the public OpenAPI document.
   "smoke-lab.ts",
+  // Artifact storage routes are new in this lineage and not yet represented in the public OpenAPI document.
+  "artifacts.ts",
+  // Issue scheduling routes are new in this lineage and not yet represented in the public OpenAPI document.
+  "scheduling.ts",
+  // WOPI routes are flag-gated staging (PAPERCLIP_WOPI_STAGING_ENABLED) and not yet in the public OpenAPI document.
+  "wopi.ts",
 ]);
 
 // The set of contract-first routes whose OpenAPI document leads the mounted

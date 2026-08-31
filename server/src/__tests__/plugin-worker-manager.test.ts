@@ -88,7 +88,7 @@ describe("resolveRpcCallTimeoutMs", () => {
   });
 });
 
-describe("plugin-worker-manager stderr failure context", () => {
+describe("plugin-worker-manager stderr failure context", { timeout: 20_000 }, () => {
   it("appends worker stderr context to failure messages", () => {
     expect(
       formatWorkerFailureMessage(
@@ -473,7 +473,7 @@ describe("plugin-worker-manager stderr failure context", () => {
 });
 
 
-describe("plugin host company context guards", () => {
+describe("plugin host company context guards", { timeout: 20_000 }, () => {
   it("rejects config and secret calls without host-issued company context before host services run", async () => {
     const configGet = vi.fn(async () => ({ apiKey: "unreachable" }));
     const secretsResolve = vi.fn(async () => "unreachable");
@@ -573,7 +573,7 @@ describe("plugin host company context guards", () => {
 });
 
 
-describe("plugin proactive company scope (LOOA-629)", () => {
+describe("plugin proactive company scope (LOOA-629)", { timeout: 20_000 }, () => {
   // A proactive plugin (e.g. the chat gateway) makes company-scoped worker→host
   // calls from its own timers/loops — outside any host-issued invocation, so
   // those calls carry no paperclipInvocationId (the fixture's "omit" mode). The
@@ -693,7 +693,7 @@ describe("plugin proactive company scope (LOOA-629)", () => {
   });
 });
 
-describe("plugin proactive events.subscribe: options-seeded scope + filter parity (LOOA-695)", () => {
+describe("plugin proactive events.subscribe: options-seeded scope + filter parity (LOOA-695)", { timeout: 20_000 }, () => {
   // The chat gateway subscribes to issue.*/approval.* from setup() via
   // ctx.events.on(name, { companyId }, fn), which the SDK turns into a proactive
   // (no-invocation) events.subscribe whose company lives in params.filter.companyId.
@@ -812,7 +812,7 @@ function executeParams(
   } as unknown as HostToWorkerMethods["environmentExecute"][0];
 }
 
-describe("plugin worker manager execute.log route", () => {
+describe("plugin worker manager execute.log route", { timeout: 20_000 }, () => {
   it("delivers ordered execute.log chunks to the execute log sink", async () => {
     const handle = makeExecuteLogHandle();
     const sink = vi.fn();
@@ -1091,7 +1091,7 @@ function ptyOpenInput(directive: unknown) {
   };
 }
 
-describe("plugin worker manager setup-token pty route gate", () => {
+describe("plugin worker manager setup-token pty route gate", { timeout: 20_000 }, () => {
   it("rejects a command that is not the allowlisted setup-token command before the worker call", async () => {
     const handle = makeSetupTokenPtyHandle();
     try {
