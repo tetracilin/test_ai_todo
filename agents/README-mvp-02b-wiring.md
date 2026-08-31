@@ -80,8 +80,8 @@ Binding mechanism (verified against this fork, 2026-08-31):
 ### Register via API (board operator context)
 
 ```sh
-COMPANY_ID="ca743e8c-e414-49c8-9134-890ea933a3f6"   # the ACTIVE "T3" company (verified live)
-BASE="http://127.0.0.1:33120"                        # t3-prod loopback (verify)
+COMPANY_ID="ca743e8c-e414-49c8-9134-890ea933a3f6"   # the ACTIVE "T3" company (verified live 2026-08-31)
+BASE="http://127.0.0.1:33100"                        # t3-prod loopback (verified: host 33100 -> container 3100)
 INSTRUCTIONS="$(cat /root/projects/t3-paperclip-Aitodo/agents/engineer-assistant.md)"
 
 curl -sS -X POST "$BASE/api/companies/$COMPANY_ID/agents" \
