@@ -166,3 +166,13 @@ staging guild; when absent the bridge registers commands globally.
 Before bringing up a staging bridge service, verify each file exists, has mode `0600`,
 and is owned by the deployment operator. Do not put values in `deploy-staging/.env`, a
 Compose `environment` value, logs, CI output, or shell history.
+
+### CI/CD
+
+`.github/workflows/discord-staging.yml` deploys the bridge from CI. Dispatch it manually
+with the ref to deploy (default `main`). The `build` job runs the bridge test suite,
+typechecks/builds, validates the Compose file, and builds the image; the `deploy-staging`
+job then SSHes to the staging host, writes the credential files (from the protected
+`discord-staging` GitHub Environment, never repo variables), checks out the exact
+deployed SHA, and runs `docker compose up -d --build` followed by `./scripts/healthcheck.sh`.
+Secret values are streamed over ssh stdin and never echoed or committed.
