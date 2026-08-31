@@ -28,7 +28,7 @@ import type {
   PluginExecutionWorkspaceMetadata,
 } from "@paperclipai/plugin-sdk";
 import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@paperclipai/shared";
-import { pluginOperationIssueOriginKind } from "@paperclipai/shared";
+import { extractUserMentionIds, pluginOperationIssueOriginKind } from "@paperclipai/shared";
 import { companyService } from "./companies.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
@@ -2400,6 +2400,7 @@ export function buildHostServices(
             identifier: issue.identifier,
             commentId: comment.id,
             bodySnippet: comment.body.slice(0, 120),
+            mentionedUserIds: extractUserMentionIds(comment.body),
           },
         });
 

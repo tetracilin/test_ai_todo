@@ -59,15 +59,25 @@ type DiscordEventType =
   | "issue.assignee_changed"
   | "issue.priority_changed"
   | "issue.comment_created"
+  | "issue.mentioned"
   | "issue.blocked"
   | "issue.unblocked"
   | "issue.completed";
 
-function discordEventTypesForActivity(input: LogActivityInput): DiscordEventType[] {
+export function discordEventTypesForActivity(input: LogActivityInput): DiscordEventType[] {
   if (input.entityType !== "issue") return [];
   if (input.action === "issue.created") return ["issue.created"];
-  if (input.action === "issue.comment.created" || input.action === "issue_comment_added" || input.action === "issue_comment_created") {
-    return ["issue.comment_created"];
+  if (
+    input.action === "issue.comment.created"
+    || input.action === "issue.comment_added"
+    || input.action === "issue_comment_added"
+    || input.action === "issue_comment_created"
+  ) {
+    const events: DiscordEventType[] = ["issue.comment_created"];
+    if (Array.isArray(input.details?.mentionedUserIds) && input.details.mentionedUserIds.length > 0) {
+      events.push("issue.mentioned");
+    }
+    return events;
   }
   if (input.action !== "issue.updated") return [];
   const details = input.details ?? {};
@@ -102,6 +112,7 @@ async function enqueueDiscordNotifications(
     projectId: issues.projectId,
     identifier: issues.identifier,
     title: issues.title,
+    assigneeUserId: issues.assigneeUserId,
   }).from(issues).where(and(eq(issues.companyId, input.companyId), eq(issues.id, input.entityId))).then((rows) => rows[0] ?? null);
   if (!issue) return;
 
@@ -113,7 +124,11 @@ async function enqueueDiscordNotifications(
         eq(discordProjectChannelMappings.enabled, true),
       ))
       : Promise.resolve([]),
-    db.select({ preference: discordNotificationPreferences, discordUserId: discordUserLinks.discordUserId })
+    db.select({
+      preference: discordNotificationPreferences,
+      discordUserId: discordUserLinks.discordUserId,
+      userId: discordNotificationPreferences.userId,
+    })
       .from(discordNotificationPreferences)
       .innerJoin(discordUserLinks, and(
         eq(discordUserLinks.companyId, discordNotificationPreferences.companyId),
@@ -124,6 +139,13 @@ async function enqueueDiscordNotifications(
   ]);
 
   for (const eventType of eventTypes) {
+    const personalTargetUserIds = eventType === "issue.mentioned"
+      ? Array.isArray(redactedDetails?.mentionedUserIds)
+        ? redactedDetails.mentionedUserIds.filter((value): value is string => typeof value === "string")
+        : []
+      : eventType === "issue.assignee_changed" && issue.assigneeUserId
+        ? [issue.assigneeUserId]
+        : null;
     const [event] = await db.insert(integrationEventOutbox).values({
       idempotencyKey: `discord:activity:${activityId}:${eventType}`,
       companyId: issue.companyId,
@@ -138,6 +160,10 @@ async function enqueueDiscordNotifications(
         actor: input.actorId,
         before: redactedDetails?._previous ?? null,
         after: redactedDetails,
+        commentExcerpt: eventType === "issue.comment_created" || eventType === "issue.mentioned"
+          ? typeof redactedDetails?.bodySnippet === "string" ? redactedDetails.bodySnippet : null
+          : null,
+        ...(personalTargetUserIds ? { personalTargetUserIds } : {}),
       },
     }).onConflictDoNothing().returning();
     if (!event) continue;
@@ -148,8 +174,9 @@ async function enqueueDiscordNotifications(
         recipients.set(`channel:${mapping.channelId}`, { recipientType: "channel", recipientId: mapping.channelId });
       }
     }
-    for (const { preference, discordUserId } of preferences) {
+    for (const { preference, discordUserId, userId } of preferences) {
       if (preference.eventType !== eventType) continue;
+      if (personalTargetUserIds && !personalTargetUserIds.includes(userId)) continue;
       const recipientId = preference.deliveryMode === "channel" ? preference.channelId : discordUserId;
       if (!recipientId) continue;
       const recipientType = preference.deliveryMode === "channel" ? "channel" : "dm";

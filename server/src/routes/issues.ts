@@ -38,6 +38,7 @@ import {
   createIssueThreadInteractionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
+  extractUserMentionIds,
   createAcceptedPlanDecompositionSchema,
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
@@ -10473,6 +10474,7 @@ export function issueRoutes(
         details: {
           commentId: comment.id,
           bodySnippet: comment.body.slice(0, 120),
+          mentionedUserIds: extractUserMentionIds(comment.body),
           identifier: issue.identifier,
           issueTitle: issue.title,
           authorizationReason: issueMutationAuthorizationReason,
@@ -12558,6 +12560,7 @@ export function issueRoutes(
       details: {
         commentId: comment.id,
         bodySnippet: comment.body.slice(0, 120),
+        mentionedUserIds: extractUserMentionIds(comment.body),
         deliveryMode,
         identifier: currentIssue.identifier,
         issueTitle: currentIssue.title,
