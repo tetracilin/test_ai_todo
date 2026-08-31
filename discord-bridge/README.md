@@ -24,6 +24,7 @@ User-scoped:
 - `PATCH /api/integrations/discord/preferences`
 - `PUT /api/integrations/discord/settings/channel-mappings`
 - `POST /api/integrations/discord/link-codes`
+- `POST /api/integrations/discord/disconnect`
 
 Bridge-scoped:
 

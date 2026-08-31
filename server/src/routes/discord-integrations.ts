@@ -16,7 +16,7 @@ import {
   issues,
   projects,
 } from "@paperclipai/db";
-import { badRequest, forbidden, HttpError, unauthorized } from "../errors.js";
+import { badRequest, forbidden, HttpError } from "../errors.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
@@ -78,8 +78,8 @@ function bridgeAuthorized(header: string | undefined) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 function assertBridge(req: { header(name: string): string | undefined }) {
-  if (!process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN?.trim()) throw unauthorized("Discord bridge is not configured");
-  if (!bridgeAuthorized(req.header("authorization"))) throw unauthorized("Discord bridge authentication required");
+  if (!process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN?.trim()) throw asHttp("bridge_not_configured", 401);
+  if (!bridgeAuthorized(req.header("authorization"))) throw asHttp("bridge_auth_required", 401);
 }
 function asHttp(code: string, status: number) {
   if (status === 401) return new HttpError(401, code, { code });
@@ -97,13 +97,23 @@ export function discordIntegrationRoutes(db: Db) {
 
 
   async function browserUser(req: { actor: { type: string; userId?: string } }) {
-    if (req.actor.type !== "board" || !req.actor.userId) throw unauthorized("Board authentication required");
+    if (req.actor.type !== "board" || !req.actor.userId) throw asHttp("board_auth_required", 401);
     return req.actor.userId;
   }
+  async function assertCompanyAccessCoded(req: Request, companyId: string) {
+    try {
+      assertCompanyAccess(req, companyId);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 403) throw forbidden(`${err.message}`, { code: "permission_denied" });
+      throw err;
+    }
+  }
   async function settings(userId: string, companyId: string) {
-    const [link, preferences] = await Promise.all([
+    const [link, preferences, guilds, mappings] = await Promise.all([
       db.select().from(discordUserLinks).where(and(eq(discordUserLinks.companyId, companyId), eq(discordUserLinks.userId, userId), eq(discordUserLinks.active, true))).then((rows) => rows[0] ?? null),
       db.select().from(discordNotificationPreferences).where(and(eq(discordNotificationPreferences.companyId, companyId), eq(discordNotificationPreferences.userId, userId))),
+      db.select().from(discordGuildIntegrations).where(eq(discordGuildIntegrations.companyId, companyId)).then((rows) => rows.filter((row) => row.enabled)),
+      db.select().from(discordProjectChannelMappings).where(eq(discordProjectChannelMappings.companyId, companyId)).then((rows) => rows.filter((row) => row.enabled)),
     ]);
     const byEvent = new Map(preferences.map((row) => [row.eventType, row]));
     return {
@@ -112,6 +122,18 @@ export function discordIntegrationRoutes(db: Db) {
         const row = byEvent.get(name);
         return { eventType: name, enabled: row?.enabled ?? false, deliveryMode: row?.deliveryMode ?? "dm", channelId: row?.channelId ?? null };
       }),
+      // Guilds and channel mappings the caller can use for notification-channel
+      // selection. Only guildId/channelId are surfaced: the server does not own
+      // display names for either, so no labels are returned.
+      guilds: guilds.map((guild) => ({ guildId: guild.guildId, enabled: guild.enabled })),
+      channels: mappings.map((mapping) => ({
+        guildId: mapping.guildId,
+        channelId: mapping.channelId,
+        projectId: mapping.projectId,
+        enabled: mapping.enabled,
+        allowTaskCreate: mapping.allowTaskCreate,
+        notificationEvents: mapping.notificationEvents,
+      })),
     };
   }
 
@@ -119,7 +141,7 @@ export function discordIntegrationRoutes(db: Db) {
     const userId = await browserUser(req);
     const companyId = typeof req.query.companyId === "string" ? req.query.companyId : null;
     if (!companyId) throw badRequest("companyId is required");
-    assertCompanyAccess(req, companyId);
+    await assertCompanyAccessCoded(req, companyId);
     res.json(await settings(userId, companyId));
   });
 
@@ -127,7 +149,7 @@ export function discordIntegrationRoutes(db: Db) {
     const userId = await browserUser(req);
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
     if (!companyId) throw badRequest("companyId is required");
-    assertCompanyAccess(req, companyId);
+    await assertCompanyAccessCoded(req, companyId);
     const code = randomBytes(24).toString("base64url");
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await db.insert(discordLinkCodes).values({ companyId, userId, codeHash: codeHash(code), expiresAt });
@@ -138,7 +160,7 @@ export function discordIntegrationRoutes(db: Db) {
     const userId = await browserUser(req);
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
     if (!companyId) throw badRequest("companyId is required");
-    assertCompanyAccess(req, companyId);
+    await assertCompanyAccessCoded(req, companyId);
     const input = preferenceSchema.parse(req.body);
     const channelIds = input.preferences
       .filter((preference) => preference.enabled && preference.deliveryMode === "channel" && preference.channelId)
@@ -172,7 +194,7 @@ export function discordIntegrationRoutes(db: Db) {
     const userId = await browserUser(req);
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
     if (!companyId) throw badRequest("companyId is required");
-    assertCompanyAccess(req, companyId);
+    await assertCompanyAccessCoded(req, companyId);
     assertInstanceAdmin(req);
     const { companyId: _companyId, ...input } = mappingSchema.extend({ companyId: z.string().uuid() }).parse(req.body);
     const project = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.companyId, companyId))).then((rows) => rows[0] ?? null);
@@ -218,6 +240,23 @@ export function discordIntegrationRoutes(db: Db) {
     const now = new Date();
     const linked = await db.update(discordUserLinks).set({ active: false, unlinkedAt: now, updatedAt: now }).where(and(eq(discordUserLinks.discordUserId, input.discordUserId), eq(discordUserLinks.active, true))).returning();
     if (linked[0]) await db.update(discordNotificationPreferences).set({ enabled: false, updatedAt: now }).where(and(eq(discordNotificationPreferences.companyId, linked[0].companyId), eq(discordNotificationPreferences.userId, linked[0].userId)));
+    res.json({ status: "unlinked" });
+  });
+
+  // Board-authenticated disconnect scoped to the caller + company. This is the
+  // browser-facing counterpart to the bridge `/unlink` endpoint: it deactivates
+  // ONLY the current user's Discord link for the given company and disables the
+  // caller's notification preferences, and it does NOT require bridge bearer
+  // credentials. The bridge `/unlink` route above is preserved unchanged for
+  // bridge-only flows.
+  router.post("/integrations/discord/disconnect", async (req, res) => {
+    const userId = await browserUser(req);
+    const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
+    if (!companyId) throw badRequest("companyId is required");
+    await assertCompanyAccessCoded(req, companyId);
+    const now = new Date();
+    await db.update(discordUserLinks).set({ active: false, unlinkedAt: now, updatedAt: now }).where(and(eq(discordUserLinks.companyId, companyId), eq(discordUserLinks.userId, userId), eq(discordUserLinks.active, true)));
+    await db.update(discordNotificationPreferences).set({ enabled: false, updatedAt: now }).where(and(eq(discordNotificationPreferences.companyId, companyId), eq(discordNotificationPreferences.userId, userId)));
     res.json({ status: "unlinked" });
   });
 
