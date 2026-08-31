@@ -102,6 +102,16 @@ secrets:
     file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
   better_auth_secret:
     file: ${BETTER_AUTH_SECRET_FILE:-./secrets/better_auth_secret}
+  # Discord bridge credentials. These are host-managed files ignored by git;
+  # the bridge service consumes them through *_FILE paths, never inline env.
+  discord_bot_token:
+    file: ${DISCORD_BOT_TOKEN_FILE:-./secrets/discord_bot_token}
+  discord_client_id:
+    file: ${DISCORD_CLIENT_ID_FILE:-./secrets/discord_client_id}
+  discord_webhook_secret:
+    file: ${DISCORD_WEBHOOK_SECRET_FILE:-./secrets/discord_webhook_secret}
+  paperclip_discord_bridge_token:
+    file: ${PAPERCLIP_DISCORD_BRIDGE_TOKEN_FILE:-./secrets/paperclip_discord_bridge_token}
   paperclip_artifacts_access_key:
     file: ${PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE:-./secrets/paperclip_artifacts_access_key}
   paperclip_artifacts_secret_key:
