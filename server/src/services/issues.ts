@@ -4484,9 +4484,16 @@ export function countIssueEvidenceFromRows(
   const linkRe = /(?:^|\s)evidence:\s*([^\s]+)/gi;
   const evidenceHeading = body.match(headingRe);
   if (!evidenceHeading) return count;
-  const headingIndex = body.indexOf(evidenceHeading[0]);
+  const headingIndex = evidenceHeading.index ?? -1;
   const searchFrom = headingIndex >= 0 ? headingIndex + evidenceHeading[0].length : 0;
-  for (const match of body.slice(searchFrom).matchAll(linkRe)) {
+  // Only evidence under this heading counts. A subsequent same-level or
+  // higher-level heading begins another dossier section.
+  const remainingBody = body.slice(searchFrom);
+  const nextSectionOffset = remainingBody.search(/^#{1,2}\s+/m);
+  const evidenceSection = nextSectionOffset >= 0
+    ? remainingBody.slice(0, nextSectionOffset)
+    : remainingBody;
+  for (const match of evidenceSection.matchAll(linkRe)) {
     if (match[1] && !/^PENDING\s*(STORAGE|$)/i.test(match[1])) count += 1;
   }
   return count;

@@ -85,6 +85,27 @@ Install the guard. See evidence: https://example.com/spec.pdf
     expect(countIssueEvidenceFromRows(comments, [])).toBe(0);
   });
 
+  it("does not count evidence: links in later dossier sections", () => {
+    const comments = [
+      {
+        id: "c1",
+        body: `## Job order
+Install the guard.
+
+## Evidence
+(no files yet)
+
+## Scope changes
+Reference retained for scope review: evidence: https://example.com/scope-proof.pdf
+
+## Related Teable rows
+evidence: https://example.com/teable-row
+`,
+      },
+    ];
+    expect(countIssueEvidenceFromRows(comments, [])).toBe(0);
+  });
+
   it("does not count evidence from a dossier posted after other comments (contract §1.4: dossier.md must be the first comment)", () => {
     const comments = [
       { id: "c1", body: "just a note, not a dossier" },

@@ -6985,6 +6985,24 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
     expect(denials[0].entityId).toBe(issueId);
   });
 
+  it("refuses done when evidence: links appear only in later dossier sections", async () => {
+    await seedEngineerCard(
+      "## Job order\nInstall the guard.\n\n## Evidence\n(no files stored yet)\n\n## Scope changes\nReference: evidence: https://example.com/scope-proof.pdf\n\n## Related Teable rows\nevidence: https://example.com/teable-row\n",
+    );
+
+    await expect(updateDone("pm-user")).rejects.toMatchObject({
+      status: 422,
+      details: { code: "issue_done_requires_evidence" },
+    });
+
+    const row = await db
+      .select({ status: issues.status })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows: Array<{ status: string }>) => rows[0]);
+    expect(row?.status).toBe("in_progress");
+  });
+
   it("allows done after an attachment is uploaded", async () => {
     await seedEngineerCard(
       "## Job order\nInstall the guard.\n\n## Evidence\n\n## Scope changes\n\n## Related Teable rows\n",
