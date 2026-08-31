@@ -40,6 +40,20 @@ describe("discord bridge config", () => {
     expect(config.paperclip.apiUrl).toBe("https://paperclip.example");
     expect(config.discord.devGuildId).toBeUndefined();
     expect(config.bridge.pollIntervalSeconds).toBe(30);
+    expect(config.bridge.healthPort).toBe(8080);
+  });
+
+  it("honors HEALTH_PORT and DISCORD_DEV_GUILD_ID_FILE", async () => {
+    setRequiredEnv();
+    const directory = await mkdtemp(join(tmpdir(), "paperclip-discord-"));
+    const guildIdFile = join(directory, "dev-guild-id");
+    await writeFile(guildIdFile, "guild-123\n");
+    process.env.HEALTH_PORT = "9090";
+    process.env.DISCORD_DEV_GUILD_ID_FILE = guildIdFile;
+
+    const { config } = await import("./config.js");
+    expect(config.bridge.healthPort).toBe(9090);
+    expect(config.discord.devGuildId).toBe("guild-123");
   });
 
   it("loads all Discord credentials from mounted secret files", async () => {

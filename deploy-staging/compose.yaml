@@ -41,6 +41,8 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: private
       PAPERCLIP_BIND: lan
       PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-http://127.0.0.1:33120}
+      # Issue deep links sent to Discord use this external dashboard origin.
+      PAPERCLIP_DASHBOARD_URL: ${PAPERCLIP_PUBLIC_URL:-http://127.0.0.1:33120}
       PAPERCLIP_ALLOWED_HOSTNAMES: ${PAPERCLIP_ALLOWED_HOSTNAMES:-localhost,127.0.0.1}
       PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
       PAPERCLIP_MIGRATION_PROMPT: never
@@ -68,10 +70,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-paperclip}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       BETTER_AUTH_SECRET_FILE: /run/secrets/better_auth_secret
+      # Bridge-only bearer credential. The server accepts it only on
+      # /api/integrations/discord/* and never exposes it to browsers.
+      PAPERCLIP_DISCORD_BRIDGE_TOKEN_FILE: /run/secrets/paperclip_discord_bridge_token
       HERMES_API_BASE_URL: ${HERMES_API_BASE_URL:-http://host.docker.internal:8642}
     secrets:
       - postgres_password
       - better_auth_secret
+      - paperclip_discord_bridge_token
       - paperclip_artifacts_access_key
       - paperclip_artifacts_secret_key
     volumes:
@@ -95,6 +101,46 @@ services:
     stop_grace_period: 45s
     networks:
       - database
+      - gateway
+
+  discord-bridge:
+    image: ${PAPERCLIP_DISCORD_BRIDGE_IMAGE:-ghcr.io/paperclipai/paperclip-discord-bridge:canary}
+    build:
+      context: ../discord-bridge
+    init: true
+    environment:
+      # The bridge is the Discord transport only; it talks to the staging
+      # server's internal address. Every credential is a mounted secret,
+      # never an inline value.
+      PAPERCLIP_API_URL: http://paperclip:3100
+      PAPERCLIP_API_KEY_FILE: /run/secrets/paperclip_discord_bridge_token
+      DISCORD_BOT_TOKEN_FILE: /run/secrets/discord_bot_token
+      DISCORD_CLIENT_ID_FILE: /run/secrets/discord_client_id
+      DISCORD_WEBHOOK_SECRET_FILE: /run/secrets/discord_webhook_secret
+      # Optional: restrict slash-command registration to one staging guild.
+      # Unset (empty) means global command registration.
+      DISCORD_DEV_GUILD_ID_FILE: ${DISCORD_DEV_GUILD_ID_FILE:-}
+      POLL_INTERVAL_SECONDS: ${DISCORD_POLL_INTERVAL_SECONDS:-30}
+      HEALTH_PORT: "8080"
+    secrets:
+      - paperclip_discord_bridge_token
+      - discord_bot_token
+      - discord_client_id
+      - discord_webhook_secret
+    healthcheck:
+      # Loopback readiness endpoint; healthy only after the Discord gateway
+      # connection is established (503 "starting" until then).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      paperclip:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks:
       - gateway
 
 secrets:
