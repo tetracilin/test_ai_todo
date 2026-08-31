@@ -392,6 +392,9 @@ export const queryKeys = {
   inboxAgentPolicy: {
     mine: (companyId: string) => ["inbox-agent-policy", companyId, "me"] as const,
   },
+  discordIntegration: {
+    settings: (companyId: string) => ["discord-integration", companyId, "settings"] as const,
+  },
   sidebarPreferences: {
     companyOrder: (userId: string) => ["sidebar-preferences", "company-order", userId] as const,
     projectOrder: (companyId: string, userId: string) =>

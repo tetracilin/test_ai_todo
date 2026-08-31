@@ -30,6 +30,10 @@ vi.mock("@/api/assets", () => ({
   assetsApi: mockAssetsApi,
 }));
 
+vi.mock("@/components/DiscordIntegrationSettings", () => ({
+  DiscordIntegrationSettings: () => null,
+}));
+
 vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({
     setBreadcrumbs: mockSetBreadcrumbs,

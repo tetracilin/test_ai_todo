@@ -168,6 +168,30 @@ export function discordIntegrationRoutes(db: Db) {
   // preference semantics while deployments migrate to the approved contract.
   router.put("/integrations/discord/notification-preferences", updatePreferences);
 
+  router.post("/integrations/discord/disconnect", async (req, res) => {
+    const userId = await browserUser(req);
+    const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
+    if (!companyId) throw badRequest("companyId is required");
+    assertCompanyAccess(req, companyId);
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx.update(discordUserLinks)
+        .set({ active: false, unlinkedAt: now, updatedAt: now })
+        .where(and(
+          eq(discordUserLinks.companyId, companyId),
+          eq(discordUserLinks.userId, userId),
+          eq(discordUserLinks.active, true),
+        ));
+      await tx.update(discordNotificationPreferences)
+        .set({ enabled: false, updatedAt: now })
+        .where(and(
+          eq(discordNotificationPreferences.companyId, companyId),
+          eq(discordNotificationPreferences.userId, userId),
+        ));
+    });
+    res.json(await settings(userId, companyId));
+  });
+
   const updateChannelMapping = async (req: Request, res: Response) => {
     const userId = await browserUser(req);
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
