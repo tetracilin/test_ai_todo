@@ -42,8 +42,7 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 function formatChannel(channel: NonNullable<DiscordSettings["channels"]>[number]) {
-  const channelName = channel.name ? `#${channel.name}` : `Channel ${channel.id}`;
-  return channel.guildName ? `${channelName} — ${channel.guildName}` : channelName;
+  return `Channel ${channel.channelId}`;
 }
 
 export function DiscordSettingsPanel({ companyId }: { companyId: string | null }) {
@@ -257,7 +256,7 @@ export function DiscordSettingsPanel({ companyId }: { companyId: string | null }
                         aria-label={`${EVENT_LABELS[preference.eventType]} channel`}
                       >
                         <option value="">Select a mapped channel</option>
-                        {channels.map((channel) => <option key={`${channel.guildId}:${channel.id}`} value={channel.id}>{formatChannel(channel)}</option>)}
+                        {channels.map((channel) => <option key={`${channel.guildId}:${channel.channelId}`} value={channel.channelId}>{formatChannel(channel)}</option>)}
                       </select>
                     </label>
                   ) : null}

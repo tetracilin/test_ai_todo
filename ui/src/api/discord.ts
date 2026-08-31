@@ -22,10 +22,17 @@ export interface DiscordNotificationPreference {
 }
 
 export interface DiscordNotificationChannel {
-  id: string;
   guildId: string;
-  name?: string | null;
-  guildName?: string | null;
+  channelId: string;
+  projectId: string;
+  enabled: boolean;
+  allowTaskCreate: boolean;
+  notificationEvents: DiscordNotificationEvent[];
+}
+
+export interface DiscordGuild {
+  guildId: string;
+  enabled: boolean;
 }
 
 export interface DiscordSettings {
@@ -34,6 +41,7 @@ export interface DiscordSettings {
     discordUserId: string | null;
   };
   preferences: DiscordNotificationPreference[];
+  guilds: DiscordGuild[];
   channels: DiscordNotificationChannel[];
 }
 
@@ -50,5 +58,5 @@ export const discordApi = {
   updatePreferences: (companyId: string, preferences: DiscordNotificationPreference[]) =>
     api.patch<DiscordSettings>("/integrations/discord/preferences", { companyId, preferences }),
   disconnect: (companyId: string) =>
-    api.delete<DiscordSettings>(`/integrations/discord/link?companyId=${encodeURIComponent(companyId)}`),
+    api.post<DiscordSettings>("/integrations/discord/disconnect", { companyId }),
 };

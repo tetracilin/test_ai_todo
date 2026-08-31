@@ -26,7 +26,8 @@ const unlinkedSettings = {
   preferences: [
     { eventType: "issue.created" as const, enabled: false, deliveryMode: "dm" as const, channelId: null },
   ],
-  channels: [{ id: "channel-1", guildId: "guild-1", name: "tasks", guildName: "Paperclip" }],
+  guilds: [{ guildId: "guild-1", enabled: true }],
+  channels: [{ guildId: "guild-1", channelId: "channel-1", projectId: "project-1", enabled: true, allowTaskCreate: true, notificationEvents: ["issue.created" as const] }],
 };
 
 const linkedSettings = {

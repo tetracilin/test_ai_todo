@@ -6,7 +6,8 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 type DiscordSettings = {
   link: { status: "linked" | "unlinked"; discordUserId: string | null };
   preferences: Array<{ eventType: string; enabled: boolean; deliveryMode: "dm" | "channel"; channelId: string | null }>;
-  channels: Array<{ id: string; guildId: string; name: string; guildName: string }>;
+  guilds: Array<{ guildId: string; enabled: boolean }>;
+  channels: Array<{ guildId: string; channelId: string; projectId: string; enabled: boolean; allowTaskCreate: boolean; notificationEvents: string[] }>;
 };
 
 async function createCompany(board: APIRequestContext) {
@@ -20,7 +21,8 @@ function settings(linked = false): DiscordSettings {
   return {
     link: { status: linked ? "linked" : "unlinked", discordUserId: linked ? "discord-user-1" : null },
     preferences: [{ eventType: "issue.created", enabled: false, deliveryMode: "dm", channelId: null }],
-    channels: [{ id: "channel-1", guildId: "guild-1", name: "tasks", guildName: "Paperclip" }],
+    guilds: [{ guildId: "guild-1", enabled: true }],
+    channels: [{ guildId: "guild-1", channelId: "channel-1", projectId: "project-1", enabled: true, allowTaskCreate: true, notificationEvents: ["issue.created"] }],
   };
 }
 
@@ -43,11 +45,14 @@ async function mockDiscordApi(page: Page, current: DiscordSettings) {
       return response({ code: "browser-link-code", expiresAt: "2030-01-01T00:00:00.000Z" }, 201);
     }
     if (request.method() === "PATCH" && url.pathname.endsWith("/preferences")) {
-      const payload = request.postDataJSON() as { preferences: DiscordSettings["preferences"] };
+      const payload = request.postDataJSON() as { companyId: string; preferences: DiscordSettings["preferences"] };
+      expect(payload.companyId).toBeTruthy();
       current.preferences = payload.preferences;
       return response(current);
     }
-    if (request.method() === "DELETE" && url.pathname.endsWith("/link")) {
+    if (request.method() === "POST" && url.pathname.endsWith("/disconnect")) {
+      const payload = request.postDataJSON() as { companyId: string };
+      expect(payload.companyId).toBeTruthy();
       current.link = { status: "unlinked", discordUserId: null };
       current.preferences = current.preferences.map((preference) => ({ ...preference, enabled: false }));
       return response(current);
