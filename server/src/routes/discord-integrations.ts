@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
@@ -17,6 +17,7 @@ import {
   projects,
 } from "@paperclipai/db";
 import { badRequest, forbidden, HttpError } from "../errors.js";
+import { isUniqueViolation } from "../db-errors.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
@@ -285,9 +286,24 @@ export function discordIntegrationRoutes(db: Db) {
     if (!mapping.allowTaskCreate) throw asHttp("task_creation_disabled", 403);
     const link = await db.select().from(discordUserLinks).where(and(eq(discordUserLinks.companyId, mapping.companyId), eq(discordUserLinks.discordUserId, input.discordUserId), eq(discordUserLinks.active, true))).then((rows) => rows[0] ?? null);
     if (!link) throw asHttp("not_linked", 403);
-    const membership = await db.select({ id: companyMemberships.id }).from(companyMemberships).where(and(eq(companyMemberships.companyId, mapping.companyId), eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, link.userId), eq(companyMemberships.status, "active"))).then((rows) => rows[0] ?? null);
+    const membership = await db.select({ id: companyMemberships.id }).from(companyMemberships).where(and(eq(companyMemberships.companyId, mapping.companyId), eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, link.userId), eq(companyMemberships.status, "active"), or(isNull(companyMemberships.membershipRole), ne(companyMemberships.membershipRole, "viewer")))).then((rows) => rows[0] ?? null);
     if (!membership) throw asHttp("project_access_denied", 403);
-    await db.insert(discordInboundRequests).values({ discordInteractionId: input.discordInteractionId, discordUserId: input.discordUserId, guildId: input.guildId, channelId: input.channelId, commandName: input.commandName, companyId: mapping.companyId, status: "processing" });
+    try {
+      await db.insert(discordInboundRequests).values({ discordInteractionId: input.discordInteractionId, discordUserId: input.discordUserId, guildId: input.guildId, channelId: input.channelId, commandName: input.commandName, companyId: mapping.companyId, status: "processing" });
+    } catch (error) {
+      // A second bridge delivery can race after the initial read. Treat an
+      // already-completed interaction as a replay; never leak a database error
+      // or attempt another issue create.
+      if (!isUniqueViolation(error, "discord_inbound_requests_interaction_uq")) throw error;
+      const racedRows = await db.select().from(discordInboundRequests).where(eq(discordInboundRequests.discordInteractionId, input.discordInteractionId));
+      const raced = racedRows[0] ?? null;
+      if (raced?.issueId) {
+        const issueRows = await db.select().from(issues).where(eq(issues.id, raced.issueId));
+        const issue = issueRows[0] ?? null;
+        if (issue) return res.json({ duplicate: true, issue: { id: issue.id, identifier: issue.identifier, title: issue.title, url: issueUrl(issue) } });
+      }
+      throw asHttp("interaction_conflict", 409);
+    }
     try {
       const issue = await issueSvc.create(mapping.companyId, { idempotencyKey: `discord:${input.discordInteractionId}`, allowDuplicate: true, title: input.title, description: input.description ?? null, priority: input.priority === "urgent" ? "high" : input.priority ?? "medium", projectId: mapping.projectId, createdByUserId: link.userId, originKind: "discord", originId: input.discordInteractionId, originFingerprint: input.discordInteractionId } as never);
       const event = await db.insert(integrationEventOutbox).values({ idempotencyKey: `discord:issue.created:${issue.id}`, companyId: mapping.companyId, projectId: mapping.projectId, issueId: issue.id, eventType: "issue.created", origin: "discord", originDiscordChannelId: input.channelId, payload: { issueIdentifier: issue.identifier, title: issue.title, issueUrl: issueUrl(issue) } }).returning().then((rows) => rows[0]!);
