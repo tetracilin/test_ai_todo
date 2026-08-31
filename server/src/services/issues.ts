@@ -4448,6 +4448,144 @@ async function countBlockedInboxIssues(dbOrTx: any, companyId: string, filters?:
   }, 0);
 }
 
+/**
+ * Counts evidence on an engineer card for the Slice-1 done gate (MVP-01,
+ * WP-T3-PMIDE-MVP-001 §1.5). Evidence is whatever proves the ordered work
+ * happened: at least one issue attachment, and/or 'evidence: <ref>' links
+ * recorded under the card's dossier. A dossier is the first issue comment
+ * named 'dossier.md' (agent contract §1.4); its '## Evidence' heading is where
+ * the engineer agent links every stored file. Empty count must keep the card
+ * out of 'done' and refuses the transition.
+ *
+ * Pure extraction from comment/attachment rows — exported for unit testing
+ * without a database.
+ */
+export function countIssueEvidenceFromRows(
+  comments: Array<{ id: string; body: string }>,
+  attachments: Array<{ id: string }>,
+): number {
+  let count = attachments.length;
+
+  // Contract §1.4: the dossier is the FIRST comment on the card. A dossier
+  // posted after other comments is not the card's dossier, so its evidence
+  // links do not count toward the gate — only attachments do.
+  const dossier = comments[0];
+  if (!dossier) return count;
+  const body = typeof dossier.body === "string" ? dossier.body : "";
+  const isDossier = /(?:^|\n)#+\s*dossier(?:\.md)?\s*$/i.test(body)
+    || /(?:^|\n)#+\s*job order\b/i.test(body)
+    || /(?:^|\n)#+\s*Evidence\b/i.test(body);
+  if (!isDossier) return count;
+
+  // Fresh per-call regex instances: matchAll() requires the 'g' flag, and
+  // module-scoped global regexes would keep a mutated `lastIndex` across
+  // tests/requests, silently skipping matches on the next call.
+  const headingRe = /^##\s+Evidence\s*$/im;
+  const linkRe = /(?:^|\s)evidence:\s*([^\s]+)/gi;
+  const evidenceHeading = body.match(headingRe);
+  if (!evidenceHeading) return count;
+  const headingIndex = body.indexOf(evidenceHeading[0]);
+  const searchFrom = headingIndex >= 0 ? headingIndex + evidenceHeading[0].length : 0;
+  for (const match of body.slice(searchFrom).matchAll(linkRe)) {
+    if (match[1] && !/^PENDING\s*(STORAGE|$)/i.test(match[1])) count += 1;
+  }
+  return count;
+}
+
+function countIssueEvidence(dbOrTx: any, companyId: string, issueId: string): Promise<{ count: number }> {
+  return (async () => {
+    const comments = await dbOrTx
+      .select({
+        id: issueComments.id,
+        body: issueComments.body,
+      })
+      .from(issueComments)
+      .where(
+        and(
+          eq(issueComments.companyId, companyId),
+          eq(issueComments.issueId, issueId),
+        ),
+      )
+      .orderBy(asc(issueComments.createdAt), asc(issueComments.id));
+    const attachments = await dbOrTx
+      .select({ id: issueAttachments.id })
+      .from(issueAttachments)
+      .where(and(eq(issueAttachments.companyId, companyId), eq(issueAttachments.issueId, issueId)))
+      .limit(1000);
+    return { comments, attachments };
+  })().then((result: { comments: Array<{ id: string; body: string }>; attachments: Array<{ id: string }> }) => ({
+    count: countIssueEvidenceFromRows(result.comments, result.attachments),
+  }));
+}
+
+/**
+ * MVP-01 done gate: engineer cards may not enter 'done' without evidence.
+ * A card is an engineer card when any of its labels starts with 'tier:' and
+ * its label set is not complete (PM closing a card with no evidence still
+ * gets the refusal, and the engineer agent never transitions itself). This is
+ * the platform half of the gate; the agent-side refusal is
+ * agents/engineer-assistant.md Rule 4. Closing the loop with a comment is
+ * intentionally NOT done here — the refusal is a durable, visible activity
+ * entry (action issue.evidence_gate_denied) so the PM sees why in the card's
+ * activity log.
+ */
+export async function assertEngineerCardDoneGate(
+  dbOrTx: any,
+  logTarget: any,
+  input: {
+    companyId: string;
+    issueId: string;
+    identifier: string | null;
+    labelNames: string[];
+    currentStatus: string;
+    requestedStatus: string;
+    actorAgentId?: string | null;
+    actorUserId?: string | null;
+  },
+) {
+  if (input.requestedStatus !== "done" || input.currentStatus === "done") return;
+  const labelNames = input.labelNames ?? [];
+  const isEngineerCard = labelNames.some((name) => /\btier:/i.test(name));
+  if (!isEngineerCard) return;
+
+  const { count } = await countIssueEvidence(dbOrTx, input.companyId, input.issueId);
+  if (count > 0) return;
+
+  // The denial is written through the non-transactional handle so it survives
+  // the rollback of the refused transition and stays visible in the card's
+  // activity log (Acceptance Criterion 5).
+  await logActivity(logTarget as unknown as Db, {
+    companyId: input.companyId,
+    actorType: input.actorAgentId ? "agent" : input.actorUserId ? "user" : "system",
+    actorId: input.actorAgentId ?? input.actorUserId ?? "issue_service",
+    agentId: input.actorAgentId ?? null,
+    action: "issue.evidence_gate_denied",
+    entityType: "issue",
+    entityId: input.issueId,
+    details: {
+      identifier: input.identifier ?? null,
+      requestedStatus: "done",
+      currentStatus: input.currentStatus,
+      evidenceCount: 0,
+      tierLabels: labelNames.filter((name) => /tier:/i.test(name)),
+      reason: "missing promised deliverable — card has no attachment and its dossier.md has no 'evidence:' link",
+      remediation: "attach the work product (photo, file, measurement, signed form) under the issue, or add an 'evidence:' link under the dossier.md '## Evidence' heading, then retry the done transition",
+      source: "engineer_card_done_gate",
+    },
+  });
+
+  throw unprocessable(
+    "Engineer card cannot be marked done without evidence: no attachment and no 'evidence:' link under the dossier.md '## Evidence' heading",
+    {
+      code: "issue_done_requires_evidence",
+      identifier: input.identifier ?? null,
+      evidenceCount: 0,
+      gatedBy: "engineer_card_done_gate",
+      remediation: "Attach the work product to the card, or add an 'evidence:' link under the dossier.md '## Evidence' heading, then retry the done transition.",
+    },
+  );
+}
+
 export function issueService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
   const treeControlSvc = issueTreeControlService(db);
@@ -7836,6 +7974,23 @@ export function issueService(db: Db) {
           .for("update")
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!receiptExisting) return null;
+        const receiptLabelNames =
+          (await labelMapForIssues(tx, [id]).then((labelRows) => (labelRows.get(id) ?? []).map((label) => label.name)))
+          ?? existing.labels?.map((label: { name: string }) => label.name) ?? [];
+        await assertEngineerCardDoneGate(
+          tx,
+          db,
+          {
+            companyId: receiptExisting.companyId,
+            issueId: receiptExisting.id,
+            identifier: receiptExisting.identifier ?? null,
+            labelNames: receiptLabelNames,
+            currentStatus: receiptExisting.status,
+            requestedStatus: issueData.status ?? receiptExisting.status,
+            actorAgentId,
+            actorUserId,
+          },
+        );
         const [previousLabelsByIssueId, previousRelationSummaries] = await Promise.all([
           nextLabelIds !== undefined
             ? labelMapForIssues(tx, [id])

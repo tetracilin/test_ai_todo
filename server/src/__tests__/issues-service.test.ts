@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import {
   activityLog,
   agents,
+  assets,
   companies,
   createDb,
   documentRevisions,
@@ -14,14 +15,17 @@ import {
   goals,
   heartbeatRuns,
   instanceSettings,
+  issueAttachments,
   issueComments,
   issueInboxArchives,
   issueDocuments,
+  issueLabels,
   issuePlanDecompositions,
   issueReadStates,
   issueRelations,
   issueThreadInteractions,
   issues,
+  labels,
   projectWorkspaces,
   projects,
   workspaceOperations,
@@ -6862,5 +6866,195 @@ describeEmbeddedPostgres("issueService.addComment createdByRunId", () => {
     const comment = await svc.addComment(issueId, "hello from a live run", { runId });
 
     expect(await createdByRunIdFor(comment.id)).toBe(runId);
+  });
+});
+
+describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let svc!: ReturnType<typeof issueService>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let companyId!: string;
+  let agentId!: string;
+  let issueId!: string;
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issues-done-gate-");
+    db = createDb(tempDb.connectionString);
+    svc = issueService(db);
+    await ensureIssueRelationsTable(db);
+  }, 20_000);
+
+  afterEach(async () => {
+    await db.delete(issueComments);
+    await db.delete(issueAttachments);
+    await db.delete(issueLabels);
+    await db.delete(issues);
+    await db.delete(heartbeatRuns);
+    await db.delete(agents);
+    await db.delete(labels);
+    await db.delete(activityLog);
+    await db.delete(companies);
+  });
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  async function seedEngineerCard(commentBody?: string) {
+    companyId = randomUUID();
+    agentId = randomUUID();
+    issueId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Engineer",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const [tierLabel] = await db.insert(labels).values({
+      companyId,
+      name: "tier:open",
+      color: "green",
+    }).returning();
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "[WP-001] Install the conveyor guard",
+      status: "in_progress",
+      priority: "medium",
+      assigneeAgentId: agentId,
+    });
+    await db.insert(issueLabels).values({
+      issueId,
+      labelId: tierLabel.id,
+      companyId,
+    });
+    if (commentBody !== undefined) {
+      await db.insert(issueComments).values({
+        companyId,
+        issueId,
+        authorUserId: "local-board",
+        authorType: "board",
+        body: commentBody,
+      });
+    }
+  }
+
+  const updateDone = (actorUserId: string) =>
+    svc.update(
+      issueId,
+      {
+        status: "done",
+        actorUserId,
+      },
+      db,
+    );
+
+  it("refuses done on an engineer card with no attachment and no evidence link", async () => {
+    await seedEngineerCard(
+      "## Job order\nInstall the guard.\n\n## Evidence\n(no files stored yet)\n\n## Scope changes\n\n## Related Teable rows\n",
+    );
+
+    await expect(updateDone("pm-user")).rejects.toMatchObject({
+      status: 422,
+      details: { code: "issue_done_requires_evidence" },
+    });
+
+    const row = await db
+      .select({ status: issues.status })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows: Array<{ status: string }>) => rows[0]);
+    expect(row?.status).toBe("in_progress");
+
+    const denials = await db
+      .select({ action: activityLog.action, entityId: activityLog.entityId })
+      .from(activityLog)
+      .where(eq(activityLog.action, "issue.evidence_gate_denied"));
+    expect(denials).toHaveLength(1);
+    expect(denials[0].entityId).toBe(issueId);
+  });
+
+  it("allows done after an attachment is uploaded", async () => {
+    await seedEngineerCard(
+      "## Job order\nInstall the guard.\n\n## Evidence\n\n## Scope changes\n\n## Related Teable rows\n",
+    );
+    const assetId = randomUUID();
+    await db.insert(assets).values({
+      id: assetId,
+      companyId,
+      provider: "local_disk",
+      objectKey: `issues/${issueId}/guard-fit.jpg`,
+      contentType: "image/jpeg",
+      byteSize: 4021,
+      sha256: "a".repeat(64),
+      originalFilename: "guard-fit.jpg",
+    });
+    await db.insert(issueAttachments).values({
+      companyId,
+      issueId,
+      assetId,
+    });
+
+    const updated = await updateDone("pm-user");
+
+    expect(updated.status).toBe("done");
+    expect(updated.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("allows done when the dossier Evidence section carries an evidence: link", async () => {
+    await seedEngineerCard(
+      "## Job order\nInstall the guard.\n\n## Evidence\n- 2026-08-31T04:20:00Z — guard-fit.jpg — evidence: t3-evidence/<card-id>/20260831-guard-fit.jpg\n\n## Scope changes\n\n## Related Teable rows\n",
+    );
+
+    const updated = await updateDone("pm-user");
+
+    expect(updated.status).toBe("done");
+    expect(updated.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("does not gate cards without tier labels", async () => {
+    companyId = randomUUID();
+    agentId = randomUUID();
+    issueId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Engineer",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "[WP-001] Install the conveyor guard",
+      status: "in_progress",
+      priority: "medium",
+      assigneeAgentId: agentId,
+    });
+
+    const updated = await updateDone("pm-user");
+
+    expect(updated.status).toBe("done");
   });
 });
