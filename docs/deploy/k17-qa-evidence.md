@@ -6,6 +6,9 @@ All tests were run against the **running staging artifact** at `http://127.0.0.1
 `sha256:275f2aaad4ccc3d2c4bfebfbe13bcadaaf7a18ef6a7fa74df2ab4095bad96125`),
 not from summaries. Independent of K16's account.
 
+> Historical scope: this report records the 2026-08-25 K17 staging acceptance only.
+> It is deployment evidence, not a claim about current runtime state or current dependencies.
+
 ## Verdict
 
 **Zero P0, zero P1.** One P2 (adapter has no timeout on the initial Hermes run-create
@@ -22,9 +25,9 @@ POST). Staging accepted for K18 production cutover (human-gated).
 
 ### 1. Zero Google runtime
 - `node scripts/check-no-google-runtime.mjs` → `MODE: blocking`, `Result: PASS; zero forbidden runtime paths`.
-- `@google/genai` / `firebase` absent from `ui/package.json` deps. Only matches are a
-  defensive redaction regex (`/^AIza[0-9A-Za-z\-_]{20,}$/` in `environment-variables-editor/sensitive.ts`)
-  and a display label (`google: "Google"` in `lib/utils.ts`). No `generativelanguage` references.
+- Legacy client SDK dependencies were absent from `ui/package.json`. Remaining provider-shaped
+  strings were limited to defensive redaction and display-label compatibility code; no legacy
+  model-service endpoint references were present.
 
 ### 2. Hermes run create / success
 - `scripts/k16-trigger-hermes-run.sh` → issue `70ca585a` assigned to hermes_gateway agent

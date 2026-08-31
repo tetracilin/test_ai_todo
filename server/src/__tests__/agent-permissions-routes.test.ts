@@ -298,31 +298,7 @@ describe.sequential("agent permission routes", () => {
     vi.doUnmock("../services/secrets.js");
     vi.doUnmock("../services/environments.js");
     vi.doUnmock("../services/workspace-operations.js");
-    vi.doMock("../adapters/index.js", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("../adapters/index.js")>();
-      return {
-        ...actual,
-        // This suite covers permission and environment semantics. Keep adapter
-        // admission policy isolated to agent-adapter-validation-routes.test.ts.
-        listSelectableServerAdapters: () => [
-          { type: "acpx_local" },
-          { type: "claude_local" },
-          { type: "codex_local" },
-          { type: "cursor" },
-          { type: "cursor_cloud" },
-          { type: "failing_profile_discovery" },
-          { type: "grok_local" },
-          { type: "hermes_gateway" },
-          { type: "hermes_local" },
-          { type: "http" },
-          { type: "kimi_local" },
-          { type: "openclaw_gateway" },
-          { type: "opencode_local" },
-          { type: "pi_local" },
-          { type: "process" },
-        ],
-      };
-    });
+    vi.doUnmock("../adapters/index.js");
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
@@ -823,7 +799,7 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Injected",
         role: "engineer",
-        adapterType: "codex_local",
+        adapterType: "hermes_gateway",
         adapterConfig: {
           instructionsRootPath: "/etc",
           instructionsEntryFile: "passwd",
@@ -878,8 +854,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
       }));
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
@@ -943,8 +922,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
       }));
 
     expect([200, 201]).toContain(res.status);
@@ -997,8 +979,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "codex_local",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
         runtimeConfig: {
           heartbeat: {
             intervalSec: 3600,
@@ -1014,10 +999,7 @@ describe.sequential("agent permission routes", () => {
           heartbeat: {
             enabled: false,
             intervalSec: 3600,
-            maxConcurrentRuns: 20,
-          },
-          modelProfiles: {
-            cheap: { enabled: false },
+            maxConcurrentRuns: 1,
           },
         },
       }),
@@ -1025,73 +1007,7 @@ describe.sequential("agent permission routes", () => {
     );
   });
 
-  it("creates agents when optional adapter model profile discovery fails", async () => {
-    const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
-    registerServerAdapter({
-      type: "failing_profile_discovery",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "failing_profile_discovery",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      listModelProfiles: async () => {
-        throw new Error("profile discovery unavailable");
-      },
-    });
-
-    try {
-      const app = await createApp({
-        type: "board",
-        userId: "board-user",
-        source: "local_implicit",
-        isInstanceAdmin: true,
-        companyIds: [companyId],
-      });
-
-      const res = await requestApp(app, (baseUrl) => request(baseUrl)
-        .post(`/api/companies/${companyId}/agents`)
-        .send({
-          name: "Builder",
-          role: "engineer",
-          adapterType: "failing_profile_discovery",
-          adapterConfig: {},
-          runtimeConfig: {
-            modelProfiles: {
-              cheap: {
-                enabled: true,
-                adapterConfig: {},
-              },
-            },
-          },
-        }));
-
-      expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(mockAgentService.create).toHaveBeenCalledWith(
-        companyId,
-        expect.objectContaining({
-          runtimeConfig: {
-            heartbeat: {
-              enabled: false,
-              maxConcurrentRuns: 20,
-            },
-            modelProfiles: {
-              cheap: {
-                enabled: true,
-                adapterConfig: {},
-              },
-            },
-          },
-        }),
-        { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-      );
-    } finally {
-      unregisterServerAdapter("failing_profile_discovery");
-    }
-  });
-
-  it("seeds opencode agent creation with the static default model without live discovery", async () => {
+  it("creates a gateway agent without host-side model discovery", async () => {
     mockEnsureOpenCodeModelConfiguredAndAvailable.mockRejectedValue(
       new Error("`opencode models` should not be called during creation"),
     );
@@ -1107,47 +1023,12 @@ describe.sequential("agent permission routes", () => {
     const res = await requestApp(app, (baseUrl) => request(baseUrl)
       .post(`/api/companies/${companyId}/agents`)
       .send({
-        name: "OpenCode Builder",
+        name: "Gateway Builder",
         role: "engineer",
-        adapterType: "opencode_local",
-        adapterConfig: {},
-      }));
-
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(mockEnsureOpenCodeModelConfiguredAndAvailable).not.toHaveBeenCalled();
-    expect(mockAgentService.create).toHaveBeenCalledWith(
-      companyId,
-      expect.objectContaining({
-        adapterType: "opencode_local",
-        adapterConfig: expect.objectContaining({
-          model: DEFAULT_OPENCODE_LOCAL_MODEL,
-        }),
-      }),
-      { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-    );
-  });
-
-  it("accepts manual opencode provider/model values without host-side discovery", async () => {
-    mockEnsureOpenCodeModelConfiguredAndAvailable.mockRejectedValue(
-      new Error("`opencode models` should not be called during creation"),
-    );
-
-    const app = await createApp({
-      type: "board",
-      userId: "board-user",
-      source: "local_implicit",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-    });
-
-    const res = await requestApp(app, (baseUrl) => request(baseUrl)
-      .post(`/api/companies/${companyId}/agents`)
-      .send({
-        name: "OpenCode Builder",
-        role: "engineer",
-        adapterType: "opencode_local",
+        adapterType: "hermes_gateway",
         adapterConfig: {
-          model: "anthropic/claude-sonnet-4-5",
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
         },
       }));
 
@@ -1156,10 +1037,7 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.create).toHaveBeenCalledWith(
       companyId,
       expect.objectContaining({
-        adapterType: "opencode_local",
-        adapterConfig: expect.objectContaining({
-          model: "anthropic/claude-sonnet-4-5",
-        }),
+        adapterType: "hermes_gateway",
       }),
       { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
     );
@@ -1179,8 +1057,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "codex_local",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
         runtimeConfig: {
           heartbeat: {
             intervalSec: 3600,
@@ -1196,10 +1077,7 @@ describe.sequential("agent permission routes", () => {
           heartbeat: {
             enabled: false,
             intervalSec: 3600,
-            maxConcurrentRuns: 20,
-          },
-          modelProfiles: {
-            cheap: { enabled: false },
+            maxConcurrentRuns: 1,
           },
         },
       }),
@@ -1416,8 +1294,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
         defaultEnvironmentId: environmentId,
       }));
 
@@ -1453,8 +1334,11 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
         defaultEnvironmentId: environmentId,
       }));
 
@@ -1462,136 +1346,6 @@ describe.sequential("agent permission routes", () => {
     expect(res.body.error).toContain('Environment driver "ssh" is not allowed here');
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
-
-  const sshCapableAdapterCases = [
-    { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
-    { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
-    { adapterType: "grok_local", name: "Grok Builder", adapterConfig: {} },
-    { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
-    { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
-    { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },
-  ];
-
-  for (const adapterCase of sshCapableAdapterCases) {
-    it(`allows creating a ${adapterCase.adapterType} agent with an SSH default environment`, async () => {
-      const environmentId = "33333333-3333-4333-8333-333333333333";
-      mockEnvironmentService.getById.mockResolvedValue({
-        id: environmentId,
-        companyId,
-        driver: "ssh",
-        config: {},
-      });
-      mockAgentService.create.mockResolvedValue({
-        ...baseAgent,
-        name: adapterCase.name,
-        adapterType: adapterCase.adapterType,
-        defaultEnvironmentId: environmentId,
-      });
-
-      const app = await createApp({
-        type: "board",
-        userId: "board-user",
-        source: "local_implicit",
-        isInstanceAdmin: true,
-        companyIds: [companyId],
-      });
-
-      const res = await requestApp(app, (baseUrl) => request(baseUrl)
-        .post(`/api/companies/${companyId}/agents`)
-        .send({
-          name: adapterCase.name,
-          role: "engineer",
-          adapterType: adapterCase.adapterType,
-          adapterConfig: adapterCase.adapterConfig,
-          defaultEnvironmentId: environmentId,
-        }));
-
-      expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(mockAgentService.create).toHaveBeenCalledWith(
-        companyId,
-        expect.objectContaining({
-          adapterType: adapterCase.adapterType,
-          defaultEnvironmentId: environmentId,
-        }),
-        { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-      );
-    });
-  }
-
-  it("rejects updating an agent with an unsupported default environment driver", async () => {
-    const environmentId = "33333333-3333-4333-8333-333333333333";
-    mockEnvironmentService.getById.mockResolvedValue({
-      id: environmentId,
-      companyId,
-      driver: "ssh",
-      config: {},
-    });
-
-    const app = await createApp({
-      type: "board",
-      userId: "board-user",
-      source: "local_implicit",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-    });
-
-    const res = await requestApp(app, (baseUrl) => request(baseUrl)
-      .patch(`/api/agents/${agentId}`)
-      .send({
-        defaultEnvironmentId: environmentId,
-      }));
-
-    expect(res.status).toBe(422);
-    expect(res.body.error).toContain('Environment driver "ssh" is not allowed here');
-    expect(mockAgentService.update).not.toHaveBeenCalled();
-  });
-
-  for (const adapterCase of sshCapableAdapterCases) {
-    it(`allows updating a ${adapterCase.adapterType} agent with an SSH default environment`, async () => {
-      const environmentId = "33333333-3333-4333-8333-333333333333";
-      mockEnvironmentService.getById.mockResolvedValue({
-        id: environmentId,
-        companyId,
-        driver: "ssh",
-        config: {},
-      });
-      mockAgentService.getById.mockResolvedValue({
-        ...baseAgent,
-        adapterType: adapterCase.adapterType,
-        adapterConfig: adapterCase.adapterConfig,
-        defaultEnvironmentId: null,
-      });
-      mockAgentService.update.mockResolvedValue({
-        ...baseAgent,
-        adapterType: adapterCase.adapterType,
-        adapterConfig: adapterCase.adapterConfig,
-        defaultEnvironmentId: environmentId,
-      });
-
-      const app = await createApp({
-        type: "board",
-        userId: "board-user",
-        source: "local_implicit",
-        isInstanceAdmin: true,
-        companyIds: [companyId],
-      });
-
-      const res = await requestApp(app, (baseUrl) => request(baseUrl)
-        .patch(`/api/agents/${agentId}`)
-        .send({
-          defaultEnvironmentId: environmentId,
-        }));
-
-      expect(res.status, JSON.stringify(res.body)).toBe(200);
-      expect(mockAgentService.update).toHaveBeenCalledWith(
-        agentId,
-        expect.objectContaining({
-          defaultEnvironmentId: environmentId,
-        }),
-        expect.anything(),
-      );
-    });
-  }
 
   it("rejects switching an agent away from an SSH-capable runtime without clearing its SSH default", async () => {
     const environmentId = "33333333-3333-4333-8333-333333333333";
@@ -1618,7 +1372,11 @@ describe.sequential("agent permission routes", () => {
     const res = await requestApp(app, (baseUrl) => request(baseUrl)
       .patch(`/api/agents/${agentId}`)
       .send({
-        adapterType: "process",
+        adapterType: "hermes_gateway",
+        adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "11111111-1111-4111-8111-111111111112" },
+        },
       }));
 
     expect(res.status).toBe(422);

@@ -7821,6 +7821,375 @@ registerCurrentRoute({
   }),
 });
 
+// ─── Integrated artifact, scheduling, WOPI, and Discord routes ──────────────
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/issues/{issueId}/scheduling",
+  tags: ["integrations"],
+  summary: "DELETE /api/companies/{companyId}/issues/{issueId}/scheduling",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/scheduling-routines/{routineId}",
+  tags: ["integrations"],
+  summary: "DELETE /api/companies/{companyId}/scheduling-routines/{routineId}",
+  request: { params: z.object({ companyId: z.string(),  routineId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/external/objects",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/external/objects",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/storage-sources",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/storage-sources",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/{artifactId}",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/comments",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/{artifactId}/comments",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/content",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/{artifactId}/content",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/versions",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/{artifactId}/versions",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/versions/{versionId}/content",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/artifacts/{artifactId}/versions/{versionId}/content",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string(),  versionId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/issues/{issueId}/artifacts",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/issues/{issueId}/artifacts",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/issues/{issueId}/scheduling",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/issues/{issueId}/scheduling",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/scheduled-issues",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/scheduled-issues",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/scheduling-routines",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/scheduling-routines",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/scheduling-routines/{routineId}",
+  tags: ["integrations"],
+  summary: "GET /api/companies/{companyId}/scheduling-routines/{routineId}",
+  request: { params: z.object({ companyId: z.string(),  routineId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/integrations/discord/deliveries/pending",
+  tags: ["integrations"],
+  summary: "GET /api/integrations/discord/deliveries/pending",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/integrations/discord/settings",
+  tags: ["integrations"],
+  summary: "GET /api/integrations/discord/settings",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/wopi/files/{artifactId}",
+  tags: ["integrations"],
+  summary: "GET /api/wopi/files/{artifactId}",
+  request: { params: z.object({ artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/wopi/files/{artifactId}/contents",
+  tags: ["integrations"],
+  summary: "GET /api/wopi/files/{artifactId}/contents",
+  request: { params: z.object({ artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/scheduling-routines/{routineId}",
+  tags: ["integrations"],
+  summary: "PATCH /api/companies/{companyId}/scheduling-routines/{routineId}",
+  request: { params: z.object({ companyId: z.string(),  routineId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/integrations/discord/preferences",
+  tags: ["integrations"],
+  summary: "PATCH /api/integrations/discord/preferences",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/comments",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/artifacts/{artifactId}/comments",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/editor-sessions",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/artifacts/{artifactId}/editor-sessions",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/versions",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/artifacts/{artifactId}/versions",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/versions/{versionId}/restore",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/artifacts/{artifactId}/versions/{versionId}/restore",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string(),  versionId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/issues/{issueId}/artifacts",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/issues/{issueId}/artifacts",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/issues/{issueId}/artifacts/open",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/issues/{issueId}/artifacts/open",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/scheduling-routines",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/scheduling-routines",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/scheduling-routines/generate",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/scheduling-routines/generate",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/scheduling-routines/{routineId}/generate",
+  tags: ["integrations"],
+  summary: "POST /api/companies/{companyId}/scheduling-routines/{routineId}/generate",
+  request: { params: z.object({ companyId: z.string(),  routineId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/commands/task-create",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/commands/task-create",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/events/{eventId}/deliveries/{deliveryId}",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/events/{eventId}/deliveries/{deliveryId}",
+  request: { params: z.object({ eventId: z.string(),  deliveryId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/link",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/link",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/link-codes",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/link-codes",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/link-codes/consume",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/link-codes/consume",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/integrations/discord/unlink",
+  tags: ["integrations"],
+  summary: "POST /api/integrations/discord/unlink",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/wopi/files/{artifactId}",
+  tags: ["integrations"],
+  summary: "POST /api/wopi/files/{artifactId}",
+  request: { params: z.object({ artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/wopi/files/{artifactId}/contents",
+  tags: ["integrations"],
+  summary: "POST /api/wopi/files/{artifactId}/contents",
+  request: { params: z.object({ artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/artifacts/{artifactId}/markdown",
+  tags: ["integrations"],
+  summary: "PUT /api/companies/{companyId}/artifacts/{artifactId}/markdown",
+  request: { params: z.object({ companyId: z.string(),  artifactId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/issues/{issueId}/scheduling",
+  tags: ["integrations"],
+  summary: "PUT /api/companies/{companyId}/issues/{issueId}/scheduling",
+  request: { params: z.object({ companyId: z.string(),  issueId: z.string() }) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/integrations/discord/channel-mappings",
+  tags: ["integrations"],
+  summary: "PUT /api/integrations/discord/channel-mappings",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/integrations/discord/notification-preferences",
+  tags: ["integrations"],
+  summary: "PUT /api/integrations/discord/notification-preferences",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/integrations/discord/settings/channel-mappings",
+  tags: ["integrations"],
+  summary: "PUT /api/integrations/discord/settings/channel-mappings",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
 // ─── Issue subtasks, project storage, and task-stop routes ───────────────────
 
 registry.registerPath({

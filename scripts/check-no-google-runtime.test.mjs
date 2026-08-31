@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -129,4 +129,14 @@ test("current repository has no forbidden runtime paths", () => {
   assert.ok(!forbiddenPaths.has("packages/google-sheets-mcp-server/package.json"));
   assert.ok(!forbiddenPaths.has("docker/agent-runtime/Dockerfile.gemini"));
   assert.ok(result.report.allowed.some((hit) => hit.path.startsWith("releases/")));
+});
+
+test("K17 acceptance evidence remains active deployment guidance", () => {
+  const repoRoot = path.resolve(import.meta.dirname, "..");
+  const activePath = "docs/deploy/k17-qa-evidence.md";
+  assert.equal(existsSync(path.join(repoRoot, activePath)), true);
+
+  const result = scanRepository({ repoRoot, trackedPaths: [activePath] });
+  assert.deepEqual(result.forbidden, []);
+  assert.deepEqual(result.allowed, []);
 });
