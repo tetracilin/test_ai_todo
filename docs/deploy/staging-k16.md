@@ -32,6 +32,12 @@ cd deploy-staging
 install -d -m 0700 secrets backups
 openssl rand -hex 32 > secrets/postgres_password
 openssl rand -hex 32 > secrets/better_auth_secret
+# Provision Discord values from the operator secret manager; never generate,
+# print, or commit them from this repository.
+# secrets/discord_bot_token
+# secrets/discord_client_id
+# secrets/discord_webhook_secret
+# secrets/paperclip_discord_bridge_token
 chmod 0600 secrets/*
 # 2. .env (gitignored) — see .env.example for names
 # 3. seed data volume from live backup (see below)
@@ -121,3 +127,18 @@ docker exec <staging-paperclip> curl --fail --silent http://host.docker.internal
 
 `docker compose -f deploy-staging/compose.yaml down` (keep volumes); live
 Paperclip is untouched and keeps serving 3100. Never `down -v` during recovery.
+
+## Discord bridge secrets
+
+Discord bridge credentials remain external to git. Start from
+`deploy-staging/.env.example`, then place values supplied by the Discord Developer
+Portal and the Paperclip operator credential store in the four gitignored files named
+there. The Compose definitions declare those files as Docker secrets; the Discord bridge
+service receives only `DISCORD_BOT_TOKEN_FILE`, `DISCORD_CLIENT_ID_FILE`,
+`DISCORD_WEBHOOK_SECRET_FILE`, and `PAPERCLIP_API_KEY_FILE` paths when enabled by its
+deployment lane.
+
+Before bringing up a staging bridge service, verify each file exists, has mode `0600`,
+and is owned by the deployment operator. Do not put values in `deploy-staging/.env`, a
+Compose `environment` value, logs, CI output, or shell history. The bridge service and
+healthcheck are defined by the Discord bridge deployment lane.

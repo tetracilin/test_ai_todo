@@ -402,10 +402,14 @@ The server never calls Discord; the bridge never decides authorization or routin
 
 ## 8. Security constraints
 
-- **Secret handling.** `DISCORD_BOT_TOKEN` and `PAPERCLIP_DISCORD_BRIDGE_TOKEN` /
+- **Secret handling.** `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`,
+  `DISCORD_WEBHOOK_SECRET`, and `PAPERCLIP_DISCORD_BRIDGE_TOKEN` /
   `PAPERCLIP_API_KEY` live only in their process secret stores. None are stored in the
-  DB, returned by any API, sent to the frontend, or committed. Link codes are stored only
-  as SHA-256 hashes; the plaintext is returned exactly once at issuance.
+  DB, returned by any API, sent to the frontend, or committed. Staging Compose mounts
+  external secret files and exposes only the matching `*_FILE` paths to the bridge; see
+  `deploy-staging/.env.example` and `discord-bridge/.env.example`. Direct env values are
+  for local development only. Link codes are stored only as SHA-256 hashes; the plaintext
+  is returned exactly once at issuance.
 - **Bridge authentication.** Bridge endpoints require a bearer token compared in
   constant time (`timingSafeEqual`, length-checked). If `PAPERCLIP_DISCORD_BRIDGE_TOKEN`
   is unset the bridge surface is disabled (`401 Discord bridge is not configured`). The
