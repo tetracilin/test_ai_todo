@@ -1,0 +1,148 @@
+name: Release Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: "9.15.4"
+  NODE_VERSION: "24"
+
+jobs:
+  static:
+    name: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare plugin SDK build dependencies
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Reject git push in adapter/runtime code
+        run: pnpm check:no-git-push
+
+      - name: Enforce forbidden runtime gate
+        run: pnpm check:no-google-runtime
+
+      - name: Test forbidden runtime inventory
+        run: pnpm test:check-no-google-runtime
+
+      - name: Enforce design token gates
+        run: pnpm check:token-gates
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare plugin SDK build dependencies
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+
+      - name: Run full unit suite
+        run: pnpm exec vitest run --exclude '**/dist/**' --pool=forks --maxWorkers=2
+
+  build-and-e2e:
+    name: build-and-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Scan client bundle
+        run: pnpm scan:client-bundle
+
+      - name: Test client bundle scanner
+        run: pnpm test:scan-client-bundle
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify client network guard
+        run: pnpm test:e2e:no-google-network
+
+      - name: Run browser E2E suite
+        env:
+          PAPERCLIP_E2E_SKIP_LLM: "true"
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-gates-playwright-report-${{ github.run_id }}
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          retention-days: 14
+          if-no-files-found: warn
