@@ -49,6 +49,15 @@ const SENSITIVE_KEYS = new Set<string>([
   // credential carried as a query parameter, so it must never reach a log line
   // even though the exchange itself answers 302.
   "ticket",
+  // The Discord link code and its stored hash. The link code is a short-lived,
+  // single-use bearer credential in the /integrations/discord/link[-codes]
+  // consume request body; a 4xx on consume (expired/used/already-linked) would
+  // otherwise copy it verbatim into the log line via logger.ts customProps.
+  // Mirrors the existing OAuth/OTP-style credential keys above. (`code` is
+  // scoped in with the OAuth `authorization_code` family already listed.)
+  "code",
+  "codehash",
+  "code_hash",
 ]);
 
 const MAX_DEPTH = 6;

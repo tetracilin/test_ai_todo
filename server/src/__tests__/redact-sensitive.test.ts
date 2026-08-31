@@ -39,6 +39,18 @@ describe("redactSensitive", () => {
     expect(out.limit).toBe(20);
   });
 
+  it("redacts a Discord link `code` so a failed consume does not log the credential", () => {
+    const out = redactSensitive({
+      code: "9d2b0f1a-single-use-link-code",
+      discordUserId: "123456789012345678",
+      guildId: "987654321098765432",
+    }) as Record<string, unknown>;
+
+    expect(out.code).toBe("[REDACTED]");
+    expect(out.discordUserId).toBe("123456789012345678");
+    expect(out.guildId).toBe("987654321098765432");
+  });
+
   it("strips secret-bearing query and fragment values from source URLs", () => {
     const out = redactSensitive({
       source: "https://github.com/acme/private-skill?token=secret#token=secret",
