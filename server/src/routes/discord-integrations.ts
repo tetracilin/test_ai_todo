@@ -68,6 +68,26 @@ const acknowledgementSchema = z.object({
   retryAfterSeconds: z.number().finite().min(0).max(86_400).optional(),
 }).strict();
 const DISCORD_DELIVERY_MAX_ATTEMPTS = 8;
+const LINK_CODE_RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
+const TASK_CREATE_GUILD_RATE_LIMIT = { max: 60, windowMs: 60 * 1000 };
+const TASK_CREATE_INTERACTION_RATE_LIMIT = { max: 3, windowMs: 60 * 1000 };
+
+function createSlidingWindowRateLimiter() {
+  const attempts = new Map<string, number[]>();
+
+  return (key: string, limit: { max: number; windowMs: number }) => {
+    const now = Date.now();
+    const windowStart = now - limit.windowMs;
+    const active = (attempts.get(key) ?? []).filter((attemptedAt) => attemptedAt > windowStart);
+    if (active.length >= limit.max) {
+      attempts.set(key, active);
+      return false;
+    }
+    active.push(now);
+    attempts.set(key, active);
+    return true;
+  };
+}
 
 function codeHash(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -97,6 +117,7 @@ function issueUrl(issue: { id: string; identifier: string | null }) {
 export function discordIntegrationRoutes(db: Db) {
   const router = Router();
   const issueSvc = issueService(db);
+  const allowRequest = createSlidingWindowRateLimiter();
 
 
   async function browserUser(req: { actor: { type: string; userId?: string } }) {
@@ -153,6 +174,7 @@ export function discordIntegrationRoutes(db: Db) {
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
     if (!companyId) throw badRequest("companyId is required");
     assertCompanyAccessCoded(req, companyId);
+    if (!allowRequest(`link-code:${userId}`, LINK_CODE_RATE_LIMIT)) throw asHttp("link_code_rate_limited", 429);
     const code = randomBytes(24).toString("base64url");
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await db.insert(discordLinkCodes).values({ companyId, userId, codeHash: codeHash(code), expiresAt });
@@ -257,10 +279,22 @@ export function discordIntegrationRoutes(db: Db) {
 
   router.post("/integrations/discord/unlink", async (req, res) => {
     assertBridge(req);
-    const input = z.object({ discordUserId: z.string().trim().min(1).max(128) }).strict().parse(req.body);
+    const input = z.object({
+      companyId: z.string().uuid(),
+      discordUserId: z.string().trim().min(1).max(128),
+    }).strict().parse(req.body);
     const now = new Date();
-    const linked = await db.update(discordUserLinks).set({ active: false, unlinkedAt: now, updatedAt: now }).where(and(eq(discordUserLinks.discordUserId, input.discordUserId), eq(discordUserLinks.active, true))).returning();
-    if (linked[0]) await db.update(discordNotificationPreferences).set({ enabled: false, updatedAt: now }).where(and(eq(discordNotificationPreferences.companyId, linked[0].companyId), eq(discordNotificationPreferences.userId, linked[0].userId)));
+    const linked = await db.update(discordUserLinks).set({ active: false, unlinkedAt: now, updatedAt: now }).where(and(
+      eq(discordUserLinks.companyId, input.companyId),
+      eq(discordUserLinks.discordUserId, input.discordUserId),
+      eq(discordUserLinks.active, true),
+    )).returning();
+    for (const link of linked) {
+      await db.update(discordNotificationPreferences).set({ enabled: false, updatedAt: now }).where(and(
+        eq(discordNotificationPreferences.companyId, link.companyId),
+        eq(discordNotificationPreferences.userId, link.userId),
+      ));
+    }
     res.json({ status: "unlinked" });
   });
 
@@ -284,6 +318,11 @@ export function discordIntegrationRoutes(db: Db) {
   router.post("/integrations/discord/commands/task-create", async (req, res) => {
     assertBridge(req);
     const input = bridgeTaskSchema.parse(req.body);
+    const guildKey = input.guildId ?? "direct-message";
+    if (!allowRequest(`task-create:guild:${guildKey}`, TASK_CREATE_GUILD_RATE_LIMIT)
+      || !allowRequest(`task-create:interaction:${guildKey}:${input.discordInteractionId}`, TASK_CREATE_INTERACTION_RATE_LIMIT)) {
+      throw asHttp("task_create_rate_limited", 429);
+    }
     const existing = await db.select().from(discordInboundRequests).where(eq(discordInboundRequests.discordInteractionId, input.discordInteractionId)).then((rows) => rows[0] ?? null);
     if (existing?.issueId) {
       const issue = await db.select().from(issues).where(eq(issues.id, existing.issueId)).then((rows) => rows[0] ?? null);

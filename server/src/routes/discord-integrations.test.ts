@@ -43,7 +43,11 @@ function fakeDb({ selectRows, insertError }: FakeDbOptions) {
       return { returning: vi.fn(async () => [{ id: "event-1" }]) };
     }),
   }));
-  const update = vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => []) })) }));
+  const update = vi.fn(() => ({
+    set: vi.fn(() => ({
+      where: vi.fn(() => Object.assign(Promise.resolve([]), { returning: vi.fn(async () => []) })),
+    })),
+  }));
   const select = vi.fn(() => {
     const rows = selectRows.shift() ?? [];
     const query = {
@@ -65,6 +69,10 @@ async function buildApp(db: ReturnType<typeof fakeDb>) {
   ]);
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = { type: "board", userId: "user-1", companyIds: [COMPANY_ID], isInstanceAdmin: true, source: "session" };
+    next();
+  });
   app.use("/api", discordIntegrationRoutes(db as never));
   app.use(errorHandler);
   return app;
@@ -187,5 +195,49 @@ describe("POST /integrations/discord/commands/task-create", () => {
     await bridgePost(app).send(taskRequest).expect(500);
 
     expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("rate limits repeated task creation for one Discord interaction", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await bridgePost(app).send({ ...taskRequest, discordInteractionId: "rate-limited-interaction" }).expect(403);
+    }
+    const response = await bridgePost(app).send({ ...taskRequest, discordInteractionId: "rate-limited-interaction" }).expect(429);
+
+    expect(response.body.code).toBe("task_create_rate_limited");
+  });
+});
+
+describe("Discord integration abuse and tenant boundaries", () => {
+  it("rate limits link-code minting per board user", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await request(app).post("/api/integrations/discord/link-codes").send({ companyId: COMPANY_ID }).expect(201);
+    }
+    const response = await request(app).post("/api/integrations/discord/link-codes").send({ companyId: COMPANY_ID }).expect(429);
+
+    expect(response.body.code).toBe("link_code_rate_limited");
+  });
+
+  it("requires companyId when bridge unlinks an account", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await request(app)
+      .post("/api/integrations/discord/unlink")
+      .set("Authorization", `Bearer ${bridgeToken}`)
+      .send({ discordUserId: "discord-user-1" })
+      .expect(400);
+  });
+
+  it("accepts a company-scoped bridge unlink", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await request(app)
+      .post("/api/integrations/discord/unlink")
+      .set("Authorization", `Bearer ${bridgeToken}`)
+      .send({ companyId: COMPANY_ID, discordUserId: "discord-user-1" })
+      .expect(200, { status: "unlinked" });
   });
 });
