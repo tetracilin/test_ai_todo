@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare plugin SDK build dependencies
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+
       - name: Typecheck
         run: pnpm -r typecheck
 
@@ -83,6 +86,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare plugin SDK build dependencies
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
 
       - name: Run full unit suite
         run: pnpm exec vitest run --exclude '**/dist/**' --pool=forks --maxWorkers=2
