@@ -6876,6 +6876,7 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
   let companyId!: string;
   let agentId!: string;
   let issueId!: string;
+  let tierLabelId!: string;
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issues-done-gate-");
@@ -6900,7 +6901,7 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
     await tempDb?.cleanup();
   });
 
-  async function seedEngineerCard(commentBody?: string) {
+  async function seedEngineerCard(commentBody?: string, includeTierLabel = true) {
     companyId = randomUUID();
     agentId = randomUUID();
     issueId = randomUUID();
@@ -6926,6 +6927,7 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
       name: "tier:open",
       color: "green",
     }).returning();
+    tierLabelId = tierLabel.id;
     await db.insert(issues).values({
       id: issueId,
       companyId,
@@ -6934,11 +6936,13 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
       priority: "medium",
       assigneeAgentId: agentId,
     });
-    await db.insert(issueLabels).values({
-      issueId,
-      labelId: tierLabel.id,
-      companyId,
-    });
+    if (includeTierLabel) {
+      await db.insert(issueLabels).values({
+        issueId,
+        labelId: tierLabel.id,
+        companyId,
+      });
+    }
     if (commentBody !== undefined) {
       await db.insert(issueComments).values({
         companyId,
@@ -6983,6 +6987,29 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
       .where(eq(activityLog.action, "issue.evidence_gate_denied"));
     expect(denials).toHaveLength(1);
     expect(denials[0].entityId).toBe(issueId);
+  });
+
+  it("refuses a simultaneous tier-label addition and done transition without evidence", async () => {
+    await seedEngineerCard(
+      "## Job order\nInstall the guard.\n\n## Evidence\n(no files stored yet)\n",
+      false,
+    );
+
+    await expect(svc.update(
+      issueId,
+      { status: "done", labelIds: [tierLabelId], actorUserId: "pm-user" },
+      db,
+    )).rejects.toMatchObject({
+      status: 422,
+      details: { code: "issue_done_requires_evidence" },
+    });
+
+    const row = await db
+      .select({ status: issues.status })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows: Array<{ status: string }>) => rows[0]);
+    expect(row?.status).toBe("in_progress");
   });
 
   it("refuses done when evidence: links appear only in later dossier sections", async () => {

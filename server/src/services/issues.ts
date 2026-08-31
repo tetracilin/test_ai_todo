@@ -5102,15 +5102,21 @@ export function issueService(db: Db) {
     return workspace;
   }
 
-  async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
-    if (labelIds.length === 0) return;
+  async function listValidatedLabels(companyId: string, labelIds: string[], dbOrTx: any = db) {
+    const deduped = [...new Set(labelIds)];
+    if (deduped.length === 0) return [];
     const existing = await dbOrTx
-      .select({ id: labels.id })
+      .select({ id: labels.id, name: labels.name })
       .from(labels)
-      .where(and(eq(labels.companyId, companyId), inArray(labels.id, labelIds)));
-    if (existing.length !== new Set(labelIds).size) {
+      .where(and(eq(labels.companyId, companyId), inArray(labels.id, deduped)));
+    if (existing.length !== deduped.length) {
       throw unprocessable("One or more labels are invalid for this company");
     }
+    return existing;
+  }
+
+  async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
+    await listValidatedLabels(companyId, labelIds, dbOrTx);
   }
 
   async function syncIssueLabels(
@@ -7981,9 +7987,13 @@ export function issueService(db: Db) {
           .for("update")
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!receiptExisting) return null;
-        const receiptLabelNames =
-          (await labelMapForIssues(tx, [id]).then((labelRows) => (labelRows.get(id) ?? []).map((label) => label.name)))
-          ?? existing.labels?.map((label: { name: string }) => label.name) ?? [];
+        // Use labels submitted by this PATCH when present. Gating against only
+        // stored labels lets one request add `tier:` and set `done` together
+        // without evidence. Resolve submitted labels under this row lock.
+        const receiptLabels = nextLabelIds !== undefined
+          ? await listValidatedLabels(receiptExisting.companyId, nextLabelIds, tx)
+          : (await labelMapForIssues(tx, [id])).get(id) ?? [];
+        const receiptLabelNames = receiptLabels.map((label: { name: string }) => label.name);
         await assertEngineerCardDoneGate(
           tx,
           db,
