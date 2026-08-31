@@ -27,6 +27,7 @@ export const DISCORD_NOTIFICATION_EVENTS = [
   "issue.assignee_changed",
   "issue.priority_changed",
   "issue.comment_created",
+  "issue.mentioned",
   "issue.blocked",
   "issue.unblocked",
   "issue.completed",
@@ -66,6 +67,7 @@ const acknowledgementSchema = z.object({
   errorCode: z.string().trim().min(1).max(80).optional(),
   retryAfterSeconds: z.number().finite().min(0).max(86_400).optional(),
 }).strict();
+const DISCORD_DELIVERY_MAX_ATTEMPTS = 8;
 
 function codeHash(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -200,9 +202,27 @@ export function discordIntegrationRoutes(db: Db) {
     const { companyId: _companyId, ...input } = mappingSchema.extend({ companyId: z.string().uuid() }).parse(req.body);
     const project = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.companyId, companyId))).then((rows) => rows[0] ?? null);
     if (!project) throw forbidden("project_access_denied", { code: "project_access_denied" });
+    const existingMapping = await db.select({ companyId: discordProjectChannelMappings.companyId })
+      .from(discordProjectChannelMappings)
+      .where(and(
+        eq(discordProjectChannelMappings.guildId, input.guildId),
+        eq(discordProjectChannelMappings.channelId, input.channelId),
+      ))
+      .then((rows) => rows[0] ?? null);
+    if (existingMapping && existingMapping.companyId !== companyId) {
+      throw forbidden("discord_channel_already_mapped", { code: "discord_channel_already_mapped" });
+    }
     const now = new Date();
-    await db.insert(discordProjectChannelMappings).values({ companyId, ...input, createdByUserId: userId, updatedAt: now })
-      .onConflictDoUpdate({ target: [discordProjectChannelMappings.guildId, discordProjectChannelMappings.channelId], set: { projectId: input.projectId, enabled: input.enabled, allowTaskCreate: input.allowTaskCreate, notificationEvents: input.notificationEvents, updatedAt: now } });
+    const writtenMapping = await db.insert(discordProjectChannelMappings).values({ companyId, ...input, createdByUserId: userId, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [discordProjectChannelMappings.guildId, discordProjectChannelMappings.channelId],
+        set: { projectId: input.projectId, enabled: input.enabled, allowTaskCreate: input.allowTaskCreate, notificationEvents: input.notificationEvents, updatedAt: now },
+        setWhere: eq(discordProjectChannelMappings.companyId, companyId),
+      })
+      .returning({ id: discordProjectChannelMappings.id });
+    if (!writtenMapping[0]) {
+      throw forbidden("discord_channel_already_mapped", { code: "discord_channel_already_mapped" });
+    }
     await db.insert(discordGuildIntegrations).values({ companyId, guildId: input.guildId, enabled: true, createdByUserId: userId, updatedAt: now })
       .onConflictDoUpdate({ target: [discordGuildIntegrations.companyId, discordGuildIntegrations.guildId], set: { enabled: true, updatedAt: now } });
     res.status(201).json({ ok: true });
@@ -333,10 +353,15 @@ export function discordIntegrationRoutes(db: Db) {
     if (!delivery) throw badRequest("delivery_not_found");
     if (["delivered", "suppressed", "terminal_failure"].includes(delivery.status)) return res.json({ status: delivery.status });
     const now = new Date();
-    const retry = input.outcome === "retryable_failure";
+    const retry = input.outcome === "retryable_failure" && delivery.attempts + 1 < DISCORD_DELIVERY_MAX_ATTEMPTS;
     const nextAttemptAt = new Date(now.getTime() + Math.max(1, input.retryAfterSeconds ?? Math.min(3600, 2 ** Math.min(delivery.attempts + 1, 10))) * 1000);
-    const status = retry ? "pending" : input.outcome;
-    await db.update(discordDeliveryAttempts).set({ status, attempts: delivery.attempts + 1, nextAttemptAt: retry ? nextAttemptAt : now, discordMessageId: input.discordMessageId ?? delivery.discordMessageId, errorCode: input.errorCode ?? null, updatedAt: now }).where(eq(discordDeliveryAttempts.id, deliveryId));
+    const status = retry ? "pending" : input.outcome === "retryable_failure" ? "terminal_failure" : input.outcome;
+    const errorCode = retry
+      ? input.errorCode ?? null
+      : input.outcome === "retryable_failure"
+        ? "retry_limit_exceeded"
+        : input.errorCode ?? null;
+    await db.update(discordDeliveryAttempts).set({ status, attempts: delivery.attempts + 1, nextAttemptAt: retry ? nextAttemptAt : now, discordMessageId: input.discordMessageId ?? delivery.discordMessageId, errorCode, updatedAt: now }).where(eq(discordDeliveryAttempts.id, deliveryId));
     res.json({ status });
   });
 
