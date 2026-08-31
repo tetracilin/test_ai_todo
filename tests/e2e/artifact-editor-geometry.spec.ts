@@ -1,4 +1,11 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FIXTURE_DOCX = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "geometry.docx"),
+);
 
 type Seed = {
   companyId: string;
@@ -25,7 +32,7 @@ async function createArtifactEditorSeed(request: APIRequestContext): Promise<See
       file: {
         name: "geometry.docx",
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        buffer: Buffer.from("DOCX fixture"),
+        buffer: FIXTURE_DOCX,
       },
     },
   }));
@@ -41,6 +48,7 @@ test("artifact OpenOffice editor keeps a 1200x800 primary DOM area at 1700x1100"
   const seed = await createArtifactEditorSeed(page.request);
 
   await page.goto(`/${seed.prefix}/issues/${seed.issueId}`);
+  await page.getByRole("tab", { name: "Artifacts" }).click();
   const artifactRow = page.getByText("geometry.docx", { exact: true }).locator("xpath=../..");
   await expect(artifactRow).toBeVisible({ timeout: 30_000 });
   await artifactRow.getByRole("button", { name: "Open editor" }).click();

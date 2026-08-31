@@ -381,8 +381,17 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
         body: JSON.stringify({
           name: "Export Engineer",
           role: "engineer",
-          adapterType: "claude_local",
-          adapterConfig: {},
+          // claude_local is not a selectable server adapter under the strict
+          // policy (only hermes_gateway + notebooklm_local). hermes_gateway is
+          // selectable and is the adapter the safe-import path permits, so the
+          // package round-trips the gateway API key as a rebindable secret
+          // (export converts the secret ref into an env input; the import
+          // recreates the secret for the target company from --secret-value).
+          adapterType: "hermes_gateway",
+          adapterConfig: {
+            apiBaseUrl: "http://127.0.0.1:8643/api",
+            apiKey: "import-export-e2e-fixture-key",
+          },
           instructionsBundle: {
             files: {
               "AGENTS.md": "You verify company portability.",
@@ -465,6 +474,8 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
         `Imported ${sourceCompany.name}`,
         "--include",
         "company,agents,projects,issues",
+        "--secret-value",
+        "agent:export-engineer:config.apiKey=import-export-e2e-fixture-key",
         "--yes",
       ],
       {
@@ -552,6 +563,8 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
         "company,agents,projects,issues",
         "--collision",
         "rename",
+        "--secret-value",
+        "agent:export-engineer:config.apiKey=import-export-e2e-fixture-key",
         "--yes",
       ],
       {
@@ -606,6 +619,8 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
         `Zip Imported ${sourceCompany.name}`,
         "--include",
         "company,agents,projects,issues",
+        "--secret-value",
+        "agent:export-engineer:config.apiKey=import-export-e2e-fixture-key",
         "--yes",
       ],
       {

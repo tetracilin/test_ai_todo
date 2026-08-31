@@ -641,6 +641,50 @@ function extractPortableScopedEnvInputs(
   return inputs;
 }
 
+function extractAdapterConfigSecretInputs(
+  agentSlug: string,
+  adapterConfig: Record<string, unknown>,
+  _warnings: string[],
+): CompanyPortabilityEnvInput[] {
+  const inputs: CompanyPortabilityEnvInput[] = [];
+
+  function walk(value: unknown, path: string[]): void {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) walk(value[i], [...path, String(i)]);
+      return;
+    }
+    if (!isPlainRecord(value)) return;
+    if (value.type === "secret_ref" && typeof value.secretId === "string") {
+      const inputKey = `config.${path.join(".")}`;
+      inputs.push({
+        key: inputKey,
+        description: `Provide the secret for ${agentSlug} adapterConfig.${path.join(".")}`,
+        agentSlug,
+        projectSlug: null,
+        kind: "secret",
+        requirement: "optional",
+        defaultValue: "",
+        portability: "portable",
+        configPath: path,
+      });
+      // Portable placeholder: replaced by a fresh target-company secret ref on import.
+      Object.keys(value).forEach((k) => delete value[k]);
+      Object.assign(value, { type: "secret_ref", inputKey });
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "env" && path.length === 0) continue; // env travels via extractPortableEnvInputs
+      walk(child, [...path, key]);
+    }
+  }
+
+  for (const [key, child] of Object.entries(adapterConfig)) {
+    if (key === "env") continue;
+    walk(child, [key]);
+  }
+  return inputs;
+}
+
 type ResolvedSource = {
   manifest: CompanyPortabilityManifest;
   files: Record<string, CompanyPortabilityFileEntry>;
@@ -739,6 +783,7 @@ type EnvInputRecord = {
   default?: string | null;
   description?: string | null;
   portability?: "portable" | "system_dependent";
+  configPath?: string[] | string | null;
 };
 
 const COMPANY_LOGO_CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
@@ -2891,9 +2936,20 @@ function buildEnvInputMap(inputs: CompanyPortabilityEnvInput[]) {
     if (input.defaultValue !== null) entry.default = input.defaultValue;
     if (input.description) entry.description = input.description;
     if (input.portability === "system_dependent") entry.portability = "system_dependent";
+    if (input.configPath && input.configPath.length > 0) entry.configPath = input.configPath;
     env[input.key] = entry;
   }
   return env;
+}
+
+function parseConfigPath(value: unknown): string[] | null {
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value as string[];
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.split(".").map((entry) => entry.trim()).filter(Boolean);
+  }
+  return null;
 }
 
 function envInputScopedKey(input: CompanyPortabilityEnvInput) {
@@ -2937,6 +2993,20 @@ function writeManifestEnvBinding(
     const agent = manifest.agents.find((entry) => entry.slug === input.agentSlug);
     if (!agent) return;
     const adapterConfig = isPlainRecord(agent.adapterConfig) ? agent.adapterConfig : {};
+    if (input.configPath && input.configPath.length > 0) {
+      const cloned: Record<string, unknown> = { ...adapterConfig };
+      let cursor = cloned;
+      const leaf = input.configPath[input.configPath.length - 1];
+      for (const segment of input.configPath.slice(0, -1)) {
+        const existing = isPlainRecord(cursor[segment]) ? cursor[segment] : {};
+        const replacement: Record<string, unknown> = { ...existing };
+        cursor[segment] = replacement;
+        cursor = replacement;
+      }
+      cursor[leaf] = binding;
+      agent.adapterConfig = cloned;
+      return;
+    }
     const env = isPlainRecord(adapterConfig.env) ? { ...adapterConfig.env } : {};
     env[input.key] = binding;
     agent.adapterConfig = { ...adapterConfig, env };
@@ -2992,6 +3062,7 @@ function readAgentEnvInputs(
       requirement: record.requirement === "required" ? "required" : "optional",
       defaultValue: typeof record.default === "string" ? record.default : null,
       portability: record.portability === "system_dependent" ? "system_dependent" : "portable",
+      ...(parseConfigPath(record.configPath) ? { configPath: parseConfigPath(record.configPath)! } : {}),
     }];
   });
 }
@@ -3016,6 +3087,7 @@ function readProjectEnvInputs(
       requirement: record.requirement === "required" ? "required" : "optional",
       defaultValue: typeof record.default === "string" ? record.default : null,
       portability: record.portability === "system_dependent" ? "system_dependent" : "portable",
+      ...(parseConfigPath(record.configPath) ? { configPath: parseConfigPath(record.configPath)! } : {}),
     }];
   });
 }
@@ -4182,6 +4254,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             defaultRules: adapterDefaultRules,
           },
         ) as Record<string, unknown>;
+        const exportedAdapterConfigSecrets = extractAdapterConfigSecretInputs(
+          slug,
+          portableAdapterConfig,
+          warnings,
+        );
+        envInputs.push(...exportedAdapterConfigSecrets);
         const portableRuntimeConfig = pruneDefaultLikeValue(
           normalizePortableConfig(agent.runtimeConfig),
           {

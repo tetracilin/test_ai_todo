@@ -97,6 +97,7 @@ interface CompanyImportOptions extends BaseClientOptions {
   newCompanyName?: string;
   agents?: string;
   collision?: CompanyCollisionMode;
+  secretValue?: string[];
   ref?: string;
   paperclipUrl?: string;
   yes?: boolean;
@@ -110,6 +111,23 @@ const DEFAULT_EXPORT_INCLUDE: CompanyPortabilityInclude = {
   issues: false,
   skills: false,
 };
+
+function collectOptionValue(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function parseSecretValues(values: string[] | undefined): Record<string, string> | undefined {
+  if (!values || values.length === 0) return undefined;
+  const parsed: Record<string, string> = {};
+  for (const entry of values) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(`Invalid --secret-value "${entry}": expected key=value.`);
+    }
+    parsed[entry.slice(0, separator)] = entry.slice(separator + 1);
+  }
+  return parsed;
+}
 
 const DEFAULT_IMPORT_INCLUDE: CompanyPortabilityInclude = {
   company: true,
@@ -1649,6 +1667,7 @@ export function registerCompanyCommands(program: Command): void {
       .option("--new-company-name <name>", "Name override for --target new")
       .option("--agents <list>", "Comma-separated agent slugs to import, or all", "all")
       .option("--collision <mode>", "Collision strategy: rename | skip | replace", "rename")
+      .option("--secret-value <key=value>", "Provide a secret value for an import env input (repeatable; key like agent:slug:CONFIG_KEY)", collectOptionValue, [] as string[])
       .option("--ref <value>", "Git ref to use for GitHub imports (branch, tag, or commit)")
       .option("--paperclip-url <url>", "Alias for --api-base on this command")
       .option("--yes", "Accept default selection and skip the pre-import confirmation prompt", false)
@@ -1668,6 +1687,7 @@ export function registerCompanyCommands(program: Command): void {
           const include = resolveImportInclude(opts.include);
           const agents = parseAgents(opts.agents);
           const collision = (opts.collision ?? "rename").toLowerCase() as CompanyCollisionMode;
+          const secretValues = parseSecretValues(opts.secretValue);
           if (!["rename", "skip", "replace"].includes(collision)) {
             throw new Error("Invalid --collision value. Use: rename, skip, replace");
           }
@@ -1747,6 +1767,7 @@ export function registerCompanyCommands(program: Command): void {
           const transferMeta = {
             include,
             target: targetPayload,
+            secretValues,
             agents,
             collisionStrategy: collision,
           };

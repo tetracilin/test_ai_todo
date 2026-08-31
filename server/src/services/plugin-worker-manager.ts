@@ -1295,7 +1295,9 @@ export function createPluginWorkerHandle(
     route.terminalized = true;
     route.state = "closed";
     route.listener = null;
-    route.buffered = [];
+    // The caller receives this session only after open resolves. Keep output
+    // admitted before a later overflow so onData can replay it; closed routes
+    // still reject every later notification.
     route.preOpen = [];
     route.preOpenBytes = 0;
     route.preOpenLimitExceeded = false;
