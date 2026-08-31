@@ -1145,7 +1145,37 @@ describe("IssueDetail", () => {
     ).toBe(false);
   });
 
-  it("launches agent help without sending task metadata and prevents duplicate clicks", async () => {
+  it("renders queued state from a successful agent-help launch response", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({ assigneeAgentId: "agent-1" }));
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const button = container.querySelector('button[aria-label="Get agent help"]') as HTMLButtonElement | null;
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button!.click();
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.launchAgentHelp).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Agent help queued");
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent help queued",
+      tone: "success",
+    }));
+    expect(button!.disabled).toBe(false);
+  });
+
+  it("suppresses duplicate agent-help clicks until a delayed launch settles", async () => {
     const launchRequest = createDeferred<{
       launch_id: string;
       issue_id: string;
@@ -1191,15 +1221,11 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("Agent help queued");
-    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Agent help queued",
-      tone: "success",
-    }));
+    expect(button!.disabled).toBe(false);
     expect(randomUuid).toHaveBeenCalledTimes(1);
   });
 
-  it("shows safe agent-help failure state", async () => {
+  it("shows actionable agent-help errors while preserving selected-task context", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({ assigneeAgentId: "agent-1" }));
     mockIssuesApi.launchAgentHelp.mockRejectedValue(
       new ApiError("provider token unavailable", 503, { code: "AGENT_LAUNCH_UNAVAILABLE" }),
@@ -1229,6 +1255,8 @@ describe("IssueDetail", () => {
       tone: "error",
     });
     expect(container.textContent).not.toContain("provider token unavailable");
+    expect(container.textContent).toContain("Issue detail smoke");
+    expect(button!.disabled).toBe(false);
   });
 
   it("disables agent help with an accessible reason when no agent is assigned", async () => {
