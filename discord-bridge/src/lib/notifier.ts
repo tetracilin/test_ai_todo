@@ -31,7 +31,7 @@ function changed(event: DiscordNotificationEvent, field: string): string {
 
 /** Formats only allowlisted outbox fields; event bodies and credentials never reach Discord. */
 export function formatDiscordNotification(event: DiscordNotificationEvent): string {
-  const title = text(event.after?.title, 160) || text(event.before?.title, 160) || "Untitled task";
+  const title = text(event.title, 160) || text(event.after?.title, 160) || text(event.before?.title, 160) || "Untitled task";
   let detail: string;
   switch (event.eventType) {
     case "issue.status_changed":
@@ -44,7 +44,10 @@ export function formatDiscordNotification(event: DiscordNotificationEvent): stri
       detail = `Priority: ${changed(event, "priority")}`;
       break;
     case "issue.comment_created":
-      detail = `Comment: ${text(event.after?.commentExcerpt, 300) || "New comment"}`;
+      detail = `Comment: ${text(event.commentExcerpt, 300) || "New comment"}`;
+      break;
+    case "issue.mentioned":
+      detail = `You were mentioned: ${text(event.commentExcerpt, 300) || "New comment"}`;
       break;
     case "issue.blocked":
       detail = "Task blocked";

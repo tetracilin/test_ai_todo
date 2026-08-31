@@ -56,11 +56,33 @@ describe("formatDiscordNotification", () => {
     const message = formatDiscordNotification({
       ...event,
       eventType: "issue.comment_created",
-      after: { commentExcerpt: content },
+      commentExcerpt: content,
     });
 
     expect(message).toContain(`Comment: ${"x".repeat(299)}…`);
     expect(message).not.toContain("x".repeat(300));
+  });
+
+  it("formats personal mention notifications without enabling Discord mentions", () => {
+    const message = formatDiscordNotification({
+      ...event,
+      eventType: "issue.mentioned",
+      commentExcerpt: "Please review this task",
+    });
+
+    expect(message).toContain("You were mentioned: Please review this task");
+    expect(message).not.toContain("<@");
+  });
+
+  it("uses durable event title when activity details omit a title", () => {
+    const message = formatDiscordNotification({
+      ...event,
+      title: "Durable issue title",
+      before: { status: "todo" },
+      after: { status: "in_progress" },
+    });
+
+    expect(message).toContain("Durable issue title");
   });
 });
 
