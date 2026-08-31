@@ -1193,6 +1193,52 @@ describe("plugin worker manager setup-token pty route gate", () => {
     }
   });
 
+  it("returns the session then fails closed when the open-reply batch exceeds the pre-open frame bound", async () => {
+    const handle = makeSetupTokenPtyHandle({
+      setupTokenPtyLimits: { maxPreOpenFrames: 2, maxPreOpenBytes: 10_000 },
+    });
+    try {
+      await handle.start();
+      const session = await handle.openSetupTokenPtySession(
+        ptyOpenInput({
+          batchWithOpenReply: true,
+          workerSessionId: "ws-A",
+          outputs: [{ chunk: "a" }, { chunk: "b" }, { chunk: "c" }],
+          exitCode: 0,
+        }),
+      );
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+      expect(chunks).toEqual(["a", "b"]);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("returns the session then fails closed when the open-reply batch exceeds the pre-open byte bound", async () => {
+    const handle = makeSetupTokenPtyHandle({
+      setupTokenPtyLimits: { maxPreOpenFrames: 10, maxPreOpenBytes: 1 },
+    });
+    try {
+      await handle.start();
+      const session = await handle.openSetupTokenPtySession(
+        ptyOpenInput({
+          batchWithOpenReply: true,
+          workerSessionId: "ws-A",
+          outputs: [{ chunk: "early-output" }],
+          exitCode: 0,
+        }),
+      );
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+      expect(chunks).toEqual([]);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
   it("routes delayed input to the worker and back to the listener", async () => {
     const handle = makeSetupTokenPtyHandle();
     try {

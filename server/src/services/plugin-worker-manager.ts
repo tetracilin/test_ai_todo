@@ -142,6 +142,10 @@ const MAX_EXECUTE_LOG_TOTAL_CHARS = 128 * 1024 * 1024;
 const MAX_SETUP_TOKEN_PTY_CHUNK_CHARS = 1_000_000;
 /** Maximum cumulative output characters for one login pseudo-terminal route. */
 const MAX_SETUP_TOKEN_PTY_TOTAL_CHARS = 8 * 1024 * 1024;
+/** Maximum notifications held while one login pseudo-terminal open binds. */
+const MAX_SETUP_TOKEN_PTY_PRE_OPEN_FRAMES = 10_000;
+/** Maximum serialized bytes held while one login pseudo-terminal open binds. */
+const MAX_SETUP_TOKEN_PTY_PRE_OPEN_BYTES = 8 * 1024 * 1024;
 /** The default open timeout for one login pseudo-terminal route, in milliseconds. */
 const SETUP_TOKEN_PTY_OPEN_TIMEOUT_MS = 30_000;
 /** The default close timeout for one login pseudo-terminal route, in milliseconds. */
@@ -364,15 +368,20 @@ export interface WorkerStartOptions {
 
   /**
    * Bounds and timeouts for the login pseudo-terminal route. The
-   * defaults bound one output notification, the cumulative output per route, and
-   * the open and the close timeouts. A test overrides them to exercise the
-   * terminalize paths without huge inputs or long waits.
+   * defaults bound one output notification, the cumulative output per route, the
+   * notifications and bytes held while open binds, and the open and close
+   * timeouts. A test overrides them to exercise the terminalize paths without
+   * huge inputs or long waits.
    */
   setupTokenPtyLimits?: {
     /** Max characters for one login pseudo-terminal output notification. */
     maxChunkChars?: number;
     /** Max cumulative output characters for one login pseudo-terminal route. */
     maxTotalChars?: number;
+    /** Max notifications held while one login pseudo-terminal open binds. */
+    maxPreOpenFrames?: number;
+    /** Max serialized notification bytes held while one login pseudo-terminal open binds. */
+    maxPreOpenBytes?: number;
     /** The open timeout for one login pseudo-terminal route, in milliseconds. */
     openTimeoutMs?: number;
     /** The close timeout for one login pseudo-terminal route, in milliseconds. */
@@ -796,6 +805,10 @@ export function createPluginWorkerHandle(
     options.setupTokenPtyLimits?.maxChunkChars ?? MAX_SETUP_TOKEN_PTY_CHUNK_CHARS;
   const maxSetupTokenPtyTotalChars =
     options.setupTokenPtyLimits?.maxTotalChars ?? MAX_SETUP_TOKEN_PTY_TOTAL_CHARS;
+  const maxSetupTokenPtyPreOpenFrames =
+    options.setupTokenPtyLimits?.maxPreOpenFrames ?? MAX_SETUP_TOKEN_PTY_PRE_OPEN_FRAMES;
+  const maxSetupTokenPtyPreOpenBytes =
+    options.setupTokenPtyLimits?.maxPreOpenBytes ?? MAX_SETUP_TOKEN_PTY_PRE_OPEN_BYTES;
   const setupTokenPtyOpenTimeoutMs =
     options.setupTokenPtyLimits?.openTimeoutMs ?? SETUP_TOKEN_PTY_OPEN_TIMEOUT_MS;
   const setupTokenPtyCloseTimeoutMs =
@@ -1246,6 +1259,8 @@ export function createPluginWorkerHandle(
     // Notifications can arrive in the same stdout batch as the open reply,
     // before the deferred open continuation binds the worker session id.
     preOpen: JsonRpcNotification[];
+    preOpenBytes: number;
+    preOpenLimitExceeded: boolean;
     deliveredChars: number;
     terminalized: boolean;
     settleWait: (value: { exitCode: number | null }) => void;
@@ -1282,6 +1297,8 @@ export function createPluginWorkerHandle(
     route.listener = null;
     route.buffered = [];
     route.preOpen = [];
+    route.preOpenBytes = 0;
+    route.preOpenLimitExceeded = false;
     // A terminalized route reports a null exit code, which the runner treats as a
     // failure.
     settleRouteWait(route, { exitCode: null });
@@ -1302,18 +1319,39 @@ export function createPluginWorkerHandle(
     route: SetupTokenPtyRoute,
     notification: JsonRpcNotification,
   ): void {
+    if (route.preOpenLimitExceeded) return;
+    const notificationBytes = Buffer.byteLength(JSON.stringify(notification));
+    if (
+      route.preOpen.length >= maxSetupTokenPtyPreOpenFrames ||
+      route.preOpenBytes + notificationBytes > maxSetupTokenPtyPreOpenBytes
+    ) {
+      route.preOpenLimitExceeded = true;
+      return;
+    }
     route.preOpen.push(notification);
+    route.preOpenBytes += notificationBytes;
   }
 
   function drainPreOpenSetupTokenPtyNotifications(route: SetupTokenPtyRoute): void {
     const pending = route.preOpen;
     route.preOpen = [];
+    route.preOpenBytes = 0;
     for (const notification of pending) {
       if (notification.method === SETUP_TOKEN_PTY_OUTPUT_NOTIFICATION) {
         routeSetupTokenPtyOutput(notification);
-      } else if (notification.method === SETUP_TOKEN_PTY_EXIT_NOTIFICATION) {
+      } else if (
+        notification.method === SETUP_TOKEN_PTY_EXIT_NOTIFICATION &&
+        !route.preOpenLimitExceeded
+      ) {
+        // An exceeded queue must fail closed. Do not let an exit retained before
+        // the overflow settle the wait successfully before terminalization.
         routeSetupTokenPtyExit(notification);
       }
+    }
+    if (route.preOpenLimitExceeded && route.state === "open") {
+      setImmediate(() => {
+        void terminalizeSetupTokenPtyRoute(route);
+      });
     }
   }
 
@@ -1380,6 +1418,8 @@ export function createPluginWorkerHandle(
     route.listener = null;
     route.buffered = [];
     route.preOpen = [];
+    route.preOpenBytes = 0;
+    route.preOpenLimitExceeded = false;
     settleRouteWait(route, { exitCode: null });
   }
 
@@ -1414,6 +1454,8 @@ export function createPluginWorkerHandle(
       listener: null,
       buffered: [],
       preOpen: [],
+      preOpenBytes: 0,
+      preOpenLimitExceeded: false,
       deliveredChars: 0,
       terminalized: false,
       settleWait,
