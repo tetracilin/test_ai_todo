@@ -16,7 +16,6 @@ const apiPrefixes: Record<string, string> = {
   "activity.ts": "/api",
   "adapters.ts": "/api",
   "agents.ts": "/api",
-  "artifacts.ts": "/api",
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
@@ -32,7 +31,6 @@ const apiPrefixes: Record<string, string> = {
   "decision-queues.ts": "/api",
   "decisions.ts": "/api",
   "decision-training.ts": "/api",
-  "discord-integrations.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",
   "file-resources.ts": "/api",
@@ -53,7 +51,6 @@ const apiPrefixes: Record<string, string> = {
   "projects.ts": "/api",
   "resource-memberships.ts": "/api",
   "routines.ts": "/api",
-  "scheduling.ts": "/api",
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
@@ -63,7 +60,6 @@ const apiPrefixes: Record<string, string> = {
   "tool-access.ts": "/api",
   "tool-gateway.ts": "/api",
   "user-profiles.ts": "/api",
-  "wopi.ts": "/api",
 };
 
 const ROUTE_LITERAL_PATTERN = /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
@@ -76,6 +72,16 @@ const explicitOpenApiCoverageExclusions = new Set([
   "cases.ts",
   // Smoke lab routes are experimental and not yet represented in the public OpenAPI document.
   "smoke-lab.ts",
+  // Artifact storage routes are new in this lineage and not yet represented in the public OpenAPI document.
+  "artifacts.ts",
+  // Issue scheduling routes are new in this lineage and not yet represented in the public OpenAPI document.
+  "scheduling.ts",
+  // WOPI routes are flag-gated staging (PAPERCLIP_WOPI_STAGING_ENABLED) and not yet in the public OpenAPI document.
+  "wopi.ts",
+  // Discord bridge endpoints use bridge bearer authentication and are consumed
+  // only by the separately deployed bridge; they are intentionally outside the
+  // board-client public OpenAPI surface.
+  "discord-integrations.ts",
 ]);
 
 // The set of contract-first routes whose OpenAPI document leads the mounted
