@@ -32,15 +32,18 @@
     "disableSignUp": false
   },
   "storage": {
-    "provider": "local_disk",
+    "provider": "s3",
     "localDisk": {
       "baseDir": "/paperclip/instances/default/data/storage"
     },
     "s3": {
-      "bucket": "paperclip",
+      "bucket": "t3-evidence",
       "region": "us-east-1",
+      "endpoint": "http://100.124.244.21:9000",
       "prefix": "",
-      "forcePathStyle": false
+      "forcePathStyle": true,
+      "accessKeySecretRef": "paperclip_artifacts_access_key",
+      "secretKeySecretRef": "paperclip_artifacts_secret_key"
     }
   },
   "secrets": {
