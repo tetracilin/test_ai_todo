@@ -40,5 +40,14 @@
     "scheduling"
   ],
   "author": "T3",
-  "license": "MIT"
+  "license": "MIT",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "bugs": {
+    "url": "https://github.com/t3-project/t3-project-management/issues"
+  },
+  "homepage": "https://github.com/t3-project/t3-project-management#readme"
 }

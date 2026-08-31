@@ -8,6 +8,10 @@ bower_components/
 /dist
 /build
 /out
+packages/*/dist/
+packages/*/*/dist/
+server/dist/
+ui/dist/
 
 # Environment variables
 .env
