@@ -6888,6 +6888,7 @@ describeEmbeddedPostgres("issueService.update engineer-card done gate (MVP-01)",
   afterEach(async () => {
     await db.delete(issueComments);
     await db.delete(issueAttachments);
+    await db.delete(assets);
     await db.delete(issueLabels);
     await db.delete(issues);
     await db.delete(heartbeatRuns);
