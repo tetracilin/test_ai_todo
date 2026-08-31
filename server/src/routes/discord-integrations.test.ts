@@ -54,6 +54,10 @@ function makeDb(options: {
         set: (set: Record<string, unknown>) => ({
           where: () => {
             updates.push({ table: name, set });
+            for (const row of rowsByTable[name] ?? []) Object.assign(row, set);
+            if (name === getTableName(discordUserLinks as never) && set.active === false) {
+              rowsByTable[name] = (rowsByTable[name] ?? []).filter((row) => row.active !== false);
+            }
             const pending = Promise.resolve(undefined);
             const returned = Promise.resolve(options.unlinkReturn ?? []);
             return Object.assign(pending, { returning: () => returned });
@@ -176,7 +180,12 @@ describe("Discord integration browser contracts", () => {
       const res = await request(app).post("/api/integrations/discord/disconnect").send({ companyId: "c1" });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: "unlinked" });
+      expect(res.body).toEqual({
+        link: { status: "unlinked", discordUserId: null },
+        preferences: DISCORD_NOTIFICATION_EVENTS.map((eventType) => ({ eventType, enabled: false, deliveryMode: "dm", channelId: null })),
+        guilds: [],
+        channels: [],
+      });
       const linkUpdate = db.updates.find((u) => u.table === getTableName(discordUserLinks as never));
       const prefsUpdate = db.updates.find((u) => u.table === getTableName(discordNotificationPreferences as never));
       expect(linkUpdate?.set).toMatchObject({ active: false });
@@ -188,7 +197,12 @@ describe("Discord integration browser contracts", () => {
       const app = createApp(db, BOARD_USER);
       const res = await request(app).post("/api/integrations/discord/disconnect").send({ companyId: "c1" });
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: "unlinked" });
+      expect(res.body).toEqual({
+        link: { status: "unlinked", discordUserId: null },
+        preferences: DISCORD_NOTIFICATION_EVENTS.map((eventType) => ({ eventType, enabled: false, deliveryMode: "dm", channelId: null })),
+        guilds: [],
+        channels: [],
+      });
     });
 
     it("requires board authentication", async () => {
@@ -209,6 +223,34 @@ describe("Discord integration browser contracts", () => {
       const app = createApp(makeDb(), BOARD_USER);
       const res = await request(app).post("/api/integrations/discord/disconnect").send({});
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("PATCH /api/integrations/discord/preferences", () => {
+    it("accepts the exact browser envelope and returns full Discord settings", async () => {
+      const db = makeDb({ links: [linkedRow] });
+      const app = createApp(db, BOARD_USER);
+      const res = await request(app)
+        .patch("/api/integrations/discord/preferences")
+        .send({ companyId: "c1", preferences: [] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        link: { status: "linked", discordUserId: "D1" },
+        preferences: DISCORD_NOTIFICATION_EVENTS.map((eventType) => ({ eventType, enabled: false, deliveryMode: "dm", channelId: null })),
+        guilds: [],
+        channels: [],
+      });
+    });
+
+    it("rejects unknown fields in the browser envelope", async () => {
+      const app = createApp(makeDb(), BOARD_USER);
+      const res = await request(app)
+        .patch("/api/integrations/discord/preferences")
+        .send({ companyId: "c1", preferences: [], unexpected: true });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Validation error");
     });
   });
 
