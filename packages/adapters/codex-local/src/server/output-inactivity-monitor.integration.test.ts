@@ -20,7 +20,11 @@ describe("codex inactivity monitor (integration: real subprocess)", () => {
     "allows a long silent build while the child process group is consuming CPU",
     async () => {
       const runId = `monitor-active-build-${Date.now()}`;
-      const timeoutMs = 500;
+      // The real /proc sampler is asynchronous. Keep this timeout far enough
+      // above a 50ms sample interval that host scheduling delay cannot race
+      // the first baseline and falsely turn a healthy CPU-bound child into an
+      // inactivity failure.
+      const timeoutMs = 1_000;
       const processActivityMonitor: {
         current: ReturnType<typeof createCodexProcessActivityMonitor> | null;
       } = { current: null };
@@ -36,7 +40,7 @@ describe("codex inactivity monitor (integration: real subprocess)", () => {
         const proc = await runChildProcess(
           runId,
           process.execPath,
-          ["-e", "const end = Date.now() + 2_000; while (Date.now() < end) {}"],
+          ["-e", "const end = Date.now() + 3_000; while (Date.now() < end) {}"],
           {
             cwd: process.cwd(),
             env: process.env as Record<string, string>,
