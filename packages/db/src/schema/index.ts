@@ -85,6 +85,12 @@ export {
   discordUserLinks,
   integrationEventOutbox,
 } from "./discord_integrations.js";
+export {
+  commentIntakeSources,
+  commentIntakeCheckpoints,
+  developmentCommentIntakes,
+  commentIntakeRuns,
+} from "./development_comment_intakes.js";
 export { issueThreadInteractions } from "./issue_thread_interactions.js";
 export {
   decisions,
