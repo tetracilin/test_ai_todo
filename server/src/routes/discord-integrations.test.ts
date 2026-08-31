@@ -241,3 +241,63 @@ describe("Discord integration abuse and tenant boundaries", () => {
       .expect(200, { status: "unlinked" });
   });
 });
+
+describe("Discord integration browser contracts", () => {
+  it("returns channels and guilds from settings", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[], [], [], []] }));
+
+    const response = await request(app)
+      .get(`/api/integrations/discord/settings?companyId=${COMPANY_ID}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      link: { status: "unlinked", discordUserId: null },
+      guilds: [],
+      channels: [],
+    });
+    expect(response.body.preferences).toHaveLength(9);
+  });
+
+  it("accepts the exact preferences envelope", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[], [], [], []] }));
+
+    const response = await request(app)
+      .patch("/api/integrations/discord/preferences")
+      .send({ companyId: COMPANY_ID, preferences: [] })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      link: { status: "unlinked", discordUserId: null },
+      guilds: [],
+      channels: [],
+    });
+    expect(response.body.preferences).toHaveLength(9);
+  });
+
+  it("rejects unknown fields in the preferences envelope", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    const response = await request(app)
+      .patch("/api/integrations/discord/preferences")
+      .send({ companyId: COMPANY_ID, preferences: [], unexpected: true })
+      .expect(400);
+
+    expect(response.body.error).toBe("Validation error");
+  });
+
+  it("returns full settings after board disconnect", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[], [], [], []] }));
+
+    const response = await request(app)
+      .post("/api/integrations/discord/disconnect")
+      .send({ companyId: COMPANY_ID })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      link: { status: "unlinked", discordUserId: null },
+      guilds: [],
+      channels: [],
+    });
+    expect(response.body.preferences).toHaveLength(9);
+  });
+});

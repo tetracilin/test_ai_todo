@@ -46,6 +46,7 @@ const bridgeTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
 }).strict();
 const preferenceSchema = z.object({
+  companyId: z.string().trim().min(1),
   preferences: z.array(z.object({
     eventType,
     enabled: z.boolean(),
@@ -183,10 +184,9 @@ export function discordIntegrationRoutes(db: Db) {
 
   const updatePreferences = async (req: Request, res: Response) => {
     const userId = await browserUser(req);
-    const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : null;
-    if (!companyId) throw badRequest("companyId is required");
-    assertCompanyAccessCoded(req, companyId);
     const input = preferenceSchema.parse(req.body);
+    const companyId = input.companyId;
+    await assertCompanyAccessCoded(req, companyId);
     const channelIds = input.preferences
       .filter((preference) => preference.enabled && preference.deliveryMode === "channel" && preference.channelId)
       .map((preference) => preference.channelId!);
@@ -312,7 +312,7 @@ export function discordIntegrationRoutes(db: Db) {
     const now = new Date();
     await db.update(discordUserLinks).set({ active: false, unlinkedAt: now, updatedAt: now }).where(and(eq(discordUserLinks.companyId, companyId), eq(discordUserLinks.userId, userId), eq(discordUserLinks.active, true)));
     await db.update(discordNotificationPreferences).set({ enabled: false, updatedAt: now }).where(and(eq(discordNotificationPreferences.companyId, companyId), eq(discordNotificationPreferences.userId, userId)));
-    res.json({ status: "unlinked" });
+    res.json(await settings(userId, companyId));
   });
 
   router.post("/integrations/discord/commands/task-create", async (req, res) => {
