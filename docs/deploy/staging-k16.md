@@ -176,3 +176,14 @@ job then SSHes to the staging host, writes the credential files (from the protec
 `discord-staging` GitHub Environment, never repo variables), checks out the exact
 deployed SHA, and runs `docker compose up -d --build` followed by `./scripts/healthcheck.sh`.
 Secret values are streamed over ssh stdin and never echoed or committed.
+
+### Human provisioning gate
+
+The workflow cannot run until an authorized GitHub administrator creates the protected
+`discord-staging` Environment and grants staging SSH access. That Environment must hold
+`STAGING_SSH_PRIVATE_KEY`, `STAGING_SSH_HOST`, `STAGING_SSH_USER`,
+`STAGING_DEPLOY_PATH`, `PAPERCLIP_DISCORD_BRIDGE_TOKEN`, `DISCORD_BOT_TOKEN`,
+`DISCORD_CLIENT_ID`, and `DISCORD_WEBHOOK_SECRET` (plus optional
+`DISCORD_DEV_GUILD_ID`). These credentials are human-provisioned; do not add them to
+this repository or attempt to fabricate them. After provisioning, an authorized operator
+may manually dispatch `.github/workflows/discord-staging.yml`.
