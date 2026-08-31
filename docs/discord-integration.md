@@ -16,6 +16,13 @@ Relevant source of truth in this repo:
 - `packages/db/src/migrations/0231_discord_integration_authority.sql` — migration.
 - `discord-bridge/` — the standalone Discord transport process (bot + delivery worker).
 
+Ops companion docs:
+
+- `docs/rollback-discord-integration.md` — staging rollback runbook (detect a
+  failed deploy, revert to the previous known-good commit, verify).
+- `docs/deploy/staging-k16.md` — K16 staging deployment reference (bring-up,
+  restore, Hermes relay, CI/CD).
+
 ---
 
 ## 1. Architectural principle: authority split
@@ -458,3 +465,16 @@ The server never calls Discord; the bridge never decides authorization or routin
 - Editing/closing issues from Discord (only create is implemented).
 - Public inbound Discord Interactions HTTP webhook (interactions terminate at the bridge
   gateway; §1).
+
+---
+
+## 11. Rollback
+
+Staging deployment rollback (detect a failed deploy → revert to the previous
+known-good commit → verify) is documented in
+[`docs/rollback-discord-integration.md`](rollback-discord-integration.md).
+Summary: staging builds the bridge from source at a pinned checkout, so reverting
+means checking out the previous known-good SHA on the staging host and re-running
+`docker compose up -d --build` + `./scripts/healthcheck.sh`. Never `down -v`
+during recovery (named volumes hold the staging DB and Paperclip data), and never
+downgrade migration `0231` — the Discord schema is additive.
