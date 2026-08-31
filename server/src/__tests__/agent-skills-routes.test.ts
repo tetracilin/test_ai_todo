@@ -116,6 +116,17 @@ vi.mock("../adapters/index.js", () => ({
   findActiveServerAdapter: vi.fn(() => mockAdapter),
   listAdapterModels: vi.fn(),
   detectAdapterModel: vi.fn(),
+  // These skill and instruction tests exercise route behavior, not the
+  // selectable-adapter admission gate covered by adapter validation tests.
+  listSelectableServerAdapters: () => [
+    { type: "claude_local" },
+    { type: "codex_local" },
+    { type: "hermes_gateway" },
+    { type: "hermes_local" },
+    { type: "kimi_local" },
+    { type: "opencode_local" },
+    { type: "pi_local" },
+  ],
 }));
 
 function registerModuleMocks() {
@@ -159,6 +170,15 @@ function registerModuleMocks() {
     findActiveServerAdapter: vi.fn(() => mockAdapter),
     listAdapterModels: vi.fn(),
     detectAdapterModel: vi.fn(),
+    listSelectableServerAdapters: () => [
+      { type: "claude_local" },
+      { type: "codex_local" },
+      { type: "hermes_gateway" },
+      { type: "hermes_local" },
+      { type: "kimi_local" },
+      { type: "opencode_local" },
+      { type: "pi_local" },
+    ],
   }));
 }
 

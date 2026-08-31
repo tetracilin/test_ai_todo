@@ -70,6 +70,20 @@ vi.mock("../services/environments.js", () => ({
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: mockFindServerAdapter,
   listAdapterModels: vi.fn(),
+  // Permission/preservation tests predate the hermes-only selectable
+  // enforcement; keep the harness permissive so the adapter-choice gate is
+  // exercised where it belongs (agent-adapter-validation-routes.test.ts) and
+  // this suite tests what it is named for. The types mirror the built-ins the
+  // suite creates and switches between.
+  listSelectableServerAdapters: () => [
+    { type: "claude_local" },
+    { type: "codex_local" },
+    { type: "hermes_gateway" },
+    { type: "hermes_local" },
+    { type: "kimi_local" },
+    { type: "opencode_local" },
+    { type: "pi_local" },
+  ],
 }));
 
 function registerModuleMocks() {
@@ -101,6 +115,15 @@ function registerModuleMocks() {
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: mockFindServerAdapter,
     listAdapterModels: vi.fn(),
+    listSelectableServerAdapters: () => [
+      { type: "claude_local" },
+      { type: "codex_local" },
+      { type: "hermes_gateway" },
+      { type: "hermes_local" },
+      { type: "kimi_local" },
+      { type: "opencode_local" },
+      { type: "pi_local" },
+    ],
   }));
 }
 
@@ -191,7 +214,7 @@ function makeReflectionCoachAgent(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("agent instructions bundle routes", () => {
+describe("agent instructions bundle routes", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");

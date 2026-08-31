@@ -352,6 +352,9 @@ describe("plugin worker manager duplex channel route", () => {
       const session = await handle.openDuplexChannel(
         duplexOpenInput({
           workerSessionId: "ws-A",
+          // Bind listener before scripted data emits. This test covers live
+          // delivery; pre-bind buffering has dedicated tests above.
+          dataDelayMs: 25,
           data: [
             { chunk: "aaaaa" }, // total 5 → deliver
             { chunk: "bbbbb" }, // total 10 → deliver
@@ -380,6 +383,9 @@ describe("plugin worker manager duplex channel route", () => {
       const session = await handle.openDuplexChannel(
         duplexOpenInput({
           workerSessionId: "ws-A",
+          // Bind listener before scripted data emits. The byte accounting test
+          // covers live delivery; pre-bind buffering has dedicated tests below.
+          dataDelayMs: 25,
           // "€" is one character but three bytes in UTF-8. The first chunk is 3
           // bytes (≤ 4), so the host delivers it. The second chunk brings the
           // total to 6 bytes (> 4), so the host ends the route. A character count

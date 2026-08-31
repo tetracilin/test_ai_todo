@@ -702,7 +702,7 @@ describe("company-and-environment setup-token route — object-level authorizati
     // starts a session. This proves no adapter-name branch remains in the guard
     // path. The start response reads the panel mode from the capability.
     mockFindActiveServerAdapter.mockImplementation((type: string) =>
-      type === "gemini_local"
+      type === "hermes_local"
         ? {
             type,
             loginCapability: { ...CLAUDE_LOGIN_CAPABILITY, panelMode: "displayed_code" },
@@ -714,7 +714,7 @@ describe("company-and-environment setup-token route — object-level authorizati
 
     const res = await startCompanySession(app, {
       environmentId: ENVIRONMENT_ID,
-      adapterType: "gemini_local",
+      adapterType: "hermes_local",
     });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.panelMode).toBe("displayed_code");
