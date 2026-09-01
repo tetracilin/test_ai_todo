@@ -102,7 +102,7 @@ Data-model workflow: edit `packages/db/src/schema/*.ts` → export new tables fr
 
 `ui/src/components/**` and `ui/src/pages/**` must use only tokens from `ui/src/index.css` (no hex,
 raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize`, outside the documented
-allowlist). `doc/design/DESIGN-UI.md` is the source of truth. Run before committing UI changes:
+allowlist). `docs/designs/DESIGN-UI.md` is the source of truth. Run before committing UI changes:
 
 ```sh
 pnpm check:token-gates

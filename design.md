@@ -15,7 +15,7 @@ This file is one of the three fork-owned source-of-truth (SSoT) documents, toget
 assume. Design record: `docs/designs/t3-company-os-ssot.md`.
 
 > The **UI design language** (tokens, component rules, `check:token-gates`) is a separate
-> concern and lives at [`doc/design/DESIGN-UI.md`](doc/design/DESIGN-UI.md).
+> concern and lives at [`docs/designs/DESIGN-UI.md`](docs/designs/DESIGN-UI.md).
 
 ## Control plane + adapters
 

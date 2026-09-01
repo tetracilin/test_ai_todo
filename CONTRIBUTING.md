@@ -140,7 +140,7 @@ Uncoordinated feature PRs against the core product may be closed, even when the 
 
 If you want to contribute a feature:
 
-- Check the fork roadmap [roadmap.md](roadmap.md) first (the archived upstream roadmap is [doc/UPSTREAM-ROADMAP.md](doc/UPSTREAM-ROADMAP.md))
+- Check the fork roadmap [roadmap.md](roadmap.md) first
 - Start the discussion in Discord -> `#dev` before writing code
 - If the idea fits as an extension, prefer building it with the [plugin system](doc/plugins/PLUGIN_SPEC.md)
 - If you want to show a possible direction, reference implementations are welcome as feedback, but they generally will not be merged directly into core

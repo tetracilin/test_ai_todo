@@ -435,38 +435,17 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 ## Roadmap
 
-- ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
-- ✅ Get OpenClaw / claw-style agent employees
-- ✅ companies.sh - import and export entire organizations
-- ✅ Easy AGENTS.md configurations
-- ✅ Skills Manager, Skill Studio & Skills Store
-- ✅ Scheduled Routines
-- ✅ Better Budgeting
-- ✅ Agent Reviews and Approvals
-- ✅ Multiple Human Users
-- ✅ Cloud / Sandbox agents (e2b, Cloudflare, Daytona, Modal, Novita, self-hosted Kubernetes)
-- ✅ Artifacts & Work Products
-- ✅ Deep Planning (planning mode, revisioned plans, plan approvals)
-- ✅ Enforced Outcomes (watchdogs, recovery actions, review gates)
-- ✅ MCP Tool Gateway & Apps (governed tool access)
-- ✅ Secrets Manager with per-agent access
-- ✅ Activity log & action attribution
-- ✅ Self-healing runs & automatic recovery
-- ✅ Agent evals & feedback
-- ⚪ Memory / Knowledge
-- ⚪ MAXIMIZER MODE
-- ⚪ Work Queues
-- ⚪ Self-Organization
-- ⚪ Automatic Organizational Learning
-- ⚪ CEO Chat
-- 🟡 Cloud deployments (multi-tenant isolation & company Import/Export shipped)
-- ⚪ Desktop App
-- ⚪ Bring-your-own-ticket-system (Asana / Linear / Jira as on-ramps)
-- ⚪ Connected Apps (one-click integrations, e.g. Vercel)
-
-This is the short upstream roadmap preview. See the archived upstream roadmap in
-[doc/UPSTREAM-ROADMAP.md](doc/UPSTREAM-ROADMAP.md); the fork's own roadmap is
+This fork runs on its own roadmap: a **personal company operating system** — plugin-first,
+agent-native, portable. The full version, with user stories and acceptance metrics, is
 [roadmap.md](roadmap.md).
+
+- 🟡 **NOW — the wedge**: recorder substrate (evidence gate on Done, dossier on every card,
+  job-order intake) + the WP-0 four-verb chat bot (capture, re-brief, PM digest, tabular
+  records via Teable)
+- ⚪ **NEXT**: Tier-1 file plugins (store + versioning + viewing), gbrain memory for
+  re-briefs, company skill repo
+- ⚪ **FUTURE**: Tier-2 edit-in-app integrations (WOPI/LibreOffice shipped; Penpot,
+  Excalidraw, draw.io next), LLM adapter expansion, email capture, FreeCAD / KiCad / Figma
 
 <br/>
 

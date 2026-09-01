@@ -1,6 +1,6 @@
 # Running an AI-agent session against the design system
 
-A guide for the *human* driving the session. You don't need to know the codebase — the system briefs the agent for you (AGENTS.md → `DESIGN-UI.md` → `doc/design/`). Your job is to say what you want, look at pictures, and say yes or no. This document tells you how to do that well.
+A guide for the *human* driving the session. You don't need to know the codebase — the system briefs the agent for you (AGENTS.md → `DESIGN-UI.md` → `docs/designs/`). Your job is to say what you want, look at pictures, and say yes or no. This document tells you how to do that well.
 
 ## The golden rule
 
@@ -29,7 +29,7 @@ Review the gallery, iterate ("the dark red is too soft", "two different greens o
 > Good conditions: "rg finds zero palette classes in ui/src/components", "the snapshot suite passes against the pinned external baseline", "pnpm check:token-gates reports 3/3 CLEAN".
 > Bad conditions: "the UI feels cleaner", "design is more consistent".
 
-See `doc/design/GOAL-PROMPT.md` for a complete worked example (the run that built this system), including the phase structure and guardrails worth copying: work in a worktree, commit per phase, never re-baseline without human review, stop-and-report over partial application.
+See `docs/designs/GOAL-PROMPT.md` for a complete worked example (the run that built this system), including the phase structure and guardrails worth copying: work in a worktree, commit per phase, never re-baseline without human review, stop-and-report over partial application.
 
 ## What to demand from the agent (your checklist)
 
@@ -39,7 +39,7 @@ Hold every session to these five, regardless of size:
 2. **Proof commands, not claims.** "Done" means: `pnpm check:token-gates` 3/3 CLEAN, `pnpm typecheck` green, suite result stated as a number ("510/510" or "N intentional diffs pending your review"). If the agent says done without these, ask for the outputs.
 3. **Baselines ride with the change.** Intentional visual change → updated manifest metadata in the same commit, after the packed archive is reviewed and published. An agent that updates baselines to silence a failure it can't explain is the one thing you never accept.
 4. **Mechanical changes via scripts.** If it's touching 20+ files with the same rewrite, it should write an idempotent codemod in `scripts/` (existing `codemod-*.mjs` files are the pattern), not hand-edit.
-5. **Decisions get written down.** Anything judgment-shaped (a mapping, an exception, a deferral) goes in `doc/design/DECISION-SHEET.md` with one line of rationale.
+5. **Decisions get written down.** Anything judgment-shaped (a mapping, an exception, a deferral) goes in `docs/designs/DECISION-SHEET.md` with one line of rationale.
 
 ## Reviewing like a designer
 

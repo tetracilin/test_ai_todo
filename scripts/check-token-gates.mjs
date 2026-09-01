@@ -3,7 +3,7 @@
  * check-token-gates.mjs
  *
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
- * run (branch design/token-extraction; see doc/design/DESIGN-UI.md, GOAL-PROMPT.md,
+ * run (branch design/token-extraction; see docs/designs/DESIGN-UI.md, GOAL-PROMPT.md,
  * TOKEN-AUDIT.md). Scans `ui/src/components/**` and `ui/src/pages/**`
  * (excluding `ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:

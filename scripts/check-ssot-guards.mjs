@@ -14,8 +14,8 @@
  *     one file at checkout on Windows/macOS. The check reads `git ls-files`
  *     (the index/tree), NOT the filesystem — a case-insensitive filesystem
  *     cannot see the collision it is about to suffer. Zero exceptions.
- *     Relocated content lives at different paths (`doc/UPSTREAM-ROADMAP.md`,
- *     `doc/design/DESIGN-UI.md`) and does not trip this check.
+ *     Relocated content lives at a different path (`docs/designs/DESIGN-UI.md`)
+ *     and does not trip this check; upstream's roadmap is not kept at all.
  *
  *   Check 2 — CURATED REFERENCE CHECK: a small, fixed list of load-bearing
  *     files — CLAUDE.md, AGENTS.md, README.md, package.json (its `scripts`
@@ -25,9 +25,9 @@
  *     the list is curated here, in code, so it cannot rot.
  *
  *     Matching is uppercase- and boundary-aware to stay low-false-positive:
- *       - `doc/UPSTREAM-ROADMAP.md` does not match (`ROADMAP.md` is
- *         preceded by `-`, i.e. it is part of a longer file name);
- *       - `doc/design/DESIGN-UI.md` does not match (it never contains the
+ *       - a longer file name such as `SOME-ROADMAP.md` does not match
+ *         (`ROADMAP.md` is preceded by `-`);
+ *       - `docs/designs/DESIGN-UI.md` does not match (it never contains the
  *         substring `DESIGN.md` at all);
  *       - the fork's lowercase `design.md` / `roadmap.md` do not match
  *         (case-sensitive: only the upstream UPPERCASE names are stale);
@@ -91,7 +91,7 @@ function findTreePathViolations(trackedPaths) {
 // ── Check 2: curated reference check ────────────────────────────────────
 // Uppercase-only, so the fork's lowercase trio never matches. The lookbehind
 // rejects a word/hyphen character immediately before the name, so
-// `UPSTREAM-ROADMAP.md` and other longer file names never match either.
+// longer file names (e.g. `SOME-ROADMAP.md`) never match either.
 const STALE_REF_RE = /(?<![A-Za-z0-9_-])(?:DESIGN|ROADMAP)\.md\b/g;
 
 // Prose that names the old paths on purpose (sync-checklist instructions

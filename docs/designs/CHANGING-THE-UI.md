@@ -46,7 +46,7 @@ Then **review the git diff and keep only the CSS-variable value changes** — th
 - **Values**: tokens only. No hex, no `text-[11px]`, no `p-[13px]`. If no token fits, **add a token** — that's a feature, not a workaround.
 - **Type**: use the named ladder — `--text-nano` (10px) / `--text-micro` (11px) / Tailwind `text-xs` (12) / `--text-compact` (13) / `text-sm` (14). Letter-spacing: `--tracking-label` / `--tracking-eyebrow` / `--tracking-caps`.
 - **Status**: anything that means running/idle/paused/error/todo/done/blocked uses the status system (`ui/src/lib/status-colors.ts` helpers or `--status-*` tokens). Liveness is always blue.
-- **Primitives**: check `ui/src/components/ui/` and `doc/design/COMPONENT-INVENTORY.md` before writing a new component. Switches are `ToggleSwitch`; badges/chips route through `brandChipBadge`.
+- **Primitives**: check `ui/src/components/ui/` and `docs/designs/COMPONENT-INVENTORY.md` before writing a new component. Switches are `ToggleSwitch`; badges/chips route through `brandChipBadge`.
 - **Give it a story.** New visual surface = new Storybook story = automatic screenshot coverage forever.
 - `pnpm check:token-gates` before you push. If a value genuinely can't be a token (third-party config, canvas fills, intentional one-off decoration on demo pages), it goes on the allowlist **with an inline comment saying why**.
 
