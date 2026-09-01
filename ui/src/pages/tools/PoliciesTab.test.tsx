@@ -272,7 +272,7 @@ describe("PoliciesTab", () => {
     const forget = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Forget"));
     flushSync(() => forget?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await flushReact();
-    expect(container.textContent).toContain("Paperclip will ask again");
+    expect(container.textContent).toContain("Purpose Robot will ask again");
 
     const confirmForget = [...container.querySelectorAll("button")].filter((button) => button.textContent?.includes("Forget")).at(-1);
     flushSync(() => confirmForget?.dispatchEvent(new MouseEvent("click", { bubbles: true })));

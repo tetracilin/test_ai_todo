@@ -295,7 +295,7 @@ export function NewAgentDialog() {
                   Back
                 </button>
                 <p className="text-sm text-muted-foreground">
-                  Choose the runtime Paperclip should start or resume directly.
+                  Choose the runtime Purpose Robot should start or resume directly.
                 </p>
               </div>
 
@@ -340,7 +340,7 @@ export function NewAgentDialog() {
                 <div className="space-y-1">
                   <h2 className="text-sm font-semibold">Invite an external agent</h2>
                   <p className="text-sm text-muted-foreground">
-                    Generate a one-time onboarding prompt that any compatible agent can use to request access, wait for approval, and claim its Paperclip API key.
+                    Generate a one-time onboarding prompt that any compatible agent can use to request access, wait for approval, and claim its Purpose Robot API key.
                   </p>
                 </div>
               </div>

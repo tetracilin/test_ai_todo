@@ -697,12 +697,12 @@ describe("MarkdownEditor", () => {
   });
 
   it("keeps mention queries active across spaces", () => {
-    expect(findMentionMatch("Ping @Paperclip App", "Ping @Paperclip App".length)).toEqual({
+    expect(findMentionMatch("Ping @Purpose Robot App", "Ping @Purpose Robot App".length)).toEqual({
       trigger: "mention",
       marker: "@",
-      query: "Paperclip App",
+      query: "Purpose Robot App",
       atPos: 5,
-      endPos: "Ping @Paperclip App".length,
+      endPos: "Ping @Purpose Robot App".length,
     });
   });
 
@@ -847,19 +847,20 @@ describe("MarkdownEditor", () => {
       {
         id: "project:project-123",
         kind: "project" as const,
-        name: "Paperclip App",
+        name: "Purpose Robot App",
         projectId: "project-123",
         projectColor: "#336699",
       },
     ],
-    matchText = "Paperclip App",
+    matchText = "Purpose Robot App",
+    typed = "@Pur",
   ): Promise<{ option: HTMLButtonElement; root: ReturnType<typeof createRoot>; menu: HTMLElement }> {
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
         <MarkdownEditor
-          value="@Pap"
+          value={typed}
           onChange={handleChange}
           mentions={mentions}
         />,
@@ -875,7 +876,7 @@ describe("MarkdownEditor", () => {
 
     const selection = window.getSelection();
     const range = document.createRange();
-    range.setStart(textNode!, "@Pap".length);
+    range.setStart(textNode!, typed.length);
     range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);
@@ -906,7 +907,7 @@ describe("MarkdownEditor", () => {
     });
 
     expect(handleChange).toHaveBeenCalledWith(
-      `[@Paperclip App](${buildProjectMentionHref("project-123", "#336699")}) `,
+      `[@Purpose Robot App](${buildProjectMentionHref("project-123", "#336699")}) `,
     );
 
     await act(async () => {
@@ -928,6 +929,7 @@ describe("MarkdownEditor", () => {
         },
       ],
       "PAP-102",
+      "@PAP",
     );
     const point = { clientX: 100, clientY: 50 };
 
@@ -961,6 +963,7 @@ describe("MarkdownEditor", () => {
         },
       ],
       "PAP-102",
+      "@PAP",
     );
 
     expect(option.textContent).toContain("PAP-102");
@@ -1007,7 +1010,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `Purpose Robot App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1035,7 +1038,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `Purpose Robot App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1045,7 +1048,7 @@ describe("MarkdownEditor", () => {
         <Dialog open>
           <DialogContent>
             <DialogTitle>Create task</DialogTitle>
-            <MarkdownEditor value="@Pap" onChange={() => {}} mentions={mentions} />
+            <MarkdownEditor value="@Pur" onChange={() => {}} mentions={mentions} />
           </DialogContent>
         </Dialog>,
       );
@@ -1058,7 +1061,7 @@ describe("MarkdownEditor", () => {
 
     const selection = window.getSelection();
     const range = document.createRange();
-    range.setStart(textNode!, "@Pap".length);
+    range.setStart(textNode!, "@Pur".length);
     range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);
@@ -1093,7 +1096,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 60 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `Purpose Robot App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1119,7 +1122,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `Purpose Robot App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));

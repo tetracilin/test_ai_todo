@@ -1477,8 +1477,8 @@ function RequestConfirmationResolution({
             </div>
             <p className="mt-1 leading-6">
               {resumeFailure.status === "retrying"
-                ? `Paperclip is retrying the agent resume after approval (attempt ${resumeFailure.attempt}/${resumeFailure.maxAttempts}).`
-                : "Paperclip needs attention before the agent can resume this approved work."}
+                ? `Purpose Robot is retrying the agent resume after approval (attempt ${resumeFailure.attempt}/${resumeFailure.maxAttempts}).`
+                : "Purpose Robot needs attention before the agent can resume this approved work."}
             </p>
             {resumeFailure.errorCode ? (
               <p className="mt-1 leading-6">
@@ -2106,7 +2106,7 @@ function SecretProposalResolution({
         <div>
           <div className="font-medium">Approved by {who} — creating the binding</div>
           <p className="mt-1 text-amber-900/80 dark:text-amber-100/80">
-            Paperclip is re-checking authority and the proposal snapshot before writing.
+            Purpose Robot is re-checking authority and the proposal snapshot before writing.
           </p>
         </div>
       </div>

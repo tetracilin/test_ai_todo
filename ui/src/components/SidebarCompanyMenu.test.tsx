@@ -519,7 +519,7 @@ describe("SidebarCompanyMenu", () => {
     });
   });
 
-  describe("in Paperclip Cloud", () => {
+  describe("in Purpose Robot Cloud", () => {
     it("closes the menu and enters the Cloud logout flow without local sign-out", async () => {
       const { root } = renderMenu({ cloud: true });
       await flushReact();

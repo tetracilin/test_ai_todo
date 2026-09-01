@@ -132,7 +132,7 @@ describe("AuditTab", () => {
     expect(container.textContent).toContain("Send Email");
     expect(container.textContent).toContain("Gmail");
     expect(container.textContent).toContain("Blocked");
-    expect(container.textContent).toContain("Recorded by Paperclip — entries can't be edited.");
+    expect(container.textContent).toContain("Recorded by Purpose Robot — entries can't be edited.");
     // Vocabulary gate: no raw tool ID or ops terms in the sentence list.
     expect(container.textContent).not.toContain("mail:send_email");
     expect(container.textContent).not.toContain("server-authoritative");

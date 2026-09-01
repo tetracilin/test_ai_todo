@@ -56,7 +56,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
+    selectedCompany: { id: "company-1", name: "Purpose Robot" },
   }),
 }));
 
@@ -239,7 +239,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     );
   });
 
-  it("shows an in-flight state while Paperclip prepares Notion sign-in", async () => {
+  it("shows an in-flight state while Purpose Robot prepares Notion sign-in", async () => {
     mockSearch.value = "source=notion";
     listGalleryMock.mockResolvedValueOnce({ apps: [NOTION] });
     connectAppMock.mockReturnValueOnce(new Promise(() => {}));

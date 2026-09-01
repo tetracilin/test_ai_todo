@@ -36,7 +36,7 @@ function errorMessage(error: unknown, fallback: string) {
     if (error.status === 403) return "You do not have permission to manage Discord settings for this company.";
     if (code === "expired_link_code") return "This Discord link code expired. Create a new code and try again.";
     if (code === "invalid_link_code" || code === "link_code_used") return "This Discord link code is no longer valid. Create a new code.";
-    if (code === "notification_channel_not_mapped") return "Choose a channel mapped to this Paperclip company.";
+    if (code === "notification_channel_not_mapped") return "Choose a channel mapped to this Purpose Robot company.";
     if (error.status === 404) return "Discord integration is not configured for this company.";
   }
   return error instanceof Error ? error.message : fallback;

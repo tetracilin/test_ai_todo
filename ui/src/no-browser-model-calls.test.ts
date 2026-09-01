@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  * K10 "no browser-side model/key calls" guard.
  *
  * The Hermes Gateway contract requires every model call to happen server-side
- * through the Paperclip API: the browser never talks to a model provider
+ * through the Purpose Robot API: the browser never talks to a model provider
  * directly and never stores or transmits provider credentials. These tests
  * guard the `ui/src` source tree so the class of violation cannot return
  * silently:

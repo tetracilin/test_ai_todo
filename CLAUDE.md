@@ -110,7 +110,7 @@ pnpm check:token-gates
 
 ## Architecture
 
-Paperclip is a Node.js/Express API server plus a React/Vite UI that orchestrates teams of AI
+Purpose Robot is a Node.js/Express API server plus a React/Vite UI that orchestrates teams of AI
 agents ("agent employees") for a company. In dev, the server serves the UI itself in Vite
 middleware mode from the same origin (`:3100`).
 
@@ -133,7 +133,7 @@ middleware mode from the same origin (`:3100`).
   plumbing. `server/src/adapters/` is where the server registers and invokes these at runtime;
   `cli/src/adapters/` is the CLI-side counterpart for local/process/HTTP adapter invocation.
 - `packages/plugins/` — the instance-wide plugin system (`sdk`, example plugins, sandbox
-  providers). Plugins extend Paperclip out-of-process rather than by forking core.
+  providers). Plugins extend Purpose Robot out-of-process rather than by forking core.
 - `packages/skills-catalog/` and `packages/teams-catalog/` — app-shipped, checked-in catalogs
   (`catalog/bundled|optional/<category>/<slug>/{SKILL,TEAM}.md` + a generated `catalog.json`
   manifest). Server/CLI read the generated manifest at request time, they do not crawl the
@@ -142,7 +142,7 @@ middleware mode from the same origin (`:3100`).
 - `cli/` — the published `paperclipai` CLI: setup/onboarding, `doctor`, `configure`, worktree
   management, and agent-facing client commands (issues, agents, dashboards) via `paperclipai
   <noun> <verb>`.
-- `skills/` — Paperclip's own runtime/operational skills (distinct from the shipped app catalog
+- `skills/` — Purpose Robot's own runtime/operational skills (distinct from the shipped app catalog
   under `packages/skills-catalog`).
 - `.agents/skills/` and `.claude/skills/` — skills for AI contributors working *on* this repo
   itself (release process, PR gardening, doc maintenance, etc.) — not shipped to end users.

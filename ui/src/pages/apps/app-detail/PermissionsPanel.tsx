@@ -134,7 +134,7 @@ function AccessSection({
             />
             <span>
               <span className="text-sm font-semibold text-foreground">All agents</span>
-              <span className="block text-xs text-muted-foreground">Anyone you've added to Paperclip.</span>
+              <span className="block text-xs text-muted-foreground">Anyone you've added to Purpose Robot.</span>
             </span>
           </label>
           <label className="flex items-start gap-3">

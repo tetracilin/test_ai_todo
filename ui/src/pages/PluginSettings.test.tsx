@@ -30,7 +30,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompany: { id: "company-1", name: "Paperclip", issuePrefix: "PAP" },
+    selectedCompany: { id: "company-1", name: "Purpose Robot", issuePrefix: "PAP" },
     selectedCompanyId: "company-1",
   }),
 }));
@@ -71,8 +71,8 @@ function basePlugin(overrides: Record<string, unknown> = {}) {
     manifestJson: {
       displayName: "E2B Sandbox Provider",
       version: "0.1.0",
-      description: "E2B environments for Paperclip.",
-      author: "Paperclip",
+      description: "E2B environments for Purpose Robot.",
+      author: "Purpose Robot",
       capabilities: ["environment.drivers.register"],
       environmentDrivers: [
         {
@@ -184,7 +184,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "Purpose Robot",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -217,7 +217,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "Purpose Robot",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -259,7 +259,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "Purpose Robot",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -298,7 +298,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "Purpose Robot",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },

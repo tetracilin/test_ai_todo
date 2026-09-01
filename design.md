@@ -31,7 +31,7 @@ business process are fixed by the K6 domain map
 - **Conversation captures.** Chat is where work arrives: job orders, evidence photos,
   clarifications, "brief me". The agent structures what arrives into cards, dossier
   entries, and evidence links. Field users never fill forms.
-- **The board plans.** The Paperclip board (and its Teable mirror for office staff) is
+- **The board plans.** The Purpose Robot board (and its Teable mirror for office staff) is
   where WPs, sequencing, approvals, and review live — the wide-screen, at-the-desk
   surface.
 
@@ -64,7 +64,7 @@ control.
 Flat tabular data (OEM catalogs, BOM line items, design-dossier sections) lives in
 Teable. Cards link Teable rows as external objects (provider `teable`). Two distinct
 capabilities, kept separate in the backlog: **PC-005** mirrors cards one-directionally
-Paperclip → Teable (board GUI for office staff); **PC-010** gives agents direct tabular
+Purpose Robot → Teable (board GUI for office staff); **PC-010** gives agents direct tabular
 read/write (filing an OEM row or BOM item into Teable and linking it), with its own
 write-conflict policy, schema mapping, and an explicit allowlist of agent-writable
 bases/tables.

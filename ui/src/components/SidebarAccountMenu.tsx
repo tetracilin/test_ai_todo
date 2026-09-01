@@ -204,7 +204,7 @@ export function SidebarAccountMenu({
                       </a>
                     ) : null}
                     <p>
-                      Paperclip{" "}
+                      Purpose Robot{" "}
                       <a
                         href={`${SOURCE_REPOSITORY_URL}/commit/${sourceFullSha}`}
                         target="_blank"
@@ -216,7 +216,7 @@ export function SidebarAccountMenu({
                     </p>
                   </div>
                 ) : version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">Paperclip v{version}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Purpose Robot v{version}</p>
                 ) : null}
               </div>
             </div>
@@ -238,7 +238,7 @@ export function SidebarAccountMenu({
               />
               <MenuAction
                 label="Documentation"
-                description="Open Paperclip docs in a new tab."
+                description="Open Purpose Robot docs in a new tab."
                 icon={BookOpen}
                 href={DOCS_URL}
                 external
