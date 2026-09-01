@@ -1,0 +1,19 @@
+[Unit]
+Description=Relay Paperclip production bridge traffic to eng-rick Hermes gateway
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/bin/socat TCP-LISTEN:8643,bind=172.16.10.1,reuseaddr,fork TCP:127.0.0.1:8643
+Restart=always
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET
+
+[Install]
+WantedBy=multi-user.target
