@@ -1,6 +1,6 @@
 # Running an AI-agent session against the design system
 
-A guide for the *human* driving the session. You don't need to know the codebase — the system briefs the agent for you (AGENTS.md → `DESIGN.md` → `doc/design/`). Your job is to say what you want, look at pictures, and say yes or no. This document tells you how to do that well.
+A guide for the *human* driving the session. You don't need to know the codebase — the system briefs the agent for you (AGENTS.md → `DESIGN-UI.md` → `doc/design/`). Your job is to say what you want, look at pictures, and say yes or no. This document tells you how to do that well.
 
 ## The golden rule
 

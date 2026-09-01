@@ -1,8 +1,13 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-## Read 'Backlog.md' for context 
-'Backlog.md' at the repo root is the high level planning written by a product owner with confirmation from human user. The file list out the structure of the software. 
+## Read the SSoT trio for context
+
+The three fork-owned source-of-truth planning docs live at the repo root. Read them in
+order before planning work: `roadmap.md` (identity, high-level user stories, horizons) →
+`backlog.md` (incremental work packages, PC-xxx user-story specs, written by the product
+owner with human confirmation) → `design.md` (architecture notes). Each carries YAML
+frontmatter (`id`, `role`, `siblings`) and links the other two.
 
 ## Read `AGENTS.md` first
 
@@ -97,7 +102,7 @@ Data-model workflow: edit `packages/db/src/schema/*.ts` → export new tables fr
 
 `ui/src/components/**` and `ui/src/pages/**` must use only tokens from `ui/src/index.css` (no hex,
 raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize`, outside the documented
-allowlist). `DESIGN.md` is the source of truth. Run before committing UI changes:
+allowlist). `doc/design/DESIGN-UI.md` is the source of truth. Run before committing UI changes:
 
 ```sh
 pnpm check:token-gates

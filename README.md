@@ -3,10 +3,11 @@
 </p>
 
 > [!IMPORTANT]
-> **Fork identity:** `tetracilin/test_ai_todo` is the T3 AI Todo fork of
-> [`paperclipai/paperclip`](https://github.com/paperclipai/paperclip). Fork work is integrated on
-> `integration/paperclip`; `main` remains the preserved legacy application until an explicit human
-> cutover. See [`doc/UPSTREAM-SYNC.md`](doc/UPSTREAM-SYNC.md) and [`NOTICE`](NOTICE).
+> **Fork identity:** `tetracilin/test_ai_todo` is the T3 AI Todo **hard fork** of
+> [`paperclipai/paperclip`](https://github.com/paperclipai/paperclip), with an independent
+> roadmap ([`roadmap.md`](roadmap.md)). `main` is the development branch (the former
+> `integration/paperclip` branch is retired). Upstream changes land only as one-way selective
+> cherry-picks. See [`doc/UPSTREAM-SYNC.md`](doc/UPSTREAM-SYNC.md) and [`NOTICE`](NOTICE).
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
@@ -463,7 +464,9 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ⚪ Bring-your-own-ticket-system (Asana / Linear / Jira as on-ramps)
 - ⚪ Connected Apps (one-click integrations, e.g. Vercel)
 
-This is the short roadmap preview. See the full roadmap in [ROADMAP.md](ROADMAP.md).
+This is the short upstream roadmap preview. See the archived upstream roadmap in
+[doc/UPSTREAM-ROADMAP.md](doc/UPSTREAM-ROADMAP.md); the fork's own roadmap is
+[roadmap.md](roadmap.md).
 
 <br/>
 

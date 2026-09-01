@@ -2,7 +2,7 @@
 
 Run scope: `ui/src/components/` and `ui/src/pages/` on branch `design/token-extraction`. Read-only audit — no source files modified.
 
-**All consolidation, merge, and shadcn-swap recommendations in this document are RECOMMENDATIONS ONLY.** Per `GOAL-PROMPT.md` and `DESIGN.md`, no component merges, deletions, or swaps happen in this run. They become human-approved follow-up runs ("Run 2"/"Run 3").
+**All consolidation, merge, and shadcn-swap recommendations in this document are RECOMMENDATIONS ONLY.** Per `GOAL-PROMPT.md` and `DESIGN-UI.md`, no component merges, deletions, or swaps happen in this run. They become human-approved follow-up runs ("Run 2"/"Run 3").
 
 ## Counts
 
@@ -13,7 +13,7 @@ Run scope: `ui/src/components/` and `ui/src/pages/` on branch `design/token-extr
 | Feature components, nested subdirs (`access/`, `artifacts/`, `environment-variables-editor/`, `interrupt-handoff/`, `issue-output/`, `issue-properties/`, `routine-sections/`, `search/`, `timeline/`, `transcript/`) | 28 |
 | **Feature components total** | **206** |
 | Pages (`ui/src/pages/`, incl. `pages/secrets/`) | 73 |
-| **Grand total** | **303** (roughly matches DESIGN.md's "24 + ~277") |
+| **Grand total** | **303** (roughly matches DESIGN-UI.md's "24 + ~277") |
 
 ---
 
@@ -50,7 +50,7 @@ All 24 checked against the live shadcn registry via `npx shadcn@latest diff` (ne
 
 **Note:** `radio-card` and `toggle-switch` are not standard shadcn registry component names (the registry ships `radio-group` and `switch` respectively) — these were custom-built or heavily renamed/adapted rather than installed from the registry, so `shadcn diff` cannot check them against an upstream source. See shadcn-candidates section 4c.
 
-**Stock-value note:** several "arbitrary Tailwind bracket values" flagged in `TOKEN-AUDIT.md` inside these primitives (`checkbox.tsx` `rounded-[4px]`, `tooltip.tsx` `rounded-[2px]`, `command.tsx` `max-h-[300px]`, `avatar.tsx` `text-[10px]`) were verified to match the **current shadcn/ui registry source verbatim** — they are not local drift, just registry boilerplate that itself doesn't route through a token layer. Phase 2 will still need to touch them (DESIGN.md's gate is "zero arbitrary values in `ui/src/components/**`" with no carve-out for `components/ui/`), but they are not evidence of local customization.
+**Stock-value note:** several "arbitrary Tailwind bracket values" flagged in `TOKEN-AUDIT.md` inside these primitives (`checkbox.tsx` `rounded-[4px]`, `tooltip.tsx` `rounded-[2px]`, `command.tsx` `max-h-[300px]`, `avatar.tsx` `text-[10px]`) were verified to match the **current shadcn/ui registry source verbatim** — they are not local drift, just registry boilerplate that itself doesn't route through a token layer. Phase 2 will still need to touch them (DESIGN-UI.md's gate is "zero arbitrary values in `ui/src/components/**`" with no carve-out for `components/ui/`), but they are not evidence of local customization.
 
 ---
 
@@ -207,7 +207,7 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | Component | Purpose |
 |---|---|
 | `Layout.tsx` | App shell layout |
-| `EmptyState.tsx` | **The single canonical empty-state component** — confirmed only one exists, matching DESIGN.md principle 1 |
+| `EmptyState.tsx` | **The single canonical empty-state component** — confirmed only one exists, matching DESIGN-UI.md principle 1 |
 | `SystemNotice.tsx` | Global system notice banner |
 | `DevRestartBanner.tsx` | Dev-mode restart-required banner |
 | `ToastViewport.tsx` + `context/ToastContext.tsx` | Fully custom toast notification system — no shadcn `sonner`/toast primitive installed (see shadcn candidates 4a) |
@@ -298,7 +298,7 @@ Grouped by area; one line each.
 | `CompanyImport.tsx` / `CompanyExport.tsx` | Import/export company data |
 | `RoutineDetail.tsx` | Routine detail route |
 
-**UxLab pages are real routes** (confirmed via `App.tsx` — `/ux-lab/*`, `/design-guide`), not build-excluded demo code, so all hardcoded values inside them are in-scope per DESIGN.md even though they're showcase surfaces rather than product screens a typical operator visits daily.
+**UxLab pages are real routes** (confirmed via `App.tsx` — `/ux-lab/*`, `/design-guide`), not build-excluded demo code, so all hardcoded values inside them are in-scope per DESIGN-UI.md even though they're showcase surfaces rather than product screens a typical operator visits daily.
 
 ---
 

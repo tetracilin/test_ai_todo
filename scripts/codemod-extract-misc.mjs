@@ -437,7 +437,7 @@ function rewriteFile(filePath, relPath) {
 
   content = content.replace(VAR_NOFALLBACK_RE, (match, bang, util, varName) => {
     siteCount++;
-    // Bare var() passthrough - no new token minted, per DESIGN.md/Batch 3's
+    // Bare var() passthrough - no new token minted, per DESIGN-UI.md/Batch 3's
     // special case for runtime library/component variables. Here the vars
     // already exist as first-class design tokens in index.css (--chip-match-*),
     // so this is a pure syntax modernization, not a token mint.
@@ -497,7 +497,7 @@ function main() {
     lines.push("   lists, z-index, scale, easing, vertical-align, stroke-width, blur,");
     lines.push("   drop-shadow, and half-migrated var(x, fallback) color forms,");
     lines.push("   verbatim (no normalizing - the human scale-collapse decision comes");
-    lines.push("   later per DESIGN.md/TOKEN-AUDIT.md). --gtc-* and --gtr-* and --tp-* are");
+    lines.push("   later per DESIGN-UI.md/TOKEN-AUDIT.md). --gtc-* and --gtr-* and --tp-* are");
     lines.push("   sequentially numbered / slugged since their content (track lists,");
     lines.push("   property lists) is not safely nameable by value alone.");
     lines.push("");

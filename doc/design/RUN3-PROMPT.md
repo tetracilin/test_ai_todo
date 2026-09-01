@@ -19,7 +19,7 @@ cd ~/Projects/DEV/paperclip-design-simplify
 git checkout -b design/component-convergence
 ```
 
-Either way: launch `claude` from inside that directory, type `/goal`, paste the block below. The session inherits DESIGN.md and these docs automatically.
+Either way: launch `claude` from inside that directory, type `/goal`, paste the block below. The session inherits DESIGN-UI.md and these docs automatically.
 
 ## What to expect
 
@@ -31,7 +31,7 @@ Either way: launch `claude` from inside that directory, type `/goal`, paste the 
 ```
 Converge Paperclip's duplicated hand-rolled UI onto the shared
 primitives, per the approved scope in doc/design/DECISION-SHEET.md
-items C2, C3, C5, C11. DESIGN.md is the source of truth; read
+items C2, C3, C5, C11. DESIGN-UI.md is the source of truth; read
 doc/design/CHANGING-THE-UI.md and doc/design/RUN3-PROMPT.md first.
 Work only in this worktree/branch; never touch master. Small
 reviewable commits: one component-conversion unit per commit.

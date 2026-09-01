@@ -3,7 +3,7 @@
  * check-token-gates.mjs
  *
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
- * run (branch design/token-extraction; see DESIGN.md, GOAL-PROMPT.md,
+ * run (branch design/token-extraction; see doc/design/DESIGN-UI.md, GOAL-PROMPT.md,
  * TOKEN-AUDIT.md). Scans `ui/src/components/**` and `ui/src/pages/**`
  * (excluding `ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:
@@ -45,7 +45,7 @@
  *
  *   Gate 3 — zero raw FONT-SIZE declarations: `text-[Npx]`/`text-[N.Nrem]`
  *     Tailwind arbitrary font-size utilities (a subset of gate 2, checked
- *     explicitly since font-size is its own DESIGN.md-named category) and
+ *     explicitly since font-size is its own DESIGN-UI.md-named category) and
  *     `fontSize: "..."` / `font-size:` string-literal declarations in
  *     inline styles or css-in-js.
  *

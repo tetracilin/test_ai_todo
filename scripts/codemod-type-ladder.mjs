@@ -9,7 +9,7 @@
  *   --fs-9, --fs-10          -> --text-nano: 10px   (9 -> 10 bump)
  *   --fs-11, --fs-0_7rem     -> --text-micro: 11px  (0.7rem = 11.2px -> 11px)
  *   --fs-12                  -> Tailwind `text-xs`  (12px exact match;
- *                               scale class preferred over token per DESIGN.md)
+ *                               scale class preferred over token per DESIGN-UI.md)
  *   --fs-13                  -> --text-compact: 13px
  *   --fs-14, --fs-15         -> Tailwind `text-sm`  (14px; 15 -> 14)
  *
@@ -92,7 +92,7 @@ const LADDER_BLOCK = `  /* ── Named type ladder (DECISION-SHEET.md B3, prese
        9px + 10px    -> --text-nano   (9 -> 10 bump per locked ladder)
        11px + 0.7rem -> --text-micro  (0.7rem = 11.2px -> 11px)
        12px          -> Tailwind \`text-xs\` class (12px exact match; scale
-                        class preferred over a redundant token per DESIGN.md)
+                        class preferred over a redundant token per DESIGN-UI.md)
        13px          -> --text-compact (PRIOR-ART named this tier "sm 13",
                         but that collides with Tailwind text-sm = 14px,
                         hence "compact")
