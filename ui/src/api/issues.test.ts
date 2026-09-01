@@ -124,4 +124,14 @@ describe("issuesApi.list", () => {
       },
     );
   });
+
+  it("launches agent help with no task metadata in its request body", async () => {
+    await issuesApi.launchAgentHelp("issue-1", "00000000-0000-4000-8000-000000000001");
+
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/issues/issue-1/agent-help",
+      {},
+      { headers: { "Idempotency-Key": "00000000-0000-4000-8000-000000000001" } },
+    );
+  });
 });

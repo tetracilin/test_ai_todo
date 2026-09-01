@@ -66,6 +66,7 @@ export {
   redactDiagnosticText,
 } from "./command-redaction.js";
 export { buildSandboxNpmInstallCommand } from "./sandbox-install-command.js";
+export { containsStructuredSecret, normalizeSecretScanText } from "./secret-scanning.js";
 export {
   buildAdapterEnvConfig,
   parseEnvBindings,

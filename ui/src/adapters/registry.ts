@@ -6,6 +6,7 @@ import { cursorLocalUIAdapter } from "./cursor";
 
 import { grokLocalUIAdapter } from "./grok-local";
 import { kimiLocalUIAdapter } from "./kimi-local";
+import { notebookLmLocalUIAdapter } from "./notebooklm-local";
 import { hermesGatewayUIAdapter } from "./hermes-gateway";
 import { hermesLocalUIAdapter } from "./hermes-local";
 import { openCodeLocalUIAdapter } from "./opencode-local";
@@ -59,6 +60,7 @@ function registerBuiltInUIAdapters() {
 
     grokLocalUIAdapter,
     kimiLocalUIAdapter,
+    notebookLmLocalUIAdapter,
     hermesGatewayUIAdapter,
     hermesLocalUIAdapter,
     openCodeLocalUIAdapter,
