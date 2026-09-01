@@ -552,6 +552,60 @@ describe("company portability", () => {
     expect(exported.warnings).toContain("Agent claudecoder PATH override was omitted from export because it is system-dependent.");
   });
 
+  // NLM-A06 (card t_0f2715c3): notebooklm_local's cookieStorePath is a
+  // plain path pointing at this host's bind-mounted profile/auth store
+  // (e.g. /paperclip/notebooklm) — it is not a secret, but it is
+  // near-certainly wrong on any other host/company, so export must scrub it
+  // as system-dependent the same way it already scrubs an absolute `command`.
+  it("omits notebooklm_local cookieStorePath from export as system-dependent", async () => {
+    const portability = companyPortabilityService({} as any);
+
+    agentSvc.list.mockResolvedValueOnce([
+      {
+        id: "agent-nlm",
+        name: "Notebook Runner",
+        status: "idle",
+        role: "researcher",
+        title: "Research Agent",
+        icon: "code",
+        reportsTo: null,
+        capabilities: "Runs NotebookLM operations",
+        adapterType: "notebooklm_local",
+        adapterConfig: {
+          command: "nlm",
+          profile: "default",
+          cookieStorePath: "/paperclip/notebooklm",
+          subcommand: "notebook",
+          args: ["list"],
+        },
+        runtimeConfig: {},
+        budgetMonthlyCents: 0,
+        permissions: {},
+        metadata: null,
+      },
+    ]);
+    agentInstructionsSvc.exportFiles.mockResolvedValueOnce({
+      files: { "AGENTS.md": "You are Notebook Runner." },
+      entryFile: "AGENTS.md",
+      warnings: [],
+    });
+
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    expect(extension).not.toContain("/paperclip/notebooklm");
+    expect(exported.warnings).toContain(
+      "Agent notebook-runner cookieStorePath /paperclip/notebooklm was omitted from export because it is system-dependent.",
+    );
+  });
+
   it("does not load or emit skills when agents are included but skills are disabled", async () => {
     const portability = companyPortabilityService({} as any);
 
@@ -5291,6 +5345,59 @@ describe("company portability", () => {
       mode: "agent_safe",
       sourceCompanyId: "company-1",
     })).rejects.toThrow('Adapter type "process" is not allowed in safe imports');
+
+    expect(agentSvc.create).not.toHaveBeenCalled();
+  });
+
+  // NLM-A06 (card t_0f2715c3): notebooklm_local is host-local (its
+  // cookieStorePath/profile store lives on this host's bind mount, per K10
+  // policy) so IMPORT_FORBIDDEN_ADAPTER_TYPES must reject it in agent-safe
+  // imports the same way it already rejects process/http.
+  it("rejects notebooklm_local on agent-safe imports (host-local auth store)", async () => {
+    const portability = companyPortabilityService({} as any);
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    agentSvc.list.mockResolvedValue([]);
+
+    await expect(portability.importBundle({
+      source: {
+        type: "inline",
+        rootPath: exported.rootPath,
+        files: exported.files,
+      },
+      include: {
+        company: false,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+      target: {
+        mode: "existing_company",
+        companyId: "company-1",
+      },
+      agents: ["claudecoder"],
+      collisionStrategy: "rename",
+      adapterOverrides: {
+        claudecoder: {
+          adapterType: "notebooklm_local",
+          adapterConfig: {
+            command: "nlm",
+            subcommand: "notebook",
+            args: ["list"],
+          },
+        },
+      },
+    }, "user-1", {
+      mode: "agent_safe",
+      sourceCompanyId: "company-1",
+    })).rejects.toThrow('Adapter type "notebooklm_local" is not allowed in safe imports');
 
     expect(agentSvc.create).not.toHaveBeenCalled();
   });

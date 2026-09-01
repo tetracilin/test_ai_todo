@@ -196,7 +196,7 @@ const DEFAULT_IMPORTED_LABEL_COLOR = "#6366f1";
 // type-agnostic, so blob files always travel as opaque octet streams while
 // each attachment entry carries the real content type.
 const PORTABLE_BLOB_CONTENT_TYPE = "application/octet-stream";
-const IMPORT_FORBIDDEN_ADAPTER_TYPES = new Set(["process", "http"]);
+const IMPORT_FORBIDDEN_ADAPTER_TYPES = new Set(["process", "http", "notebooklm_local"]);
 const execFileAsync = promisify(execFile);
 let bundledSkillsCommitPromise: Promise<string | null> | null = null;
 
@@ -4205,6 +4205,20 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         if (commandValue && isAbsoluteCommand(commandValue)) {
           warnings.push(`Agent ${slug} command ${commandValue} was omitted from export because it is system-dependent.`);
           delete portableAdapterConfig.command;
+        }
+        // notebooklm_local's cookieStorePath points at this host's auth/profile
+        // bind mount (e.g. /paperclip/notebooklm); the profile itself never
+        // leaves the host (only a plain path is stored here), but the path is
+        // host-local by design (NLM-A06 K10 policy) and near-certainly wrong on
+        // any other host/company, so it is exported as system-dependent rather
+        // than silently carried over.
+        const cookieStorePathValue = asString(portableAdapterConfig.cookieStorePath);
+        if (
+          agent.adapterType === "notebooklm_local"
+          && cookieStorePathValue
+        ) {
+          warnings.push(`Agent ${slug} cookieStorePath ${cookieStorePathValue} was omitted from export because it is system-dependent.`);
+          delete portableAdapterConfig.cookieStorePath;
         }
         for (const [relativePath, content] of Object.entries(exportedInstructions.files)) {
           const targetPath = `agents/${slug}/${relativePath}`;

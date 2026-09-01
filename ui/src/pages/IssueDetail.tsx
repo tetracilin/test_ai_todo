@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { ApiError } from "../api/client";
-import { issuesApi } from "../api/issues";
+import { issuesApi, type AgentHelpLaunchResponse } from "../api/issues";
 import { approvalsApi } from "../api/approvals";
 import { activityApi, type RunForIssue } from "../api/activity";
 import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../api/heartbeats";
@@ -362,6 +362,30 @@ function resolveInterruptibleIssueRun(
       ? activeRun
       : null
   );
+}
+
+type AgentHelpLaunchState = "idle" | "launching" | "queued" | "failed";
+
+function agentHelpFailureCopy(error: unknown): string {
+  const code = error instanceof ApiError && typeof error.body === "object" && error.body !== null
+    ? (error.body as { code?: unknown }).code
+    : null;
+  switch (code) {
+    case "TASK_ACCESS_DENIED":
+      return "You do not have access to request help for this task.";
+    case "TASK_NOT_FOUND":
+      return "This task is no longer available.";
+    case "TASK_CONTEXT_INVALID":
+      return "Task title or status is invalid. Update the task and retry.";
+    case "TASK_CONTEXT_CONTAINS_SECRET":
+      return "Task context may contain a secret. Remove it and retry.";
+    case "AGENT_HELP_ALREADY_ACTIVE":
+      return "Agent help is already active for this task.";
+    case "AGENT_LAUNCH_UNAVAILABLE":
+      return "Agent help is unavailable. Retry shortly.";
+    default:
+      return "Unable to request agent help. Retry shortly.";
+  }
 }
 
 function dedupeLiveRunsById(liveRuns: readonly LiveRunForIssue[]) {
@@ -1745,6 +1769,7 @@ export function IssueDetail() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [treeControlOpen, setTreeControlOpen] = useState(false);
+  const [agentHelpLaunchState, setAgentHelpLaunchState] = useState<AgentHelpLaunchState>("idle");
   const [treeControlMode, setTreeControlMode] = useState<IssueTreeControlMode>("pause");
   const [treeControlReason, setTreeControlReason] = useState("");
   const [treeControlWakeAgentsOnResume, setTreeControlWakeAgentsOnResume] = useState(false);
@@ -1757,6 +1782,13 @@ export function IssueDetail() {
   const lastScrollIssueIdRef = useRef<string | undefined>(undefined);
   const commentComposerRef = useRef<IssueChatComposerHandle | null>(null);
   const cancelledQueuedOptimisticCommentIdsRef = useRef(new Set<string>());
+  const agentHelpLaunchPendingRef = useRef(false);
+
+  useEffect(() => {
+    agentHelpLaunchPendingRef.current = false;
+    setAgentHelpLaunchState("idle");
+  }, [issueId]);
+
   const resolvedIssueDetailState = useMemo(
     () => readIssueDetailLocationState(issueId, location.state, location.search),
     [issueId, location.state, location.search],
@@ -2429,6 +2461,28 @@ export function IssueDetail() {
       if (selectedCompanyId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
       }
+    },
+  });
+  const launchAgentHelp = useMutation({
+    mutationFn: () => issuesApi.launchAgentHelp(issueId!, crypto.randomUUID()),
+    onMutate: () => {
+      setAgentHelpLaunchState("launching");
+    },
+    onSuccess: (result: AgentHelpLaunchResponse) => {
+      setAgentHelpLaunchState("queued");
+      pushToast({
+        title: result.status === "already_queued" ? "Agent help already queued" : "Agent help queued",
+        body: "An agent will use the current task context.",
+        tone: "success",
+      });
+    },
+    onError: (error: unknown) => {
+      const body = agentHelpFailureCopy(error);
+      setAgentHelpLaunchState("failed");
+      pushToast({ title: "Agent help failed", body, tone: "error" });
+    },
+    onSettled: () => {
+      agentHelpLaunchPendingRef.current = false;
     },
   });
   const resolveRecoveryAction = useMutation({
@@ -4394,6 +4448,17 @@ export function IssueDetail() {
   const canRestoreSubtree = canShowSubtreeControls && activeCancelHolds.length > 0;
   const isTerminalIssue = issue.status === "done" || issue.status === "cancelled";
   const isAgentOwnedNonTerminalIssue = Boolean(issue.assigneeAgentId) && !isTerminalIssue;
+  const agentHelpIneligibleReason = !issue.assigneeAgentId
+    ? "Assign an agent to this task first."
+    : issue.status === "backlog" || isTerminalIssue
+      ? "Agent help is available only for active tasks."
+      : null;
+  const canRequestAgentHelp = agentHelpIneligibleReason === null;
+  const requestAgentHelp = () => {
+    if (!canRequestAgentHelp || agentHelpLaunchPendingRef.current) return;
+    agentHelpLaunchPendingRef.current = true;
+    launchAgentHelp.mutate();
+  };
   const canPauseLeafWork = canManageTreeControl && childIssues.length === 0 && !activePauseHold && !isTerminalIssue;
   const canResumeLeafWork = canManageTreeControl && childIssues.length === 0 && activePauseHold?.isRoot === true;
   const treeControlScope: "leaf" | "subtree" = childIssues.length === 0 ? "leaf" : "subtree";
@@ -4671,6 +4736,28 @@ export function IssueDetail() {
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={requestAgentHelp}
+                disabled={!canRequestAgentHelp || launchAgentHelp.isPending}
+                aria-label="Get agent help"
+                aria-describedby={agentHelpIneligibleReason ? "agent-help-unavailable-mobile" : undefined}
+                title={agentHelpIneligibleReason ?? undefined}
+              >
+                {agentHelpLaunchState === "launching"
+                  ? "Launching agent help..."
+                  : "Get agent help"}
+              </Button>
+              {agentHelpIneligibleReason ? (
+                <span id="agent-help-unavailable-mobile" className="sr-only">{agentHelpIneligibleReason}</span>
+              ) : null}
+              {agentHelpLaunchState === "queued" ? (
+                <span className="sr-only" role="status">Agent help queued</span>
+              ) : null}
+              {agentHelpLaunchState === "failed" ? (
+                <span className="sr-only" role="alert">Agent help failed. Retry.</span>
+              ) : null}
             </div>
           )}
 
@@ -4727,6 +4814,33 @@ export function IssueDetail() {
             >
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-1"
+              onClick={requestAgentHelp}
+              disabled={!canRequestAgentHelp || launchAgentHelp.isPending}
+              aria-label="Get agent help"
+              aria-describedby={agentHelpIneligibleReason ? "agent-help-unavailable-desktop" : undefined}
+              title={agentHelpIneligibleReason ?? undefined}
+            >
+              {agentHelpLaunchState === "launching"
+                ? "Launching agent help..."
+                : "Get agent help"}
+            </Button>
+            {agentHelpIneligibleReason ? (
+              <span id="agent-help-unavailable-desktop" className="sr-only">{agentHelpIneligibleReason}</span>
+            ) : null}
+            {agentHelpLaunchState === "queued" ? (
+              <span className="ml-2 text-xs text-muted-foreground" role="status">
+                Agent help queued
+              </span>
+            ) : null}
+            {agentHelpLaunchState === "failed" ? (
+              <span className="ml-2 text-xs text-destructive" role="alert">
+                Agent help failed. Retry.
+              </span>
+            ) : null}
 
             <Popover open={moreOpen} onOpenChange={setMoreOpen}>
               <PopoverTrigger asChild>

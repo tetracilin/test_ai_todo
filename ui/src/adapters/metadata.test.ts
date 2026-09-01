@@ -33,16 +33,20 @@ describe("adapter metadata", () => {
     ]);
   });
 
-  it("offers Hermes Gateway as the sole agent AI option", () => {
+  it("offers only the K10-approved Hermes Gateway and NotebookLM options", () => {
     expect(
       listSelectableAdapterOptions((type) => type, [
         externalAdapter,
         { ...externalAdapter, type: "claude_local" },
         { ...externalAdapter, type: "hermes_gateway" },
+        { ...externalAdapter, type: "notebooklm_local" },
+        { ...externalAdapter, type: "process" },
       ]).map((option) => option.value),
-    ).toEqual(["hermes_gateway"]);
+    ).toEqual(["hermes_gateway", "notebooklm_local"]);
     expect(isValidAdapterType("hermes_gateway")).toBe(true);
+    expect(isValidAdapterType("notebooklm_local")).toBe(true);
     expect(isValidAdapterType("claude_local")).toBe(false);
+    expect(isValidAdapterType("process")).toBe(false);
     expect(isValidAdapterType("external_test")).toBe(false);
   });
 
