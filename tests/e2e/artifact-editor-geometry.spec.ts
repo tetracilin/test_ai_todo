@@ -41,6 +41,10 @@ test("artifact OpenOffice editor keeps a 1200x800 primary DOM area at 1700x1100"
   const seed = await createArtifactEditorSeed(page.request);
 
   await page.goto(`/${seed.prefix}/issues/${seed.issueId}`);
+  // Uploaded artifacts render in the properties pane's "Artifacts" tab, which
+  // is not selected by default on a chat-style task. Open it before locating
+  // the artifact row so the editor session can be launched from its action.
+  await page.getByRole("tab", { name: "Artifacts" }).click();
   const artifactRow = page.getByText("geometry.docx", { exact: true }).locator("xpath=../..");
   await expect(artifactRow).toBeVisible({ timeout: 30_000 });
   await artifactRow.getByRole("button", { name: "Open editor" }).click();
