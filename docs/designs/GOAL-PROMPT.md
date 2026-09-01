@@ -8,7 +8,7 @@ v3: condensed under the /goal 4,000-character limit (v2 was 4,648 and got reject
 Refactor Paperclip's UI so every visual value flows through the single
 existing token layer, with provably zero visual change, working only in
 this git worktree on branch design/token-extraction. Never touch master
-or other working trees. doc/design/DESIGN-UI.md is the source of
+or other working trees. docs/designs/DESIGN-UI.md is the source of
 truth; follow it exactly. Read PRIOR-ART.md before auditing. Execute
 Phases 0-2 exactly as specified in the "Phase spec" section of
 GOAL-PROMPT.md at the repo root (Phase 0 external baseline archive,

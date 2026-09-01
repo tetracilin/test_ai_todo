@@ -12,8 +12,8 @@ updated: 2026-09-01
 This file is one of the three fork-owned source-of-truth (SSoT) documents, together with
 [`backlog.md`](backlog.md) (incremental work packages) and [`design.md`](design.md)
 (architecture notes). This one carries identity, high-level user stories, and horizons.
-Design record: `docs/designs/t3-company-os-ssot.md`. The archived upstream Paperclip
-roadmap lives at [`doc/UPSTREAM-ROADMAP.md`](doc/UPSTREAM-ROADMAP.md).
+Design record: `docs/designs/t3-company-os-ssot.md`. The upstream Paperclip roadmap is
+not tracked in this fork: this is a hard fork with an independent roadmap.
 
 ## Identity
 

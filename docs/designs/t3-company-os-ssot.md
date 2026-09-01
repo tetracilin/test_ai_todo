@@ -123,7 +123,7 @@ decision rather than pushing adoption uphill).
   joins the migration list alongside `DESIGN.md`'s.
 - Windows case-insensitivity: `design.md` IS `DESIGN.md`, which AGENTS.md, CLAUDE.md, and
   `check:token-gates` reference as the UI token source of truth — its content must be
-  relocated (e.g. `doc/design/DESIGN-UI.md`) and every reference updated in the same change.
+  relocated (e.g. `docs/designs/DESIGN-UI.md`) and every reference updated in the same change.
 - Confidential (defense/B2G) content never enters chat bridges or the repo (AD-021, C16).
 - Language boundary: engineer-facing conversation is Vietnamese; the official language
   for development, prompts, and docs is English (efficiency). The switch is implemented
@@ -179,8 +179,9 @@ platform set to WhatsApp by owner decision after the review.
 ## Approaches Considered
 
 ### Approach A: In-place rewrite (minimal viable)
-Overwrite the three files; relocate upstream roadmap to `doc/UPSTREAM-ROADMAP.md` and UI
-design principles to `doc/design/DESIGN-UI.md`. Fast (CC ~10 min) but leaves dangling
+Overwrite the three files; relocate upstream roadmap to `doc/UPSTREAM-ROADMAP.md` (since
+removed outright — the fork keeps no upstream roadmap archive) and UI
+design principles to `docs/designs/DESIGN-UI.md`. Fast (CC ~10 min) but leaves dangling
 references and no cross-linking. Rejected: reference breakage on DESIGN.md is a real cost.
 
 ### Approach B: Three-file SSoT + reference migration
@@ -235,8 +236,8 @@ Target shape:
   (conversation captures / board plans), two-tier plugin integration, chat-bridge
   abstraction (Discord instance → WhatsApp next), gbrain memory, company skill repo
   (hermes-agent pattern), self-development pipeline and its charter + health metrics.
-- Relocations: upstream roadmap → `doc/UPSTREAM-ROADMAP.md`; UI design language →
-  `doc/design/DESIGN-UI.md`; all references updated in the same commit.
+- Relocations: upstream roadmap → `doc/UPSTREAM-ROADMAP.md` (later removed outright); UI design language →
+  `docs/designs/DESIGN-UI.md`; all references updated in the same commit.
 
 ## Open Questions
 

@@ -367,29 +367,17 @@ See [doc/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob/master/doc
 
 ## Roadmap
 
-- ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
-- ✅ Get OpenClaw / claw-style agent employees
-- ✅ companies.sh - import and export entire organizations
-- ✅ Easy AGENTS.md configurations
-- ✅ Skills Manager
-- ✅ Scheduled Routines
-- ✅ Better Budgeting
-- ✅ Agent Reviews and Approvals
-- ✅ Multiple Human Users
-- ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b / Novita agents)
-- ⚪ Artifacts & Work Products
-- ⚪ Memory / Knowledge
-- ⚪ Enforced Outcomes
-- ⚪ MAXIMIZER MODE
-- ⚪ Deep Planning
-- ⚪ Work Queues
-- ⚪ Self-Organization
-- ⚪ Automatic Organizational Learning
-- ⚪ CEO Chat
-- ⚪ Cloud deployments
-- ⚪ Desktop App
+This fork runs on its own roadmap: a **personal company operating system** — plugin-first,
+agent-native, portable. The full version, with user stories and acceptance metrics, is
+[roadmap.md](https://github.com/tetracilin/test_ai_todo/blob/main/roadmap.md).
 
-This is the short upstream roadmap preview. See the archived upstream roadmap in [doc/UPSTREAM-ROADMAP.md](https://github.com/tetracilin/test_ai_todo/blob/main/doc/UPSTREAM-ROADMAP.md).
+- 🟡 **NOW — the wedge**: recorder substrate (evidence gate on Done, dossier on every card,
+  job-order intake) + the WP-0 four-verb chat bot (capture, re-brief, PM digest, tabular
+  records via Teable)
+- ⚪ **NEXT**: Tier-1 file plugins (store + versioning + viewing), gbrain memory for
+  re-briefs, company skill repo
+- ⚪ **FUTURE**: Tier-2 edit-in-app integrations (WOPI/LibreOffice shipped; Penpot,
+  Excalidraw, draw.io next), LLM adapter expansion, email capture, FreeCAD / KiCad / Figma
 
 <br/>
 

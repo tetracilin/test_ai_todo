@@ -24,15 +24,15 @@ Either way: launch `claude` from inside that directory, type `/goal`, paste the 
 ## What to expect
 
 - Mostly unattended, roughly a day. Unlike Run 1, small visible deltas are *expected* (a border tone here, 1px of padding there) — the guardrails force every one to be exported for your review and individually revertable.
-- After the goal clears: open `doc/design/run3-review/` (before/after images for every story the run changed), skim, and revert any commit whose look you reject. Each conversion is its own commit.
+- After the goal clears: open `docs/designs/run3-review/` (before/after images for every story the run changed), skim, and revert any commit whose look you reject. Each conversion is its own commit.
 
 ## The /goal paste block
 
 ```
 Converge Paperclip's duplicated hand-rolled UI onto the shared
-primitives, per the approved scope in doc/design/DECISION-SHEET.md
+primitives, per the approved scope in docs/designs/DECISION-SHEET.md
 items C2, C3, C5, C11. DESIGN-UI.md is the source of truth; read
-doc/design/CHANGING-THE-UI.md and doc/design/RUN3-PROMPT.md first.
+docs/designs/CHANGING-THE-UI.md and docs/designs/RUN3-PROMPT.md first.
 Work only in this worktree/branch; never touch master. Small
 reviewable commits: one component-conversion unit per commit.
 
@@ -58,7 +58,7 @@ VERIFICATION DISCIPLINE (small visual deltas are EXPECTED)
 - Before starting: run the suite once to confirm 510/510 green.
 - Per conversion commit: run the affected stories; if pixels changed,
   copy each changed story's expected/actual/diff triplet into
-  doc/design/run3-review/<story>/ and note the story ids + one-line
+  docs/designs/run3-review/<story>/ and note the story ids + one-line
   justification in the commit message. Deltas must be small
   (primitive-level: borders, radii, padding) — a layout shift or
   color-meaning change means STOP that conversion, revert it, and
@@ -76,7 +76,7 @@ DONE WHEN (all verified in this worktree)
 4. pnpm check:token-gates 3/3 CLEAN; pnpm typecheck green;
    pnpm --filter @paperclipai/ui build exit 0.
 5. Full visual suite passes against the updated baseline, and
-   doc/design/run3-review/ contains the triplets for every story
+   docs/designs/run3-review/ contains the triplets for every story
    whose baseline changed, committed.
 6. All vitest suites for touched components pass, assertions updated
    in lockstep where they referenced old markup/classes.
@@ -91,6 +91,6 @@ GUARDRAILS
 
 ## After the run
 
-1. Review `doc/design/run3-review/` — approve or `git revert` per commit.
+1. Review `docs/designs/run3-review/` — approve or `git revert` per commit.
 2. Check the "Needs human decision" additions in DECISION-SHEET.md.
 3. Merge (or stack the PR), then Run 4 (palette classes) and the ESLint ratchet are all that remain.

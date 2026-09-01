@@ -46,9 +46,9 @@ dropped hunks in the PR description.
 ## After-sync checklist (run after every cherry-pick)
 
 1. **Delete any re-added upstream `DESIGN.md` or `ROADMAP.md`.** The fork relocated
-   upstream's `DESIGN.md` → `doc/design/DESIGN-UI.md` and `ROADMAP.md` →
-   `doc/UPSTREAM-ROADMAP.md`, and owns lowercase `design.md` and `roadmap.md` at the
-   root. In git's tree, `DESIGN.md` and `design.md` are *different paths* — but on
+   upstream's `DESIGN.md` → `docs/designs/DESIGN-UI.md`, dropped upstream's `ROADMAP.md`
+   entirely (the fork's roadmap is independent), and owns lowercase `design.md` and
+   `roadmap.md` at the root. In git's tree, `DESIGN.md` and `design.md` are *different paths* — but on
    case-insensitive filesystems (Windows, macOS) they collide on one file at checkout.
    Any upstream commit that re-adds the uppercase files reintroduces that collision, so
    every sync must check:
@@ -58,8 +58,9 @@ dropped hunks in the PR description.
    ```
 
    Only `design.md` and `roadmap.md` (lowercase, fork-owned) may appear. Remove any
-   re-added uppercase path with `git rm` in the sync branch (fold the upstream content
-   into `doc/UPSTREAM-ROADMAP.md` / `doc/design/DESIGN-UI.md` if it is worth keeping).
+   re-added uppercase path with `git rm` in the sync branch. Upstream roadmap content is
+   never kept; fold upstream UI-design content into `docs/designs/DESIGN-UI.md` only if
+   it is worth keeping.
 
 2. **Verify SSoT provenance.** The three fork SSoT files — `roadmap.md`, `backlog.md`,
    `design.md` — are fork-owned. Confirm the cherry-pick did not silently merge upstream
@@ -69,11 +70,11 @@ dropped hunks in the PR description.
    reference the old root locations:
 
    ```sh
-   git grep -nE '(^|[^A-Za-z/-])(DESIGN\.md|ROADMAP\.md)' -- . ':!doc/UPSTREAM-ROADMAP.md' ':!doc/design'
+   git grep -nE '(^|[^A-Za-z/-])(DESIGN\.md|ROADMAP\.md)' -- . ':!docs/designs'
    ```
 
-   Repoint any hit at `doc/design/DESIGN-UI.md` or `doc/UPSTREAM-ROADMAP.md`
-   (or at the fork's `roadmap.md` where the fork's plan is what is meant).
+   Repoint any hit at `docs/designs/DESIGN-UI.md`, or at the fork's `roadmap.md`
+   where the fork's plan is what is meant.
 
 ## Baseline and provenance
 
