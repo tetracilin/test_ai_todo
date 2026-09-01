@@ -453,6 +453,7 @@ const createIssueBaseSchema = z.object({
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
   progress: z.number().int().min(0).max(100).optional().default(0),
   sortOrder: z.number().int().min(0).optional().default(0),
+  evidenceCount: z.number().int().min(0).optional().default(0),
   reviewPolicy: z.enum(ISSUE_REVIEW_POLICIES).optional().nullable(),
   assigneeAgentId: z.string().guid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),

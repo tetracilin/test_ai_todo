@@ -671,6 +671,40 @@ type IssueCreateInput = Omit<typeof issues.$inferInsert, "companyId"> & {
   allowDuplicate?: boolean;
   onDeduplicated?: (reason: "idempotency_key" | "recent_open_title") => void;
 };
+
+const ENGINEER_CARD_AGENT_NAME = "Assistant-rick";
+const ENGINEER_CARD_OWNER_LABEL = "owner:rick";
+const ENGINEER_CARD_DEFAULT_TIER_LABEL = "tier:open";
+const ENGINEER_CARD_TITLE_PREFIX_PATTERN = /^\[WP-[A-Za-z0-9][A-Za-z0-9._-]*\] /;
+const ENGINEER_CARD_TITLE_PATTERN = /^\[WP-[A-Za-z0-9][A-Za-z0-9._-]*\] \S/;
+const ENGINEER_CARD_DOSSIER_HEADINGS = [
+  "## Job order",
+  "## Clarifications",
+  "## Evidence",
+  "## Scope changes",
+  "## Related Teable rows",
+] as const;
+
+function engineerCardJobOrder(title: string) {
+  return title.replace(ENGINEER_CARD_TITLE_PREFIX_PATTERN, "").trim();
+}
+
+function createEngineerCardDossier(title: string) {
+  return [
+    "# dossier.md",
+    "",
+    ENGINEER_CARD_DOSSIER_HEADINGS[0],
+    engineerCardJobOrder(title),
+    "",
+    ENGINEER_CARD_DOSSIER_HEADINGS[1],
+    "",
+    ENGINEER_CARD_DOSSIER_HEADINGS[2],
+    "",
+    ENGINEER_CARD_DOSSIER_HEADINGS[3],
+    "",
+    ENGINEER_CARD_DOSSIER_HEADINGS[4],
+  ].join("\n");
+}
 type IssueChildCreateInput = IssueCreateInput & {
   acceptanceCriteria?: string[];
   blockParentUntilDone?: boolean;
@@ -3208,6 +3242,7 @@ const issueListSelect = {
   priority: issues.priority,
   progress: issues.progress,
   sortOrder: issues.sortOrder,
+  evidenceCount: issues.evidenceCount,
   reviewPolicy: issues.reviewPolicy,
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
@@ -4985,6 +5020,72 @@ export function issueService(db: Db) {
         companyId,
       })),
     );
+  }
+
+  async function resolveEngineerCardCreateContract(
+    companyId: string,
+    assigneeAgentId: string | null | undefined,
+    title: string,
+    inputLabelIds: string[] | undefined,
+    dbOrTx: Pick<Db, "select" | "insert">,
+  ): Promise<{ labelIds: string[]; dossierBody: string } | null> {
+    if (!assigneeAgentId) return null;
+    const agent = await dbOrTx
+      .select({ name: agents.name, role: agents.role })
+      .from(agents)
+      .where(and(eq(agents.id, assigneeAgentId), eq(agents.companyId, companyId)))
+      .then((rows: Array<{ name: string; role: string }>) => rows[0] ?? null);
+    if (agent?.name !== ENGINEER_CARD_AGENT_NAME || agent.role !== "engineer") return null;
+
+    if (!ENGINEER_CARD_TITLE_PATTERN.test(title)) {
+      throw unprocessable("Engineer card titles must use [WP-xxx] <job order>");
+    }
+
+    const requestedLabelIds = [...new Set(inputLabelIds ?? [])];
+    const requestedLabels = requestedLabelIds.length
+      ? await dbOrTx
+          .select({ id: labels.id, name: labels.name })
+          .from(labels)
+          .where(and(eq(labels.companyId, companyId), inArray(labels.id, requestedLabelIds)))
+      : [];
+    if (requestedLabels.length !== requestedLabelIds.length) {
+      throw unprocessable("One or more labels are invalid for this company");
+    }
+
+    const tierLabels = requestedLabels.filter((label: { name: string }) => label.name.startsWith("tier:"));
+    const ownerLabels = requestedLabels.filter((label: { name: string }) => label.name.startsWith("owner:"));
+    if (
+      tierLabels.length > 1
+      || tierLabels.some((label: { name: string }) => !["tier:open", "tier:internal", "tier:confidential"].includes(label.name))
+    ) {
+      throw unprocessable("Engineer cards require exactly one tier:open, tier:internal, or tier:confidential label");
+    }
+    if (ownerLabels.length > 1 || ownerLabels.some((label: { name: string }) => label.name !== ENGINEER_CARD_OWNER_LABEL)) {
+      throw unprocessable(`Engineer cards require the ${ENGINEER_CARD_OWNER_LABEL} label`);
+    }
+
+    const requiredLabelNames = [
+      tierLabels[0]?.name ?? ENGINEER_CARD_DEFAULT_TIER_LABEL,
+      ENGINEER_CARD_OWNER_LABEL,
+    ];
+    for (const name of requiredLabelNames) {
+      await dbOrTx
+        .insert(labels)
+        .values({ companyId, name, color: name.startsWith("tier:") ? "#2563EB" : "#64748B" })
+        .onConflictDoNothing();
+    }
+    const requiredLabels = await dbOrTx
+      .select({ id: labels.id })
+      .from(labels)
+      .where(and(eq(labels.companyId, companyId), inArray(labels.name, requiredLabelNames)));
+    if (requiredLabels.length !== requiredLabelNames.length) {
+      throw new Error("Failed to create required engineer-card labels");
+    }
+
+    return {
+      labelIds: [...new Set([...requestedLabelIds, ...requiredLabels.map((label: { id: string }) => label.id)])],
+      dossierBody: createEngineerCardDossier(title),
+    };
   }
 
   async function getIssueRelationSummaryMap(
@@ -7096,6 +7197,13 @@ export function issueService(db: Db) {
         throw unprocessable("in_progress issues require an assignee");
       }
       return db.transaction(async (tx) => {
+        const engineerCardContract = await resolveEngineerCardCreateContract(
+          companyId,
+          data.assigneeAgentId,
+          issueData.title,
+          inputLabelIds,
+          tx,
+        );
         const idempotencyKey = rawIdempotencyKey?.trim() || null;
         const normalizedTitle = normalizeCreateIssueTitle(issueData.title);
         if (allowDuplicate === false) {
@@ -7368,8 +7476,17 @@ export function issueService(db: Db) {
             },
           });
         }
-        if (inputLabelIds) {
-          await syncIssueLabels(issue.id, companyId, inputLabelIds, tx);
+        const labelIds = engineerCardContract?.labelIds ?? inputLabelIds;
+        if (labelIds) {
+          await syncIssueLabels(issue.id, companyId, labelIds, tx);
+        }
+        if (engineerCardContract) {
+          await tx.insert(issueComments).values({
+            companyId,
+            issueId: issue.id,
+            authorType: "system",
+            body: engineerCardContract.dossierBody,
+          });
         }
         if (blockedByIssueIds !== undefined) {
           await syncBlockedByIssueIds(

@@ -809,6 +809,8 @@ export interface Issue {
    * compatibility with persisted/API issue shapes from before migration 0230.
    */
   sortOrder?: number;
+  /** Engineer-card evidence counter. Starts at zero and increments per linked file. */
+  evidenceCount?: number;
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
@@ -910,6 +912,7 @@ export type CompactIssue = Pick<
   | "priority"
   | "progress"
   | "sortOrder"
+  | "evidenceCount"
   | "reviewPolicy"
   | "assigneeAgentId"
   | "assigneeUserId"

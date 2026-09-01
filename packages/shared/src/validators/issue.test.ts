@@ -48,6 +48,14 @@ describe("issue validators", () => {
       .toBeUndefined();
   });
 
+  it("accepts non-negative evidence counts while rejecting negative values", () => {
+    expect(createIssueSchema.parse({ title: "[WP-1] Record evidence", evidenceCount: 0 }).evidenceCount)
+      .toBe(0);
+    expect(updateIssueSchema.parse({ evidenceCount: 2 }).evidenceCount).toBe(2);
+    expect(createIssueSchema.safeParse({ title: "[WP-1] Record evidence", evidenceCount: -1 }).success)
+      .toBe(false);
+  });
+
   it("accepts review policies on create and update while rejecting unknown values", () => {
     expect(createIssueSchema.parse({ title: "Human review", reviewPolicy: "human_only" }).reviewPolicy)
       .toBe("human_only");

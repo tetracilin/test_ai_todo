@@ -16,12 +16,14 @@ import {
   instanceSettings,
   issueComments,
   issueInboxArchives,
+  issueLabels,
   issueDocuments,
   issuePlanDecompositions,
   issueReadStates,
   issueRelations,
   issueThreadInteractions,
   issues,
+  labels,
   projectWorkspaces,
   projects,
   workspaceOperations,
@@ -306,6 +308,7 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
   afterEach(async () => {
     await db.delete(issueComments);
     await db.delete(issueThreadInteractions);
+    await db.delete(issueLabels);
     await db.delete(issueRelations);
     await db.delete(issueDocuments);
     await db.delete(issueInboxArchives);
@@ -319,6 +322,7 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     await db.delete(goals);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
+    await db.delete(labels);
     await db.delete(instanceSettings);
     await db.delete(companies);
   });
@@ -421,6 +425,67 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       permissions: {},
     };
   }
+
+  it("creates Assistant-rick cards with contract labels, dossier first comment, and zero evidence", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const assistantRickId = randomUUID();
+    await db.insert(agents).values(agentRow(companyId, {
+      id: assistantRickId,
+      name: "Assistant-rick",
+    }));
+
+    const issue = await svc.create(companyId, {
+      title: "[WP-T3-SLICE1-001] Sửa tủ điện line 2",
+      description: null,
+      status: "todo",
+      priority: "medium",
+      assigneeAgentId: assistantRickId,
+    });
+
+    expect(issue.evidenceCount).toBe(0);
+    expect(issue.labels?.map((label: { name: string }) => label.name).sort()).toEqual(["owner:rick", "tier:open"]);
+    const comments = await db
+      .select({ body: issueComments.body })
+      .from(issueComments)
+      .where(eq(issueComments.issueId, issue.id))
+      .orderBy(asc(issueComments.createdAt));
+    expect(comments).toEqual([{
+      body: [
+        "# dossier.md",
+        "",
+        "## Job order",
+        "Sửa tủ điện line 2",
+        "",
+        "## Clarifications",
+        "",
+        "## Evidence",
+        "",
+        "## Scope changes",
+        "",
+        "## Related Teable rows",
+      ].join("\n"),
+    }]);
+  });
+
+  it("rejects malformed engineer-card titles", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const assistantRickId = randomUUID();
+    await db.insert(agents).values(agentRow(companyId, {
+      id: assistantRickId,
+      name: "Assistant-rick",
+    }));
+
+    await expect(svc.create(companyId, {
+      title: "Sửa tủ điện line 2",
+      description: null,
+      status: "todo",
+      priority: "medium",
+      assigneeAgentId: assistantRickId,
+    })).rejects.toMatchObject({
+      status: 422,
+      message: "Engineer card titles must use [WP-xxx] <job order>",
+    });
+  });
 
   it("rejects direct terminated assignees with structured conflict details", async () => {
     const companyId = await seedAssignableAgentCompany();

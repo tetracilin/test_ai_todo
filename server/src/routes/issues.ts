@@ -2364,6 +2364,7 @@ function toCompactIssue(issue: any): CompactIssue {
     priority: issue.priority,
     progress: issue.progress ?? 0,
     sortOrder: issue.sortOrder ?? 0,
+    evidenceCount: issue.evidenceCount ?? 0,
     reviewPolicy: issue.reviewPolicy,
     assigneeAgentId: issue.assigneeAgentId,
     assigneeUserId: issue.assigneeUserId,

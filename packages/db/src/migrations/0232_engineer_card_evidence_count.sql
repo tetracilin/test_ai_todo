@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "evidence_count" integer DEFAULT 0 NOT NULL;

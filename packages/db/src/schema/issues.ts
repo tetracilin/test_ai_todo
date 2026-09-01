@@ -56,6 +56,7 @@ export const issues = pgTable(
     progress: integer("progress").notNull().default(0),
     // Ordering position among siblings sharing the same parent. Lower sorts first.
     sortOrder: integer("sort_order").notNull().default(0),
+    evidenceCount: integer("evidence_count").notNull().default(0),
     billingCode: text("billing_code"),
     assigneeAdapterOverrides: jsonb("assignee_adapter_overrides").$type<Record<string, unknown>>(),
     executionPolicy: jsonb("execution_policy").$type<Record<string, unknown>>(),
