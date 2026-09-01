@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from "@playwright/test";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 
 /**
  * E2E: Signoff execution policy flow.
@@ -308,11 +309,8 @@ async function setupCompany(boardRequest: APIRequestContext): Promise<TestContex
         name,
         role,
         title,
-        adapterType: "process",
-        adapterConfig: {
-          command: process.execPath,
-          args: ["-e", "process.stdout.write('done\\n')"],
-        },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
       },
     });
     expect(agentRes.ok()).toBe(true);

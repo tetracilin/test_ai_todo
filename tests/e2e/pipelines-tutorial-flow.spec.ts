@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, request as pwRequest, test, type APIRequestContext, type APIResponse, type Locator, type Page } from "@playwright/test";
 import { createLocalAgentJwt } from "../../server/src/agent-auth-jwt";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 
 const PORT = Number(process.env.PAPERCLIP_E2E_PORT ?? 3199);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -61,8 +62,8 @@ async function createCompanyAgent(
       role: input.role,
       title: input.title,
       capabilities: input.capabilities,
-      adapterType: "process",
-      adapterConfig: { command: process.execPath, args: ["-e", "process.stdout.write('ok\\n')"] },
+      adapterType: "hermes_gateway",
+      adapterConfig: hermesGatewayE2eAdapterConfig(),
     },
   });
   await expectOk(response, `create ${input.name}`);
@@ -96,8 +97,9 @@ async function createPipelineWriterAgentKey(board: APIRequestContext, companyId:
     data: {
       requestType: "agent",
       agentName: "Pipeline Fanout Agent",
-      adapterType: "process",
+      adapterType: "hermes_gateway",
       capabilities: "Creates pipeline child work during e2e coverage.",
+      agentDefaultsPayload: hermesGatewayE2eAdapterConfig(),
     },
   });
   await expectOk(acceptResponse, "accept pipeline-writer invite");
@@ -108,7 +110,7 @@ async function createPipelineWriterAgentKey(board: APIRequestContext, companyId:
   const approved = await approveResponse.json() as { createdAgentId: string };
 
   const runId = randomUUID();
-  const token = createLocalAgentJwt(approved.createdAgentId, companyId, "process", runId);
+  const token = createLocalAgentJwt(approved.createdAgentId, companyId, "hermes_gateway", runId);
   if (!token) throw new Error("PAPERCLIP_AGENT_JWT_SECRET is required for pipeline writer JWT setup");
   return { agentId: approved.createdAgentId, runId, token };
 }
