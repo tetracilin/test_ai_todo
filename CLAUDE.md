@@ -15,11 +15,13 @@ Also read, in order, before non-trivial changes: `doc/GOAL.md`, `doc/PRODUCT.md`
 
 ## Fork identity
 
-This repo (`tetracilin/test_ai_todo`) is the T3 AI Todo fork of `paperclipai/paperclip`. Fork work
-integrates on `integration/paperclip`; `main` stays the preserved legacy application until an
-explicit human cutover. Keep `upstream` pointed at `https://github.com/paperclipai/paperclip.git`,
-follow `doc/UPSTREAM-SYNC.md`, and preserve `LICENSE`/`NOTICE` when copying upstream code. Never
-force-push `integration/paperclip` or `main`.
+This repo (`tetracilin/test_ai_todo`) is the T3 AI Todo **hard fork** of `paperclipai/paperclip`,
+with an independent roadmap. `main` is the development branch; the former `integration/paperclip`
+integration branch is retired. Nothing is ever contributed back to upstream. Upstream changes land
+only as one-way, selective cherry-picks (security fixes and useful core improvements) at the
+owner's discretion — follow `doc/UPSTREAM-SYNC.md`. No `upstream` remote is configured until the
+first actual cherry-pick. Preserve `LICENSE`/`NOTICE` when copying upstream code. Never force-push
+`main`.
 
 ## Commands
 
