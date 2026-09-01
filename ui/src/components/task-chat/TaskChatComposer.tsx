@@ -85,15 +85,26 @@ const MODE_DESCRIPTION: Partial<Record<IssueWorkMode, string>> = {
   ask: "Answer questions only, no changes",
 };
 
-/** v7 per-mode placeholder copy; `{agent}` is the pending assignee's name. */
-function modePlaceholder(mode: IssueWorkMode, agentName: string): string {
+/**
+ * v7 per-mode placeholder copy; `{agent}` is the pending assignee's name.
+ * Comment mode reads like leaving a note for a colleague on the thread;
+ * the agent-directed modes stay outcome-focused since they dispatch work.
+ */
+function modePlaceholder(
+  mode: IssueWorkMode,
+  agentName: string,
+  deliveryMode: TaskChatDeliveryMode = "agent",
+): string {
+  if (deliveryMode === "comment") {
+    return "Leave a note for the team on this task…";
+  }
   switch (mode) {
     case "planning":
       return `Plan with ${agentName} — shapes the plan doc, no code changes…`;
     case "ask":
       return `Ask ${agentName} a question — read-only, nothing runs…`;
     default:
-      return `Message ${agentName} — describe what you want done…`;
+      return `Message ${agentName} about this task…`;
   }
 }
 
@@ -236,7 +247,7 @@ export function TaskChatComposer({
   const assigneeLabel =
     reassignOptions?.find((o) => o.id === assigneeValue)?.label ?? "Unassigned";
   const assigneeName = assigneeLabel === "Unassigned" ? "the agent" : assigneeLabel;
-  const effectivePlaceholder = placeholder ?? modePlaceholder(pendingMode, assigneeName);
+  const effectivePlaceholder = placeholder ?? modePlaceholder(pendingMode, assigneeName, deliveryMode);
 
   /** Upload an image and return its URL for inline `![](src)` markdown. */
   async function uploadInlineImage(file: File): Promise<string> {

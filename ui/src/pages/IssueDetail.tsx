@@ -2671,9 +2671,10 @@ export function IssueDetail() {
   // title in the center column. This is the tree's single chat-shell home; the
   // Properties pane does not duplicate it. Classic mode keeps its existing
   // center-column section below the header.
-  const subTasksTree = useMemo(
-    () =>
-      taskChatShellEnabled && issue && showRichSubIssuesSection ? (
+  const subTasksTree = useMemo(() => {
+    if (!taskChatShellEnabled || !issue) return null;
+    if (showRichSubIssuesSection) {
+      return (
         <IssuesList
           issues={childIssues}
           isLoading={childIssuesLoading}
@@ -2696,22 +2697,35 @@ export function IssueDetail() {
           clearEmptyStateFiltersLabel="Clear filters"
           onUpdateIssue={handleChildIssueUpdate}
         />
-      ) : null,
-    [
-      taskChatShellEnabled,
-      issue,
-      showRichSubIssuesSection,
-      childIssues,
-      childIssuesLoading,
-      agents,
-      projects,
-      liveIssueIds,
-      resolvedIssueDetailState,
-      location.state,
-      currentUserId,
-      handleChildIssueUpdate,
-    ],
-  );
+      );
+    }
+    // No children yet: classic mode falls back to a bare "New Sub-task"
+    // button so subtask management is always reachable from the task
+    // detail view, not just once a first child exists. The shell dropped
+    // that fallback — restore it here so the shell never renders nothing.
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
+        <Button variant="outline" size="sm" onClick={openNewSubIssue} className="shrink-0 shadow-none">
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          New Sub-task
+        </Button>
+      </div>
+    );
+  }, [
+    taskChatShellEnabled,
+    issue,
+    showRichSubIssuesSection,
+    childIssues,
+    childIssuesLoading,
+    agents,
+    projects,
+    liveIssueIds,
+    resolvedIssueDetailState,
+    location.state,
+    currentUserId,
+    handleChildIssueUpdate,
+    openNewSubIssue,
+  ]);
 
   const checkIssueMonitorNow = useMutation({
     mutationFn: () => issuesApi.checkMonitorNow(issueId!),
