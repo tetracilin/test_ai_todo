@@ -3,6 +3,7 @@ import type {
   AdapterExecutionResult,
   UsageSummary,
 } from "@paperclipai/adapter-utils";
+import { containsStructuredSecret, normalizeSecretScanText } from "@paperclipai/adapter-utils";
 import {
   asNumber,
   asString,
@@ -286,19 +287,40 @@ function readAgentHelpTaskContext(value: unknown): AgentHelpTaskContext | null {
     || (projectGoal !== null && typeof projectGoal !== "string")
   ) return null;
 
+  const normalizedTaskId = normalizeSecretScanText(taskId, 200);
+  const normalizedTitle = normalizeSecretScanText(title, 500);
+  const normalizedStatus = normalizeSecretScanText(currentStatus, 100);
+  const normalizedDescription = description === null ? null : normalizeSecretScanText(description, 20_000);
+  const normalizedProjectId = projectId === null ? null : normalizeSecretScanText(projectId, 200);
+  const normalizedProjectGoal = projectGoal === null ? null : normalizeSecretScanText(projectGoal, 10_000);
+  if (!normalizedTaskId || !normalizedTitle || !normalizedStatus) return null;
+
   return {
     schema_version: "agent_help.task_context.v1",
     task: {
-      id: taskId,
-      title,
-      description,
-      current_status: currentStatus,
+      id: normalizedTaskId,
+      title: normalizedTitle,
+      description: normalizedDescription,
+      current_status: normalizedStatus,
     },
     project: {
-      id: projectId,
-      goal: projectGoal,
+      id: normalizedProjectId,
+      goal: normalizedProjectGoal,
     },
   };
+}
+
+function agentHelpContextContainsSecret(value: unknown): boolean {
+  const context = readAgentHelpTaskContext(value);
+  if (!context) return false;
+  return [
+    context.task.id,
+    context.task.title,
+    context.task.description,
+    context.task.current_status,
+    context.project.id,
+    context.project.goal,
+  ].some((entry) => entry !== null && containsStructuredSecret(entry));
 }
 
 function buildHeaders(input: {
@@ -881,6 +903,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       timedOut: false,
       errorCode: "hermes_gateway_api_key_missing",
       errorMessage: "Hermes gateway adapter requires apiKey.",
+    };
+  }
+  if (agentHelpContextContainsSecret(ctx.context.agent_help)) {
+    return {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      errorCode: "task_context_contains_secret",
+      errorMessage: "Task context cannot be sent to an agent. Remove secrets and retry.",
     };
   }
 
