@@ -1,0 +1,8 @@
+# Browser-reachable, isolated staging Tasks UI for Collabora WOPI callbacks.
+# Apply with the live isolated staging compose file as the first -f argument.
+# No secrets belong here; it overrides only public host policy.
+services:
+  paperclip:
+    environment:
+      PAPERCLIP_PUBLIC_URL: https://hostinger-kvm8-host.tail9831b.ts.net:8445
+      PAPERCLIP_ALLOWED_HOSTNAMES: localhost,127.0.0.1,hostinger-kvm8-host.tail9831b.ts.net

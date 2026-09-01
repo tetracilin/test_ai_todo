@@ -1,6 +1,20 @@
-# Isolated Collabora CODE for Tasks staging. Browser traffic is exposed only by
-# explicit Tailscale Serve rules; port 9981 remains loopback-only on the host.
-name: t8578-office-staging
+# Staging browser office editor (Collabora Online / CODE) for the WOPI
+# artifact-editing bridge. Isolated project, loopback-only publish; public
+# HTTPS reachability comes from `tailscale serve`, not a host-wide reverse
+# proxy, so it cannot collide with other tenants sharing this host (Teable's
+# caddy, ai-gateway's caddy, etc). Browser and WOPI callbacks use Tailscale
+# Serve origins. The WOPI bridge (server/src/routes/wopi.ts) must exist and
+# authenticate requests before documents are opened.
+#
+# network_mode: host is required, not cosmetic: coolwsd calls back out to the
+# Paperclip WOPI callback origin (CheckFileInfo/GetFile/PutFile) at the
+# Tailscale Serve HTTPS origin. That hostname only resolves via Tailscale
+# MagicDNS and that origin only routes over the tailnet interface, neither of
+# which a bridge-networked container has. Host networking shares the host's
+# net namespace (and its Tailscale interface) instead. `net.listen=loopback`
+# keeps coolwsd bound to 127.0.0.1:9980 exactly as before, so nothing new is
+# exposed on the host's public/tailnet interfaces.
+name: t3-office-staging
 
 services:
   collabora:
@@ -9,14 +23,18 @@ services:
       - ../secrets/office/collabora.env
     environment:
       domain: ${COLLABORA_WOPI_HOST_REGEX:-hostinger-kvm8-host\\.tail9831b\\.ts\\.net}
-      aliasgroup1: ${COLLABORA_ALIASGROUP1:-https://hostinger-kvm8-host.tail9831b.ts.net:8447}
+      aliasgroup1: ${COLLABORA_ALIASGROUP1:-https://hostinger-kvm8-host.tail9831b.ts.net:8445}
       extra_params: >-
         --o:ssl.enable=false
         --o:ssl.termination=true
-        --o:net.frame_ancestors=https://hostinger-kvm8-host.tail9831b.ts.net:8447
-    ports:
-      - "127.0.0.1:${COLLABORA_PORT:-9981}:9980"
+        --o:net.listen=loopback
+        --o:net.proto=IPv4
+        --o:net.frame_ancestors=https://hostinger-kvm8-host.tail9831b.ts.net:8445
+    network_mode: host
     cap_add:
       - MKNOD
+    # CODE image has no shell/curl. Verify health externally with its discovery
+    # endpoint from the HTTPS browser origin instead of an always-failing
+    # container health command.
     restart: unless-stopped
     stop_grace_period: 30s

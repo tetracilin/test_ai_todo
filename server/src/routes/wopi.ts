@@ -177,7 +177,10 @@ export function wopiRoutes(db: Db, storage: StorageService, sessions: WopiSessio
       entityId: session.artifactId,
       details: { versionNumber: version.versionNumber, versionName: version.versionName, editor: "collabora" },
     });
-    res.set("X-WOPI-ItemVersion", String(version.versionNumber)).status(200).end();
+    res
+      .set("X-WOPI-ItemVersion", String(version.versionNumber))
+      .status(200)
+      .json({ LastModifiedTime: version.createdAt });
   });
 
   router.post("/wopi/files/:artifactId", async (req, res) => {

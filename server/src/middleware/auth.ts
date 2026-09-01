@@ -221,6 +221,8 @@ interface ActorMiddlewareOptions {
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
 }
 
+const WOPI_CALLBACK_PATH = /^\/api\/wopi\/files\//;
+
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
   return async (req, _res, next) => {
@@ -235,6 +237,17 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             source: "local_implicit",
           }
         : { type: "none", source: "none" };
+
+    // Collabora's WOPI HTTP agent sends its own `Authorization: Bearer` header
+    // alongside the `access_token` query parameter WOPI actually authenticates
+    // with. That bearer value is an opaque WOPI session token, not an agent
+    // JWT/API key, so letting the checks below evaluate it as one always fails
+    // closed with 401 before the WOPI router's own session lookup ever runs.
+    // WOPI callback routes gate access themselves via `sessionForRequest`.
+    if (WOPI_CALLBACK_PATH.test(req.path)) {
+      next();
+      return;
+    }
 
     const runIdHeader = req.header("x-paperclip-run-id");
 
