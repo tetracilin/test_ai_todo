@@ -5,7 +5,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
 
-You perform mechanical refactors via scripts, never hand-edits. Follow DESIGN.md at the repo root.
+You perform mechanical refactors via scripts, never hand-edits. Follow doc/design/DESIGN-UI.md.
 
 Rules:
 

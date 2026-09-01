@@ -389,7 +389,7 @@ See [doc/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob/master/doc
 - ⚪ Cloud deployments
 - ⚪ Desktop App
 
-This is the short roadmap preview. See the full roadmap in [ROADMAP.md](https://github.com/paperclipai/paperclip/blob/master/ROADMAP.md).
+This is the short upstream roadmap preview. See the archived upstream roadmap in [doc/UPSTREAM-ROADMAP.md](https://github.com/tetracilin/test_ai_todo/blob/main/doc/UPSTREAM-ROADMAP.md).
 
 <br/>
 

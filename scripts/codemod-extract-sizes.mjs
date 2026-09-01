@@ -92,7 +92,7 @@
  *   pb-[env(safe-area-inset-bottom)] -> pb-(--sz-safe-bottom) padding-bottom
  *   w-[var(--radix-popover-trigger-width)] -> w-(--radix-popover-trigger-width)
  *     (brackets that only wrap a var() reference a runtime library variable
- *     directly — no new token minted, per DESIGN.md special-case guidance).
+ *     directly — no new token minted, per DESIGN-UI.md special-case guidance).
  *
  * ring-[Npx] / outline-[Npx] note: `ring`/`outline` are box-shadow/outline-
  * width utilities whose bracket form sets a WIDTH, not a generic length or
@@ -204,7 +204,7 @@ function registerSzToken(rawValue, unit, sourceNote) {
 }
 
 // Percentages: --pct-50 for "50", --pct-neg-50 for "-50" (kept distinct per
-// DESIGN.md Step-0 spike guidance — the minus sign is IN the bracket value).
+// DESIGN-UI.md Step-0 spike guidance — the minus sign is IN the bracket value).
 function registerPctToken(rawNum, sourceNote) {
   const name = `pct-${safeSuffix(rawNum)}`;
   const value = `${rawNum}%`;
@@ -278,7 +278,7 @@ function resolveThemeSpacing(raw) {
 }
 
 function classifyBracketValue(raw, { kind, sourceNote }) {
-  // 1) Bare var() passthrough — no new token, per DESIGN.md special case.
+  // 1) Bare var() passthrough — no new token, per DESIGN-UI.md special case.
   const varOnly = raw.match(VAR_ONLY_RE);
   if (varOnly) return { tokenRef: varOnly[1], isVarOnly: true };
 
@@ -455,7 +455,7 @@ function main() {
     lines.push("/* Batch 3/4: width/height/min/max, padding/margin/gap/inset/translate,");
     lines.push("   radius, ring/outline-width, and shadow literals, verbatim (no");
     lines.push("   normalizing — the human scale-collapse decision comes later per");
-    lines.push("   DESIGN.md/TOKEN-AUDIT.md). --sz-* is ONE shared family across");
+    lines.push("   DESIGN-UI.md/TOKEN-AUDIT.md). --sz-* is ONE shared family across");
     lines.push("   w/h/p/m/gap/inset/translate so identical values dedupe regardless of");
     lines.push("   which property used them. --rad-* is likewise shared across");
     // NOTE: never write a literal "*/" sequence in this prose (e.g. from a

@@ -73,7 +73,7 @@
 
 -
 
-> For core feature work, check [`ROADMAP.md`](ROADMAP.md) first and discuss it in `#dev` before opening the PR. Feature PRs that overlap with planned core work may need to be redirected — check the roadmap first. See `CONTRIBUTING.md`.
+> For core feature work, check the fork roadmap [`roadmap.md`](roadmap.md) first and discuss it before opening the PR. Feature PRs that overlap with planned core work may need to be redirected — check the roadmap first. See `CONTRIBUTING.md`.
 
 ## Model Used
 
@@ -94,10 +94,10 @@
 
 - [ ] I have included a thinking path that traces from project context to this change
 - [ ] I have specified the model used (with version and capability details)
-- [ ] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work
+- [ ] I have checked roadmap.md and confirmed this PR does not duplicate planned core work
 - [ ] I have searched GitHub for duplicate or related PRs and linked them above
 - [ ] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template
-- [ ] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)
+- [ ] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/tetracilin/test_ai_todo` URLs)
 - [ ] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details
 - [ ] I have run tests locally and they pass
 - [ ] I have added or updated tests where applicable

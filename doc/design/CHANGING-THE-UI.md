@@ -1,6 +1,6 @@
 # Changing Paperclip's UI — a field guide
 
-How to make visual changes now that the design system exists. Written for everyone: designers, engineers, and AI agents (AGENTS.md points here via DESIGN.md).
+How to make visual changes now that the design system exists. Written for everyone: designers, engineers, and AI agents (AGENTS.md points here via DESIGN-UI.md).
 
 ## The one-minute mental model
 
@@ -10,7 +10,7 @@ Paperclip's look lives in **three layers**, and you almost always work in the fi
 2. **Components** — consume tokens, never raw values. One component per job (one Button, one Card, one ToggleSwitch).
 3. **Screenshots** — 510 baseline images (255 stories × light/dark) downloaded into `tests/storybook-visual/.snapshots/` from the pinned external archive in `tests/storybook-visual/baseline-manifest.json`. They are the proof of what the UI looks like. Any visual change shows up as a screenshot diff; no visual change proves itself the same way.
 
-The rules live in [`DESIGN.md`](../../DESIGN.md) (repo root). The reasoning behind past decisions lives in [`DECISION-SHEET.md`](DECISION-SHEET.md). If you disagree with a rule, change `DESIGN.md` first (with review) — don't quietly diverge in code.
+The rules live in [`DESIGN-UI.md`](DESIGN-UI.md). The reasoning behind past decisions lives in [`DECISION-SHEET.md`](DECISION-SHEET.md). If you disagree with a rule, change `DESIGN-UI.md` first (with review) — don't quietly diverge in code.
 
 ## The three commands
 
@@ -63,7 +63,7 @@ Three stories are known to flake under full parallel load (they pass in isolatio
 
 (Running a session as the human? See [`AGENT-SESSIONS.md`](AGENT-SESSIONS.md) — this section is instructions for the agent itself.)
 
-This system was built to be steered by instruction. "Make all running indicators blue" or "collapse these three grays into one" should land as a token edit or a small codemod plus a snapshot diff — not a manual hunt. If a change is mechanical and touches many files, write an idempotent script in `scripts/` (see `codemod-*.mjs` for the pattern) instead of hand-editing. DESIGN.md is loaded via AGENTS.md; follow it exactly, and record consequential choices in DECISION-SHEET.md.
+This system was built to be steered by instruction. "Make all running indicators blue" or "collapse these three grays into one" should land as a token edit or a small codemod plus a snapshot diff — not a manual hunt. If a change is mechanical and touches many files, write an idempotent script in `scripts/` (see `codemod-*.mjs` for the pattern) instead of hand-editing. DESIGN-UI.md is loaded via AGENTS.md; follow it exactly, and record consequential choices in DECISION-SHEET.md.
 
 ## What's deliberately not done yet (don't fix ad hoc)
 

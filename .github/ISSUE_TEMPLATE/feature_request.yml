@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Feature work on core Paperclip is coordinated against `ROADMAP.md` and Discord `#dev`. Please skim those before filing — see [CONTRIBUTING.md](https://github.com/paperclipai/paperclip/blob/master/CONTRIBUTING.md) for the full guidance.
+        Feature work on this fork is coordinated against the fork roadmap `roadmap.md`. Please skim it before filing — see [CONTRIBUTING.md](https://github.com/tetracilin/test_ai_todo/blob/main/CONTRIBUTING.md) for the full guidance.
   - type: dropdown
     id: subsystem
     attributes:
@@ -45,7 +45,7 @@ body:
     id: roadmap
     attributes:
       label: Roadmap alignment
-      description: Does this relate to anything in `ROADMAP.md`? Link the relevant section if so.
+      description: Does this relate to anything in `roadmap.md`? Link the relevant section if so.
   - type: textarea
     id: context
     attributes:

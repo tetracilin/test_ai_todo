@@ -193,7 +193,7 @@ function main() {
     lines.push(marker);
     lines.push("/* Batch 2/4: font-size + letter-spacing + line-height literals, verbatim");
     lines.push("   (no normalizing — 9/10/11/12/13/14/15px and 0.08-0.24em all stay distinct;");
-    lines.push("   the human scale-collapse decision comes later per DESIGN.md/TOKEN-AUDIT.md).");
+    lines.push("   the human scale-collapse decision comes later per DESIGN-UI.md/TOKEN-AUDIT.md).");
     lines.push("");
     lines.push("   Allowlist (sites intentionally left as hardcoded / functional literals,");
     lines.push("   NOT converted to tokens — each also carries an inline");
