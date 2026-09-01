@@ -27,12 +27,14 @@ export interface DiscordNotificationEvent {
   projectId: string;
   issueId: string;
   issueIdentifier: string;
-  eventType: "issue.created" | "issue.status_changed" | "issue.assignee_changed" | "issue.priority_changed" | "issue.comment_created" | "issue.blocked" | "issue.unblocked" | "issue.completed";
+  title?: string | null;
+  eventType: "issue.created" | "issue.status_changed" | "issue.assignee_changed" | "issue.priority_changed" | "issue.comment_created" | "issue.mentioned" | "issue.blocked" | "issue.unblocked" | "issue.completed";
   origin: "dashboard" | "api" | "discord" | "automation";
   originDiscordChannelId?: string | null;
   actor: string;
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
+  commentExcerpt?: string | null;
   issueUrl: string;
 }
 

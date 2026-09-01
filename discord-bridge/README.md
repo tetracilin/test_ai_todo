@@ -36,9 +36,19 @@ Link codes are single-use, expire after ten minutes, and server persists only SH
 
 ## Setup
 
-1. Copy `.env.example` to `.env`; use secret store in production.
-2. Set `PAPERCLIP_API_KEY` to bridge-scoped credential valid only for `/api/integrations/discord/*`.
-3. Run `npm ci`, `npm run register-commands`, then `npm start`.
+1. Copy `.env.example` to `.env` for local development. Set `DISCORD_BOT_TOKEN`,
+   `DISCORD_CLIENT_ID`, `DISCORD_WEBHOOK_SECRET`, and `PAPERCLIP_API_KEY` there only
+   for local development.
+2. In staging and production, provision each value outside git and set its `*_FILE`
+   variable to a mounted secret file. Docker Compose uses `deploy-staging/.env.example`
+   as the non-secret reference. Direct values take precedence only for local development.
+3. Set `PAPERCLIP_API_KEY` to bridge-scoped credential valid only for `/api/integrations/discord/*`.
+4. Run `npm ci`, `npm run register-commands`, then `npm start`.
+
+`DISCORD_WEBHOOK_SECRET` is reserved for a bridge-owned signed webhook endpoint. The
+current integration receives commands through the Discord gateway, not a public server
+webhook. It is still required at startup so every deployment has a secret-manager-backed
+value ready before that endpoint is enabled.
 
 ## Verification
 

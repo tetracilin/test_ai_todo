@@ -21,6 +21,7 @@ read_secret() {
 
 read_secret POSTGRES_PASSWORD
 read_secret BETTER_AUTH_SECRET
+read_secret PAPERCLIP_DISCORD_BRIDGE_TOKEN
 
 # Docker secrets are root-readable, while Paperclip intentionally runs as the
 # unprivileged node user. Copy storage credentials into its private runtime
