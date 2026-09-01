@@ -28,6 +28,7 @@ import {
   issueRelations,
   issueComments,
   issueDocuments,
+  issueEvidenceLinks,
   issueReadStates,
   issueThreadInteractions,
   issues,
@@ -7836,6 +7837,56 @@ export function issueService(db: Db) {
           .for("update")
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!receiptExisting) return null;
+
+        // Evidence gate (PC-001, AD-032): a transition INTO done is blocked
+        // unless the issue has >=1 linked evidence artifact, when the
+        // per-company flag is enabled. This must read the flag and the
+        // evidence counts in the same transaction/row-lock as the write
+        // below so a concurrent evidence removal or re-done cannot race
+        // past the check. "cancelled" (and every other status) is never
+        // gated -- only the transition INTO "done" is, and only when the
+        // issue was not already "done" (re-patching an already-done issue
+        // for unrelated fields must not re-trigger this). The count is
+        // computed regardless of the flag so it can also be recorded on the
+        // activity_log entry below (AC5: the count must stay queryable per
+        // engineer/WP even while the gate itself is off).
+        const isTransitionIntoDone = patch.status === "done" && receiptExisting.status !== "done";
+        let evidenceCountForTransition: number | null = null;
+        if (isTransitionIntoDone) {
+          const [[{ attachmentCount }], [{ evidenceLinkCount }]] = await Promise.all([
+            tx
+              .select({ attachmentCount: sql<number>`count(*)::int` })
+              .from(issueAttachments)
+              .where(
+                and(eq(issueAttachments.companyId, receiptExisting.companyId), eq(issueAttachments.issueId, id)),
+              ),
+            tx
+              .select({ evidenceLinkCount: sql<number>`count(*)::int` })
+              .from(issueEvidenceLinks)
+              .where(
+                and(
+                  eq(issueEvidenceLinks.companyId, receiptExisting.companyId),
+                  eq(issueEvidenceLinks.issueId, id),
+                ),
+              ),
+          ]);
+          evidenceCountForTransition = attachmentCount + evidenceLinkCount;
+
+          const [company] = await tx
+            .select({ evidenceGateEnabled: companies.evidenceGateEnabled })
+            .from(companies)
+            .where(eq(companies.id, receiptExisting.companyId))
+            .limit(1);
+          if (company?.evidenceGateEnabled && evidenceCountForTransition === 0) {
+            throw unprocessable(
+              "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
+                "attached to this issue, or an evidence link to an external object. Attach a " +
+                "file to this issue or link evidence via the API before marking it done.",
+              { evidenceCount: evidenceCountForTransition },
+            );
+          }
+        }
+
         const [previousLabelsByIssueId, previousRelationSummaries] = await Promise.all([
           nextLabelIds !== undefined
             ? labelMapForIssues(tx, [id])
@@ -7870,6 +7921,25 @@ export function issueService(db: Db) {
           .returning()
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!updated) return null;
+        if (isTransitionIntoDone && updated.status === "done" && evidenceCountForTransition !== null) {
+          // AC3/AC5 (PC-001): record the evidence count on every successful
+          // transition into done, regardless of whether the gate flag is on,
+          // so a future WP-close export can query it per engineer/WP.
+          await logActivity(tx as unknown as Db, {
+            companyId: updated.companyId,
+            actorType: actorAgentId ? "agent" : actorUserId ? "user" : "system",
+            actorId: actorAgentId ?? actorUserId ?? "issue_service",
+            agentId: actorAgentId ?? null,
+            action: "issue.evidence_gate.closed",
+            entityType: "issue",
+            entityId: updated.id,
+            issueId: updated.id,
+            details: {
+              identifier: updated.identifier ?? null,
+              evidenceCount: evidenceCountForTransition,
+            },
+          });
+        }
         if (existing.status !== updated.status) {
           if (
             (existing.status === "done" || existing.status === "cancelled")
