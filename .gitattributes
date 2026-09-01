@@ -1,0 +1,9 @@
+# Fork-owned SSoT trio (see docs/designs/t3-company-os-ssot.md): prefer OUR
+# side when a selective upstream cherry-pick/merge touches these files.
+# Convenience, not a guarantee — the driver must be defined once per clone
+# (`git config merge.ours.driver true`; .gitattributes alone cannot ship it)
+# and it only fires on both-sides-changed merges. The real protection is
+# `pnpm check:ssot-guards` (scripts/check-ssot-guards.mjs) in CI.
+/roadmap.md merge=ours
+/backlog.md merge=ours
+/design.md merge=ours
