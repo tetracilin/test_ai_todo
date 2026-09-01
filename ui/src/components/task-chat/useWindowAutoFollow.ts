@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const PIN_THRESHOLD_PX = 48;
 
@@ -30,14 +30,19 @@ function scrollWindowToBottom(): void {
  * POP) runs in ancestor layout effects, which fire AFTER this component's
  * layout effects in the same commit — deferring past them keeps the reset
  * from clobbering the follow.
+ *
+ * Returns the live pinned state so hosts can show a "Jump to latest"
+ * affordance exactly while the user is not at the bottom (TVR-A04).
  */
-export function useWindowAutoFollow(contentKey: unknown, enabled: boolean): void {
+export function useWindowAutoFollow(contentKey: unknown, enabled: boolean): boolean {
   const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
 
   useEffect(() => {
     if (!enabled) return;
     const onScroll = () => {
       pinnedRef.current = windowPinned();
+      setPinned(pinnedRef.current);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -55,9 +60,12 @@ export function useWindowAutoFollow(contentKey: unknown, enabled: boolean): void
     const raf = requestAnimationFrame(() => {
       scrollWindowToBottom();
       pinnedRef.current = true;
+      setPinned(true);
     });
     return () => cancelAnimationFrame(raf);
     // Initial follow only — content-driven follow is the layout effect above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
+
+  return pinned;
 }

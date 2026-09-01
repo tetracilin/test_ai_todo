@@ -333,11 +333,40 @@ describe("TaskChatComposer", () => {
     expect(onAdd).toHaveBeenCalledWith("do the plan", undefined, undefined);
   });
 
+  it("adopts an external work-mode change unless the user has a pending selection", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onWorkModeChange = vi.fn().mockResolvedValue(undefined);
+    const base = { onAdd, onWorkModeChange };
+    render(<TaskChatComposer {...base} workMode="standard" />);
+
+    const chip = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!;
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("standard");
+
+    // External change (e.g. the Plan tab's "Ask agent to plan" CTA puts the
+    // task into planning mode): with no pending selection the composer adopts it.
+    render(<TaskChatComposer {...base} workMode="planning" />);
+    await flushAsync();
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("planning");
+    expect(chip.textContent).toContain("Plan");
+
+    // A pending user selection (Shift+Tab) is never clobbered by later
+    // external changes — it stays until the user commits it at submit time.
+    pressKey("Tab", { shiftKey: true });
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("ask");
+    render(<TaskChatComposer {...base} workMode="standard" />);
+    await flushAsync();
+    expect(chip.getAttribute("data-pending-work-mode")).toBe("ask");
+  });
+
   it("posts comment-only delivery without changing work mode or invoking agent delivery", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
     const onWorkModeChange = vi.fn().mockResolvedValue(undefined);
     render(
-      <TaskChatComposer onAdd={onAdd} workMode="standard" onWorkModeChange={onWorkModeChange} />,
+      <TaskChatComposer
+        onAdd={onAdd}
+        workMode="standard"
+        onWorkModeChange={onWorkModeChange}
+      />,
     );
 
     const modeTrigger = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!;
@@ -353,6 +382,8 @@ describe("TaskChatComposer", () => {
     flushSync(() => {
       commentOnly!.click();
     });
+
+    expect(sendButton().getAttribute("aria-label")).toBe("Post comment without invoking agent");
 
     typeText("Leave this for the team.");
     pressKey("Enter", { metaKey: true });
@@ -647,9 +678,10 @@ describe("TaskChatComposer", () => {
 
   describe("draft persistence", () => {
     const draftKey = "task-chat-draft:issue-1";
+    const standardDraftKey = `${draftKey}:standard`;
 
     it("restores a saved draft on mount", () => {
-      localStorage.setItem(draftKey, "unsent draft");
+      localStorage.setItem(standardDraftKey, "unsent draft");
 
       render(<TaskChatComposer onAdd={vi.fn()} workMode="standard" draftKey={draftKey} />);
 
@@ -658,7 +690,7 @@ describe("TaskChatComposer", () => {
     });
 
     it("preserves a restored draft through the StrictMode effect probe", () => {
-      localStorage.setItem(draftKey, "still here");
+      localStorage.setItem(standardDraftKey, "still here");
 
       render(
         <StrictMode>
@@ -667,7 +699,7 @@ describe("TaskChatComposer", () => {
       );
 
       expect(editable().textContent).toBe("still here");
-      expect(localStorage.getItem(draftKey)).toBe("still here");
+      expect(localStorage.getItem(standardDraftKey)).toBe("still here");
     });
 
     it("saves after the debounce and flushes a pending value on unmount", () => {
@@ -678,12 +710,12 @@ describe("TaskChatComposer", () => {
         expect(localStorage.getItem(draftKey)).toBeNull();
 
         vi.advanceTimersByTime(DRAFT_DEBOUNCE_MS);
-        expect(localStorage.getItem(draftKey)).toBe("work in progress");
+        expect(localStorage.getItem(standardDraftKey)).toBe("work in progress");
 
         typeText("save before leaving");
         flushSync(() => root?.unmount());
         root = null;
-        expect(localStorage.getItem(draftKey)).toBe("save before leaving");
+        expect(localStorage.getItem(standardDraftKey)).toBe("save before leaving");
       } finally {
         vi.useRealTimers();
       }
@@ -697,14 +729,14 @@ describe("TaskChatComposer", () => {
 
         window.dispatchEvent(new Event("beforeunload"));
 
-        expect(localStorage.getItem(draftKey)).toBe("save before reload");
+        expect(localStorage.getItem(standardDraftKey)).toBe("save before reload");
       } finally {
         vi.useRealTimers();
       }
     });
 
     it("clears the composer and saved draft while the send is pending", async () => {
-      localStorage.setItem(draftKey, "queued message");
+      localStorage.setItem(standardDraftKey, "queued message");
       const onAdd = vi.fn().mockReturnValue(new Promise<void>(() => {}));
       render(<TaskChatComposer onAdd={onAdd} workMode="standard" draftKey={draftKey} />);
 
@@ -713,7 +745,7 @@ describe("TaskChatComposer", () => {
 
       expect(onAdd).toHaveBeenCalledWith("queued message", undefined, undefined);
       expect(editable().textContent).toBe("");
-      expect(localStorage.getItem(draftKey)).toBeNull();
+      expect(localStorage.getItem(standardDraftKey)).toBeNull();
     });
 
     it("keeps text entered while an earlier send is pending", async () => {
@@ -733,7 +765,7 @@ describe("TaskChatComposer", () => {
 
       expect(onAdd).toHaveBeenCalledWith("first message", undefined, undefined);
       expect(editable().textContent).toBe("next message");
-      expect(localStorage.getItem(draftKey)).toBe("next message");
+      expect(localStorage.getItem(standardDraftKey)).toBe("next message");
     });
 
     it("keeps an attachment added while an earlier send is pending", async () => {
@@ -783,7 +815,7 @@ describe("TaskChatComposer", () => {
         pressKey("Enter", { metaKey: true });
         await flushAsync();
         expect(editable().textContent).toBe("");
-        expect(localStorage.getItem(draftKey)).toBeNull();
+        expect(localStorage.getItem(standardDraftKey)).toBeNull();
 
         typeText("next draft");
         rejectSend(new Error("network down"));
@@ -791,7 +823,7 @@ describe("TaskChatComposer", () => {
         await flushAsync();
 
         expect(editable().textContent).toBe("do not lose this\n\nnext draft");
-        expect(localStorage.getItem(draftKey)).toBe("do not lose this\n\nnext draft");
+        expect(localStorage.getItem(standardDraftKey)).toBe("do not lose this\n\nnext draft");
       } finally {
         vi.useRealTimers();
       }

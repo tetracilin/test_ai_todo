@@ -19403,8 +19403,6 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
       return {
         runId,
-        store: run.logStore,
-        logRef: run.logRef,
         ...result,
         // Run-log chunks are already redacted before they are appended to the store.
         // Rewriting the full chunk again on every poll creates avoidable string copies.

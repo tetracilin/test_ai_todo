@@ -57,6 +57,11 @@ export interface InstanceExperimentalSettings {
   enablePipelines: boolean;
   enableCases: boolean;
   enableConferenceRoomChat: boolean;
+  /**
+   * Enables the renewed Task View. The classic-interface compatibility flag
+   * still overrides this during migration.
+   */
+  enableTaskChatRedesign: boolean;
   enableClassicTaskInterface: boolean;
   enableTaskWatchdogs: boolean;
   enableIssuePlanDecompositions: boolean;

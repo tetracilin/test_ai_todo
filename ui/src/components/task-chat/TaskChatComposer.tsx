@@ -159,7 +159,9 @@ export function TaskChatComposer({
   mobile = false,
   draftKey,
 }: TaskChatComposerProps) {
-  const [body, setBody] = useState(() => (draftKey ? loadDraft(draftKey) : ""));
+  const [body, setBody] = useState(() => (
+    draftKey ? loadDraft(`${draftKey}:${workMode}`) : ""
+  ));
   const [submitting, setSubmitting] = useState(false);
   const [pendingMode, setPendingMode] = useState<IssueWorkMode>(workMode);
   const [deliveryMode, setDeliveryMode] = useState<TaskChatDeliveryMode>("agent");
@@ -174,35 +176,60 @@ export function TaskChatComposer({
   const bodyRef = useRef(body);
   bodyRef.current = body;
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeDraftKey = draftKey
+    ? `${draftKey}:${deliveryMode === "comment" ? "comment" : pendingMode}`
+    : undefined;
 
   useEffect(() => {
-    if (!draftKey) return;
-    setBody(loadDraft(draftKey));
-  }, [draftKey]);
+    if (!activeDraftKey) return;
+    setBody(loadDraft(activeDraftKey));
+  }, [activeDraftKey]);
 
   useEffect(() => {
-    if (!draftKey) return;
+    if (!activeDraftKey) return;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
-      saveDraft(draftKey, body);
+      saveDraft(activeDraftKey, body);
     }, DRAFT_DEBOUNCE_MS);
-  }, [body, draftKey]);
+  }, [activeDraftKey, body]);
 
   useEffect(() => {
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
-      if (draftKey) saveDraft(draftKey, bodyRef.current);
+      if (activeDraftKey) saveDraft(activeDraftKey, bodyRef.current);
     };
-  }, [draftKey]);
+  }, [activeDraftKey]);
 
   useEffect(() => {
-    if (!draftKey) return;
-    const flushDraft = () => saveDraft(draftKey, bodyRef.current);
+    if (!activeDraftKey) return;
+    const flushDraft = () => saveDraft(activeDraftKey, bodyRef.current);
     window.addEventListener("beforeunload", flushDraft);
     return () => window.removeEventListener("beforeunload", flushDraft);
-  }, [draftKey]);
+  }, [activeDraftKey]);
+
+  // Adopt an external work-mode change (e.g. the Plan tab's "Ask agent to
+  // plan" CTA puts the task into planning mode) so the chip and the submit
+  // effect follow the task's canonical mode. A pending user selection made via
+  // the chip / Shift+Tab is never clobbered — it is only adopted once it has
+  // been committed through onWorkModeChange at submit time.
+  const prevWorkModeRef = useRef(workMode);
+  useEffect(() => {
+    // Capture the previous value NOW: the updater below runs during the next
+    // render's state computation, by which point prevWorkModeRef has already
+    // been advanced — reading it there would never match `current`.
+    const previous = prevWorkModeRef.current;
+    setPendingMode((current) => (current === previous ? workMode : current));
+    prevWorkModeRef.current = workMode;
+  }, [workMode]);
 
   const modeMeta = workModeMetaFor(pendingMode);
+  const submitEffect = deliveryMode === "comment"
+    ? "Post comment without invoking agent"
+    : pendingMode === "planning"
+      ? "Send planning request to agent"
+      : pendingMode === "ask"
+        ? "Ask agent without making changes"
+        : "Send work request to agent";
   const canAcceptFiles = Boolean(onAttachImage || onImageUpload);
   const showAssignee = Boolean(enableReassign && reassignOptions && reassignOptions.length > 0);
   const assigneeValue = pendingAssignee ?? currentAssigneeValue;
@@ -356,7 +383,7 @@ export function TaskChatComposer({
       clearTimeout(draftTimer.current);
       draftTimer.current = null;
     }
-    if (draftKey) clearDraft(draftKey);
+    if (activeDraftKey) clearDraft(activeDraftKey);
     setBody("");
     setSubmitting(true);
     try {
@@ -370,10 +397,10 @@ export function TaskChatComposer({
         // receive the delivery discriminator when comment-only is selected.
         await onAdd(fullBody, reopen, reassignment);
       }
-      if (draftKey && bodyRef.current) {
+      if (activeDraftKey && bodyRef.current) {
         // The editor stays writable while the request is pending. Preserve
         // text entered after this submission started as the next draft.
-        saveDraft(draftKey, bodyRef.current);
+        saveDraft(activeDraftKey, bodyRef.current);
       }
       if (attachmentsRef.current === submittedAttachments) {
         setAttachments([]);
@@ -391,7 +418,7 @@ export function TaskChatComposer({
         clearTimeout(draftTimer.current);
         draftTimer.current = null;
       }
-      if (draftKey) saveDraft(draftKey, restoredBody);
+      if (activeDraftKey) saveDraft(activeDraftKey, restoredBody);
       setBody(restoredBody);
     } finally {
       setSubmitting(false);
@@ -517,6 +544,7 @@ export function TaskChatComposer({
               disabled={disabled || !onWorkModeChange}
               className="status-chip flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:opacity-50"
               style={{ "--sc": modeHue(pendingMode) } as CSSProperties}
+              aria-label={`Composer mode: ${deliveryMode === "comment" ? "Comment" : modeMeta.shortLabel}`}
               data-testid="task-chat-composer-mode"
               data-pending-work-mode={pendingMode}
               data-delivery-mode={deliveryMode}
@@ -531,7 +559,7 @@ export function TaskChatComposer({
               onSelect={() => setDeliveryMode("comment")}
             >
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium">Comment only</span>
+                <span className="font-medium">Comment</span>
                 <span className="text-xs text-muted-foreground">Add to thread without invoking agent</span>
               </span>
               {deliveryMode === "comment" ? <Check className="h-4 w-4 shrink-0" aria-hidden /> : null}
@@ -602,9 +630,9 @@ export function TaskChatComposer({
               ? "Waiting for upload to finish"
               : uploadFailed
                 ? "Remove the failed attachment to send"
-                : "Send (⌘+Enter)"
+                : `${submitEffect} (⌘+Enter)`
           }
-          aria-label="Send"
+          aria-label={submitEffect}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-transform hover:scale-105 disabled:scale-100 disabled:bg-muted disabled:text-muted-foreground"
           data-testid="task-chat-composer-send"
         >

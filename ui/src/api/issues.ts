@@ -48,6 +48,13 @@ export type ResolveRecoveryActionResponse = {
   recoveryAction: IssueRecoveryAction;
 };
 
+export type StopIssueActiveRunResponse = {
+  issue: Issue;
+  run: {
+    id: string;
+    status: string;
+  };
+};
 export type ArtifactEditorSession = {
   actionUrl: string;
   formParameters: Record<string, string>;
@@ -178,6 +185,8 @@ export const issuesApi = {
     api.post<Issue>(`/companies/${companyId}/issues`, data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueUpdateResponse>(`/issues/${id}`, data),
+  stopActiveRun: (id: string) =>
+    api.post<StopIssueActiveRunResponse>(`/issues/${id}/active-run/stop`, {}),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(`/issues/${id}/stalled-review-decision`, data),
   resolveRecoveryAction: (
@@ -308,7 +317,8 @@ export const issuesApi = {
     body: string,
     reopen?: boolean,
     interrupt?: boolean,
-    deliveryMode: "agent" | "comment" = "agent",
+    notifyAgent?: boolean,
+    deliveryMode: "agent" | "comment" = notifyAgent === false ? "comment" : "agent",
   ) =>
     api.post<IssueComment>(
       `/issues/${id}/comments`,
@@ -317,6 +327,7 @@ export const issuesApi = {
         deliveryMode,
         ...(reopen === undefined ? {} : { reopen }),
         ...(interrupt === undefined ? {} : { interrupt }),
+        ...(notifyAgent === undefined ? {} : { notifyAgent }),
       },
     ),
   cancelComment: (id: string, commentId: string) =>

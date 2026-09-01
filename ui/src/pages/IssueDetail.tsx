@@ -101,7 +101,7 @@ import {
 } from "../components/IssueChatThread";
 import { TaskChatThread } from "../components/TaskChatThread";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
-import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
+import { useTaskChatRedesignEnabled } from "../hooks/useTaskChatRedesignEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
 import { IssueContinuationHandoff } from "../components/IssueContinuationHandoff";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
@@ -136,6 +136,7 @@ import { computePauseAffectsSummary } from "../lib/interrupt-handoff";
 import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { useIssuePlanDocument } from "../hooks/useIssuePlanDocument";
 import { IssueRunLedger } from "../components/IssueRunLedger";
+import { IssueWorkerLog } from "../components/IssueWorkerLog";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal, type GalleryMediaItem } from "../components/ImageGalleryModal";
@@ -332,6 +333,17 @@ export function canBoardResolveRecoveryAction(
   );
   if (!membership) return false;
   return membership.membershipRole !== "viewer" && membership.membershipRole !== null;
+}
+
+// Client-side write gate for the Plan tab's "Ask agent to plan" CTA (TVR-D04):
+// instance admins, local-implicit access, and active non-viewer memberships may
+// request plan work; viewers and non-members get the guidance-only empty state.
+// Authorization on the underlying work-mode update stays server-enforced.
+export function canBoardWriteIssue(
+  companyId: string | null | undefined,
+  boardAccess: CurrentBoardAccess | undefined,
+) {
+  return canBoardResolveRecoveryAction(companyId, boardAccess);
 }
 
 // `canBoardManageRuntime` and `readRecoveryReconcileWorkspaceId` moved to `@/lib/recovery-reconcile`
@@ -750,8 +762,7 @@ function IssueDetailLoadingState({
   headerSeed: ReturnType<typeof readIssueDetailHeaderSeed>;
 }) {
   const identifier = headerSeed?.identifier ?? headerSeed?.id.slice(0, 8) ?? null;
-  const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const taskChatShellEnabled = !classicTaskInterfaceEnabled;
+  const { enabled: taskChatShellEnabled } = useTaskChatRedesignEnabled();
 
   return (
     <div
@@ -1134,12 +1145,12 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   externalReferences,
   linkCaseReferences,
 }: IssueDetailChatTabProps) {
-  // Seam for the Classic Task Interface (flag: enableClassicTaskInterface).
-  // Flag ON renders the legacy IssueChatThread verbatim; flag OFF (the
-  // default) renders the chat-style TaskChatThread. Both components share one
-  // prop type, so no cast is needed.
-  const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const ThreadComponent = classicTaskInterfaceEnabled ? IssueChatThread : TaskChatThread;
+  // Canonical Task Chat Redesign gate: positive opt-in enables TaskChatThread;
+  // Classic Task Interface remains a compatibility override. Both components
+  // share one prop type, so no cast is needed.
+  const { enabled: taskChatRedesignEnabled } = useTaskChatRedesignEnabled();
+  const classicTaskInterfaceEnabled = !taskChatRedesignEnabled;
+  const ThreadComponent = taskChatRedesignEnabled ? TaskChatThread : IssueChatThread;
   const { data: activity } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
@@ -1336,6 +1347,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         feedbackTermsUrl={feedbackTermsUrl}
         linkedRuns={timelineRuns}
         timelineEvents={timelineEvents}
+        activity={resolvedActivity}
         workModeChanges={workModeChanges}
         liveRuns={resolvedLiveRuns}
         activeRun={resolvedActiveRun}
@@ -1699,16 +1711,13 @@ function IssueDetailActivityTab({
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
-  // Classic Task Interface (flag: enableClassicTaskInterface): with the flag
-  // OFF (the default) the chat-style thread owns the center column — the
-  // legacy title/description block, sub-tasks table, plan decompositions and
-  // Documents section are gated off (plan lives in the properties-pane Plan
-  // tab). Flag ON restores the legacy page.
+  // Canonical Task Chat Redesign gate: positive opt-in lets the chat-style
+  // thread own the center column. The Classic Task Interface compatibility
+  // flag wins. Without a loaded positive opt-in, render the classic page.
   const {
-    enabled: classicTaskInterfaceEnabled,
-    loaded: classicTaskInterfaceLoaded,
-  } = useClassicTaskInterfaceEnabled();
-  const taskChatShellEnabled = !classicTaskInterfaceEnabled;
+    enabled: taskChatShellEnabled,
+    loaded: taskChatRedesignLoaded,
+  } = useTaskChatRedesignEnabled();
   // Chat-style: the page wrapper spans the full center pane so the thread's
   // scroll viewport (and its scrollbar) reaches the properties-pane border;
   // every non-thread section re-centers itself at the 60rem shell cap instead.
@@ -1727,14 +1736,30 @@ export function IssueDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
+  // The mobile "Open Properties, Plan, and Artifacts" trigger. Radix restores
+  // focus to the trigger only when opened via SheetTrigger; this Sheet is
+  // opened from a plain button, so restore focus ourselves on close (WCAG
+  // 2.4.3 / APG modal dialog pattern).
+  const mobilePropsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Generic opener capture: the sheet can also be opened via keyboard shortcut
+  // and the inbox toolbar, so remember whatever had focus at open time and
+  // give it back on close.
+  const mobilePropsOpenerRef = useRef<HTMLElement | null>(null);
+  const openMobileProps = useCallback(() => {
+    mobilePropsOpenerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setMobilePropsOpen(true);
+  }, []);
   const [documentDeepLink, setDocumentDeepLink] = useState<
     (IssuePropertiesDocumentDeepLink & { issueId: string }) | null
   >(null);
   const [fileViewerPromptOpen, setFileViewerPromptOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
-  // Redesign: the center tab strip is hidden, so chat is the only surface —
-  // deep links that would switch tabs (e.g. #document- hashes) stay on chat.
-  const resolvedDetailTab = taskChatShellEnabled ? "chat" : detailTab;
+  // The redesigned shell owns Activity & Comments, while Worker Log remains a
+  // separate, explicitly selected surface. Legacy detail tabs stay unchanged.
+  const resolvedDetailTab = taskChatShellEnabled
+    ? detailTab === "worker-log" ? "worker-log" : "chat"
+    : detailTab;
   const [handoffFocusSignal, setHandoffFocusSignal] = useState(0);
   const [pendingApprovalAction, setPendingApprovalAction] = useState<{
     approvalId: string;
@@ -2665,6 +2690,10 @@ export function IssueDetail() {
           defaultSortField="workflow"
           showProgressSummary
           parentIssueIdForCostSummary={issue.id}
+          enableTagGrouping
+          filterLabelTitle="Tags"
+          emptyStateMessage="No subtasks match current search and filters."
+          clearEmptyStateFiltersLabel="Clear filters"
           onUpdateIssue={handleChildIssueUpdate}
         />
       ) : null,
@@ -2750,7 +2779,7 @@ export function IssueDetail() {
       reopen?: boolean;
       interrupt?: boolean;
       deliveryMode?: "agent" | "comment";
-    }) => issuesApi.addComment(issueId!, body, reopen, interrupt, deliveryMode),
+    }) => issuesApi.addComment(issueId!, body, reopen, interrupt, undefined, deliveryMode),
     onMutate: async ({ body, reopen, interrupt }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.comments(issueId!) });
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(issueId!) });
@@ -3530,6 +3559,8 @@ export function IssueDetail() {
         onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
         checkingMonitorNow={checkIssueMonitorNow.isPending}
         documentDeepLink={documentDeepLink?.issueId === panelIssue.id ? documentDeepLink : null}
+        canRequestPlan={canBoardWriteIssue(panelIssue.companyId, boardAccess)}
+        onRequestPlan={() => updateIssue.mutate({ workMode: "planning" })}
       />
     );
     return () => closePanel();
@@ -3691,10 +3722,10 @@ export function IssueDetail() {
 
     // The classic interface owns document links in its center-column
     // Documents section. Do not open its tab-less properties panel.
-    if (!classicTaskInterfaceLoaded || !taskChatShellEnabled) return false;
+    if (!taskChatRedesignLoaded || !taskChatShellEnabled) return false;
 
     if (isMobile) {
-      setMobilePropsOpen(true);
+      openMobileProps();
     } else {
       if (suppressPanelForFirstTask && issue?.id) {
         setFirstTaskPanelOverrideIssueId(issue.id);
@@ -3710,7 +3741,7 @@ export function IssueDetail() {
     }));
     return true;
   }, [
-    classicTaskInterfaceLoaded,
+    taskChatRedesignLoaded,
     isMobile,
     issue?.id,
     issueId,
@@ -3905,7 +3936,7 @@ export function IssueDetail() {
       if (!archiveFromInbox.isPending && issue?.id) archiveFromInbox.mutate(issue.id);
     },
     onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onProperties: () => openMobileProps(),
     onHide: () => {
       updateIssue.mutate(
         { hiddenAt: new Date().toISOString() },
@@ -3918,7 +3949,7 @@ export function IssueDetail() {
       if (!archiveFromInbox.isPending && issue?.id) archiveFromInbox.mutate(issue.id);
     },
     onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onProperties: () => openMobileProps(),
     onHide: () => {
       updateIssue.mutate(
         { hiddenAt: new Date().toISOString() },
@@ -4619,7 +4650,7 @@ export function IssueDetail() {
               <span className="truncate">{resolvedProject?.name ?? issue.project?.name ?? issue.projectId.slice(0, 8)}</span>
             </Link>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground px-1 -mx-1 py-0.5">
               <ProjectTile size="xs" />
               No project
             </span>
@@ -4666,8 +4697,10 @@ export function IssueDetail() {
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => setMobilePropsOpen(true)}
-                title="Properties"
+                ref={mobilePropsTriggerRef}
+                onClick={openMobileProps}
+                title="Properties, Plan, and Artifacts"
+                aria-label="Open Properties, Plan, and Artifacts"
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
@@ -5069,6 +5102,10 @@ export function IssueDetail() {
             defaultSortField="workflow"
             showProgressSummary
             parentIssueIdForCostSummary={issue.id}
+            enableTagGrouping
+            filterLabelTitle="Tags"
+            emptyStateMessage="No subtasks match current search and filters."
+            clearEmptyStateFiltersLabel="Clear filters"
             onUpdateIssue={handleChildIssueUpdate}
           />
         </div>
@@ -5218,9 +5255,18 @@ export function IssueDetail() {
         onValueChange={setDetailTab}
         className={taskChatShellEnabled ? (isMobile ? undefined : "min-h-0 flex-1") : "space-y-3"}
       >
-        {/* Redesign: the chat IS the page — the Chat/Activity/Related-work tab
-            strip is hidden and the thread renders as the only surface. */}
-        {taskChatShellEnabled ? null : (
+        {taskChatShellEnabled ? (
+          <TabsList variant="line" className={cn("w-full justify-start gap-1", shellSectionClass)}>
+            <TabsTrigger value="chat" className="gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Activity &amp; Comments
+            </TabsTrigger>
+            <TabsTrigger value="worker-log" className="gap-1.5">
+              <ActivityIcon className="h-3.5 w-3.5" />
+              Worker Log
+            </TabsTrigger>
+          </TabsList>
+        ) : (
         <TabsList variant="line" className={cn("w-full justify-start gap-1", shellSectionClass)}>
           <TabsTrigger value="chat" className="gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
@@ -5389,6 +5435,19 @@ export function IssueDetail() {
             />
           ) : null}
         </TabsContent>
+
+        {taskChatShellEnabled ? (
+          <TabsContent value="worker-log" className={cn("min-h-0", shellSectionClass)}>
+            {resolvedDetailTab === "worker-log" ? (
+              <IssueWorkerLog
+                issueId={issue.id}
+                issueStatus={issue.status}
+                agentMap={agentMap}
+                hasLiveRuns={hasLiveRuns}
+              />
+            ) : null}
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="activity" className={shellSectionClass}>
           {detailTab === "activity" ? (
@@ -5594,10 +5653,25 @@ export function IssueDetail() {
       </Dialog>
 
       {/* Mobile properties drawer */}
-      <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
-        <SheetContent side="bottom" className="max-h-(--sz-85dvh) pb-(--sz-safe-bottom)">
+      <Sheet
+        open={mobilePropsOpen}
+        onOpenChange={(next) => {
+          setMobilePropsOpen(next);
+          if (next) return;
+          // Restore focus to the element that opened the sheet (Escape, X, or
+          // overlay close). Radix only does this for DialogTrigger-based
+          // opens; this sheet is opened from plain buttons/shortcuts.
+          const restore = mobilePropsOpenerRef.current ?? mobilePropsTriggerRef.current;
+          mobilePropsOpenerRef.current = null;
+          if (restore?.isConnected) {
+            // Defer one frame so the sheet's exit animation doesn't steal it.
+            requestAnimationFrame(() => restore.focus({ preventScroll: true }));
+          }
+        }}
+      >
+        <SheetContent side="bottom" className="h-(--sz-100dvh) max-h-(--sz-100dvh) pb-(--sz-safe-bottom)">
           <SheetHeader>
-            <SheetTitle className="text-sm">Properties</SheetTitle>
+            <SheetTitle className="text-sm">Properties, Plan, and Artifacts</SheetTitle>
           </SheetHeader>
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="px-4 pb-4">
@@ -5615,6 +5689,8 @@ export function IssueDetail() {
                 onCheckMonitorNow={() => checkIssueMonitorNow.mutate()}
                 checkingMonitorNow={checkIssueMonitorNow.isPending}
                 documentDeepLink={documentDeepLink?.issueId === issue.id ? documentDeepLink : null}
+                canRequestPlan={canBoardWriteIssue(issue.companyId, boardAccess)}
+                onRequestPlan={() => updateIssue.mutate({ workMode: "planning" })}
               />
             </div>
           </ScrollArea>

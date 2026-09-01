@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Issue, IssueDocument, IssueThreadInteraction } from "@paperclipai/shared";
 import { isArtifactReviewDocumentKey } from "@paperclipai/shared";
+import { ApiError } from "@/api/client";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { IssuePlanDecompositionsSection } from "@/components/IssuePlanDecompositionsSection";
@@ -17,6 +18,14 @@ interface IssuePropertiesPlansTabProps {
   /** Retained for host parity with the other tabs; the Plans tab no longer
    * renders its own approval control (PAP-418). */
   inline?: boolean;
+  /** Whether the current user is authorized to request plan work. Mirrors the
+   * client-side write gate used for other issue mutations; the server still
+   * enforces authorization on the underlying update. When false the empty
+   * state renders guidance text only (TVR-D04). */
+  canRequestPlan?: boolean;
+  /** Action for the empty-state "Ask agent to plan" CTA. Wired by the host to
+   * put the task into planning mode so the composer can request a plan. */
+  onRequestPlan?: () => void;
 }
 
 function hasPendingPlanConfirmation(interactions: IssueThreadInteraction[] | undefined): boolean {
@@ -77,11 +86,23 @@ function OtherDocumentSection({ issueId, doc, locationHash }: { issueId: string;
  * PlanEntry/todo streaming is a flagged protocol dependency (demonstrated in
  * the /dev/task-chat-lab harness).
  */
-export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps) {
-  const { data: planDocument, isLoading: planDocumentLoading } = useIssuePlanDocument(issue.id);
+export function IssuePropertiesPlansTab({ issue, canRequestPlan = false, onRequestPlan }: IssuePropertiesPlansTabProps) {
+  const {
+    data: planDocument,
+    isLoading: planDocumentLoading,
+    isError: planDocumentError,
+    error: planDocumentLoadError,
+    refetch: retryPlanDocument,
+  } = useIssuePlanDocument(issue.id);
   const location = useLocation();
   const [annotationPanelOpen, setAnnotationPanelOpen] = useState(false);
-  const { data } = useQuery({
+  const {
+    data,
+    isLoading: acceptedPlansLoading,
+    isError: acceptedPlansError,
+    error: acceptedPlansLoadError,
+    refetch: retryAcceptedPlans,
+  } = useQuery({
     queryKey: queryKeys.issues.acceptedPlanDecompositions(issue.id),
     queryFn: () => issuesApi.listAcceptedPlanDecompositions(issue.id),
   });
@@ -89,9 +110,18 @@ export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps)
     queryKey: queryKeys.issues.interactions(issue.id),
     queryFn: () => issuesApi.listInteractions(issue.id),
   });
-  const { data: documents } = useIssueDocuments(issue.id);
+  const {
+    data: documents,
+    isLoading: documentsLoading,
+    isError: documentsError,
+    error: documentsLoadError,
+    refetch: retryDocuments,
+  } = useIssueDocuments(issue.id);
   const hasPlans = (data?.length ?? 0) > 0;
   const pendingPlanConfirmation = hasPendingPlanConfirmation(interactions);
+  const loadError = planDocumentLoadError ?? acceptedPlansLoadError ?? documentsLoadError;
+  const loadFailed = planDocumentError || acceptedPlansError || documentsError;
+  const accessDenied = loadError instanceof ApiError && [401, 403].includes(loadError.status);
   // Every other non-system document (e.g. `synthesis`) renders below the plan;
   // the `plan` doc itself stays on its dedicated annotated surface above, and
   // proxy `artifact-review-*` documents surface only through their Work product.
@@ -102,19 +132,53 @@ export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps)
   if (!planDocument && !hasPlans && otherDocuments.length === 0) {
     return (
       <div className="px-1 py-6 text-sm text-muted-foreground">
-        {planDocumentLoading ? (
-          "Loading plan…"
-        ) : issue.workMode === "planning" ? (
-          <div className="space-y-2">
-            <p>This task is in plan mode but no plan document has been written yet.</p>
-            {pendingPlanConfirmation ? (
-              <p className="text-amber-foreground">
-                A plan confirmation is pending, but the plan document it should confirm is missing.
-              </p>
+        {loadFailed ? (
+          <div className="space-y-2" role="alert">
+            <p>{accessDenied ? "You do not have permission to view this plan." : "Plan could not be loaded."}</p>
+            {!accessDenied ? (
+              <button
+                type="button"
+                className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-accent/50"
+                onClick={() => {
+                  void retryPlanDocument();
+                  void retryAcceptedPlans();
+                  void retryDocuments();
+                }}
+              >
+                Retry
+              </button>
             ) : null}
           </div>
+        ) : planDocumentLoading || acceptedPlansLoading || documentsLoading ? (
+          "Loading plan…"
         ) : (
-          "No plan yet. The plan document, accepted plans, and their revisions will appear here."
+          <div className="space-y-2">
+            {issue.workMode === "planning" ? (
+              <>
+                <p>This task is in plan mode but no plan document has been written yet.</p>
+                {pendingPlanConfirmation ? (
+                  <p className="text-amber-foreground">
+                    A plan confirmation is pending, but the plan document it should confirm is missing.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p>No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.</p>
+                <p className="text-xs">The plan document, accepted plans, and revisions will appear here.</p>
+              </>
+            )}
+            {canRequestPlan && onRequestPlan ? (
+              <button
+                type="button"
+                data-testid="plan-empty-state-ask-agent"
+                className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-accent/50"
+                onClick={onRequestPlan}
+              >
+                Ask agent to plan
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
     );

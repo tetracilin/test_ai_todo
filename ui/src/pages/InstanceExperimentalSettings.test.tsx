@@ -51,6 +51,8 @@ const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle classic task interface experimental setting"]';
+const TASK_CHAT_REDESIGN_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle task chat redesign experimental setting"]';
 const GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR =
   'button[aria-label="Toggle goals sidebar link experimental setting"]';
 const DECISIONS_TOGGLE_SELECTOR =
@@ -79,6 +81,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableConferenceRoomChat: false,
+    enableTaskChatRedesign: false,
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
     enableExperimentalFileViewer: false,
@@ -341,6 +344,46 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
 
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
       enableClassicTaskInterface: false,
+    });
+  });
+
+  it("renders and patches the Task Chat Redesign experimental toggle on and off", async () => {
+    await renderPage();
+
+    expect(container.textContent).toContain("Task Chat Redesign");
+    expect(container.textContent).toContain("Enable the renewed Task View");
+    expect(container.textContent).toContain("No task data is affected.");
+
+    const toggle = container.querySelector<HTMLButtonElement>(TASK_CHAT_REDESIGN_TOGGLE_SELECTOR);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      toggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableTaskChatRedesign: true,
+    });
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+
+    flushSync(() => {
+      root?.unmount();
+    });
+    root = null;
+    container.textContent = "";
+    await renderPage();
+
+    const enabledToggle = container.querySelector<HTMLButtonElement>(TASK_CHAT_REDESIGN_TOGGLE_SELECTOR);
+    expect(enabledToggle?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      enabledToggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+      enableTaskChatRedesign: false,
     });
   });
 

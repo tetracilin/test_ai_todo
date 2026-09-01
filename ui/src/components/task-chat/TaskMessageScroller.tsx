@@ -22,6 +22,17 @@ interface TaskMessageScrollerProps {
   /** Value that changes whenever content that could grow the thread updates. */
   contentKey: unknown;
   className?: string;
+  /**
+   * Reports the viewport's pinned state (user at bottom within threshold)
+   * whenever it flips, plus once on mount. Lets hosts show their own
+   * "Jump to latest" affordance exactly when the user is not at bottom.
+   */
+  onPinnedChange?: (pinned: boolean) => void;
+  /**
+   * External jump request: incrementing this number triggers the same
+   * smooth scroll-to-latest as the pill (TVR-A04).
+   */
+  jumpSignal?: number;
 }
 
 /**
@@ -40,11 +51,21 @@ interface TaskMessageScrollerProps {
  * the glide cancels it and treats the user as unpinned. Content-driven follow
  * while pinned stays instant, so no reflow/jump happens during streaming.
  */
-export function TaskMessageScroller({ children, contentKey, className }: TaskMessageScrollerProps) {
+export function TaskMessageScroller({ children, contentKey, className, onPinnedChange, jumpSignal }: TaskMessageScrollerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const easingRef = useRef(false);
+  const lastReportedPinnedRef = useRef<boolean | null>(null);
   const [pillPhase, setPillPhase] = useState<PillPhase>("hidden");
+
+  // Emit pinned-state changes (and the initial mount state) so hosts can show
+  // their own "Jump to latest" affordance exactly when the user is not at
+  // bottom (TVR-A04). Deduplicated so handlers never spam the parent.
+  const reportPinned = useCallback((pinned: boolean) => {
+    if (lastReportedPinnedRef.current === pinned) return;
+    lastReportedPinnedRef.current = pinned;
+    onPinnedChange?.(pinned);
+  }, [onPinnedChange]);
 
   const showPill = useCallback(() => {
     setPillPhase("in");
@@ -77,13 +98,15 @@ export function TaskMessageScroller({ children, contentKey, className }: TaskMes
         easingRef.current = false;
         pinnedRef.current = true;
         hidePill();
+        reportPinned(true);
       }
       return;
     }
     pinnedRef.current = pinned;
+    reportPinned(pinned);
     if (pinned) hidePill();
     else showPill();
-  }, [isPinned, hidePill, showPill]);
+  }, [isPinned, hidePill, showPill, reportPinned]);
 
   const handleJumpToLatest = useCallback(() => {
     const el = ref.current;
@@ -92,6 +115,7 @@ export function TaskMessageScroller({ children, contentKey, className }: TaskMes
       // Already at (or within threshold of) the bottom: no glide needed.
       pinnedRef.current = true;
       hidePill();
+      reportPinned(true);
       return;
     }
     easingRef.current = true;
@@ -103,8 +127,9 @@ export function TaskMessageScroller({ children, contentKey, className }: TaskMes
       easingRef.current = false;
       pinnedRef.current = true;
       hidePill();
+      reportPinned(true);
     }
-  }, [isPinned, hidePill]);
+  }, [isPinned, hidePill, reportPinned]);
 
   // A user gesture during the smooth glide cancels the re-follow: stop
   // treating scroll events as easing and consider the user unpinned.
@@ -130,8 +155,26 @@ export function TaskMessageScroller({ children, contentKey, className }: TaskMes
     if (pinnedRef.current) scrollToBottom();
   }, [contentKey, scrollToBottom]);
 
+  // Report the initial pinned state once the viewport has mounted, so hosts
+  // that render their own jump control start with the right visibility.
+  useLayoutEffect(() => {
+    reportPinned(isPinned());
+  }, [isPinned, reportPinned]);
+
+  // External "Jump to latest" request (the feed-controls button): each new
+  // signal runs the same smooth re-follow as the pill.
+  const lastJumpSignalRef = useRef(jumpSignal);
+  useEffect(() => {
+    if (jumpSignal === undefined || jumpSignal === lastJumpSignalRef.current) return;
+    lastJumpSignalRef.current = jumpSignal;
+    handleJumpToLatest();
+  }, [handleJumpToLatest, jumpSignal]);
+
   useEffect(() => {
     scrollToBottom();
+    // The initial follow pins the viewport; report it so hosts don't show a
+    // stale "Jump to latest" right after mount.
+    reportPinned(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
