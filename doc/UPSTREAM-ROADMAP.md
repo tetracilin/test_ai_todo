@@ -1,6 +1,10 @@
-# Roadmap
+# Upstream Paperclip Roadmap (archived)
 
-This document expands the roadmap preview in `README.md`.
+> **Provenance:** this is upstream Paperclip's roadmap, relocated from the repo-root
+> `ROADMAP.md` and kept for reference. It describes `paperclipai/paperclip`'s direction,
+> not this fork's. The fork's own roadmap is [`roadmap.md`](../roadmap.md) at the repo root.
+
+This document expands the roadmap preview in `../README.md`.
 
 Paperclip is still moving quickly. The list below is directional, not promised, and priorities may shift as we learn from users and from operating real AI companies with the product.
 

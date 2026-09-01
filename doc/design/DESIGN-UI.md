@@ -1,5 +1,11 @@
 # Paperclip Design Principles
 
+> **Location note:** relocated from the repo-root `DESIGN.md` (the root name is now
+> `design.md`, the fork's architecture note — on case-insensitive filesystems the two
+> names collide, so this UI design-language doc lives here). This file remains the
+> source of truth for UI design decisions and the token-only rule enforced by
+> `scripts/check-token-gates.mjs`.
+
 **Status:** v0.3 — anchor document for design-language simplification. Governs structure, not brand. Brand values (color, type, iconography) are intentionally unspecified: they are being redesigned and will land as token values only. Nothing in `ui/` may hardcode them. Spacing/radius scales are likewise TBD pending the token audit (see Principle 3).
 
 Changes from v0.2: token layer location corrected to the repo's real source (`ui/src/index.css`); existing token tiers inventoried; snapshot-coverage scope bounded for Run 1; the issue→task copy rename moved out of the zero-visual-change run.
