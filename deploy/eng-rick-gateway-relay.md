@@ -21,7 +21,7 @@ UFW persists this rule in `/etc/ufw/user.rules`; enabled systemd persists the re
 
 Set `adapterConfig.apiBaseUrl` to exactly `http://172.16.10.1:8643`.
 
-This is private plain HTTP inside the Docker bridge. Set `adapterConfig.dangerouslyAllowInsecureRemoteHttp` to `true` if Paperclip's Hermes adapter rejects HTTP URLs by default. Authentication remains mandatory: Hermes accepts only `Authorization: Bearer <API_SERVER_KEY>`.
+This is private plain HTTP inside the Docker bridge. Set `adapterConfig.dangerouslyAllowInsecureRemoteHttp` to `true`. Paperclip's Hermes adapter rejects every non-loopback `http:` API URL without this exact flag. Authentication remains mandatory: Hermes accepts only `Authorization: Bearer <API_SERVER_KEY>`.
 
 Do not replace `host.docker.internal` globally. It resolves to docker0 (`172.16.0.1`) for this container, which is not reachable from `t3-prod_gateway`.
 
