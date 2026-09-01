@@ -367,6 +367,7 @@ export const ISSUE_ORIGIN_KINDS = [
   "task_watchdog",
   TASK_WATCHDOG_PRODUCT_BUG_ORIGIN_KIND,
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
+  "work_queue_item",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -427,6 +428,9 @@ export function isPluginOperationIssueOriginKind(originKind: string | null | und
 
 export const ISSUE_RELATION_TYPES = ["blocks"] as const;
 export type IssueRelationType = (typeof ISSUE_RELATION_TYPES)[number];
+
+export const WORK_QUEUE_ITEM_STATUSES = ["open", "promoted", "dismissed"] as const;
+export type WorkQueueItemStatus = (typeof WORK_QUEUE_ITEM_STATUSES)[number];
 
 export const ISSUE_TREE_CONTROL_MODES = ["pause", "resume", "cancel", "restore"] as const;
 export type IssueTreeControlMode = (typeof ISSUE_TREE_CONTROL_MODES)[number];

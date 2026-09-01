@@ -26,6 +26,7 @@ import {
   MessagesSquare,
   GanttChartSquare,
   LayoutGrid,
+  ListTodo,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -248,6 +249,7 @@ export function Sidebar() {
               aria-hidden="true"
             />
           ) : null}
+          <SidebarNavItem to="/work-queues" label="Work Queues" icon={ListTodo} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

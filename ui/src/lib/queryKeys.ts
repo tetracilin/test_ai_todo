@@ -338,6 +338,11 @@ export const queryKeys = {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
   },
+  workQueues: {
+    list: (companyId: string) => ["work-queues", companyId] as const,
+    items: (companyId: string, queueId: string, status?: string) =>
+      ["work-queues", companyId, queueId, "items", status ?? "__all"] as const,
+  },
   scheduling: {
     scheduledIssues: (companyId: string, from?: string, to?: string) =>
       ["scheduling", companyId, "scheduled-issues", from, to] as const,

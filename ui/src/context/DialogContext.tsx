@@ -24,6 +24,10 @@ interface NewGoalDefaults {
   parentId?: string;
 }
 
+interface NewWorkQueueItemDefaults {
+  queueId?: string;
+}
+
 interface OnboardingOptions {
   initialStep?: 1 | 2 | 3 | 4;
   companyId?: string;
@@ -41,6 +45,13 @@ interface DialogContextValue {
   newGoalDefaults: NewGoalDefaults;
   openNewGoal: (defaults?: NewGoalDefaults) => void;
   closeNewGoal: () => void;
+  newWorkQueueOpen: boolean;
+  openNewWorkQueue: () => void;
+  closeNewWorkQueue: () => void;
+  newWorkQueueItemOpen: boolean;
+  newWorkQueueItemDefaults: NewWorkQueueItemDefaults;
+  openNewWorkQueueItem: (defaults?: NewWorkQueueItemDefaults) => void;
+  closeNewWorkQueueItem: () => void;
   newAgentOpen: boolean;
   openNewAgent: () => void;
   closeNewAgent: () => void;
@@ -62,6 +73,9 @@ type DialogStateValue = Pick<
   | "newProjectOpen"
   | "newGoalOpen"
   | "newGoalDefaults"
+  | "newWorkQueueOpen"
+  | "newWorkQueueItemOpen"
+  | "newWorkQueueItemDefaults"
   | "newAgentOpen"
   | "onboardingOpen"
   | "onboardingOptions"
@@ -79,6 +93,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
+  const [newWorkQueueOpen, setNewWorkQueueOpen] = useState(false);
+  const [newWorkQueueItemOpen, setNewWorkQueueItemOpen] = useState(false);
+  const [newWorkQueueItemDefaults, setNewWorkQueueItemDefaults] = useState<NewWorkQueueItemDefaults>({});
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions>({});
@@ -112,6 +129,24 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setNewGoalDefaults({});
   }, []);
 
+  const openNewWorkQueue = useCallback(() => {
+    setNewWorkQueueOpen(true);
+  }, []);
+
+  const closeNewWorkQueue = useCallback(() => {
+    setNewWorkQueueOpen(false);
+  }, []);
+
+  const openNewWorkQueueItem = useCallback((defaults: NewWorkQueueItemDefaults = {}) => {
+    setNewWorkQueueItemDefaults(defaults);
+    setNewWorkQueueItemOpen(true);
+  }, []);
+
+  const closeNewWorkQueueItem = useCallback(() => {
+    setNewWorkQueueItemOpen(false);
+    setNewWorkQueueItemDefaults({});
+  }, []);
+
   const openNewAgent = useCallback(() => {
     setNewAgentOpen(true);
   }, []);
@@ -137,6 +172,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newProjectOpen,
       newGoalOpen,
       newGoalDefaults,
+      newWorkQueueOpen,
+      newWorkQueueItemOpen,
+      newWorkQueueItemDefaults,
       newAgentOpen,
       onboardingOpen,
       onboardingOptions,
@@ -148,6 +186,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newProjectOpen,
       newGoalOpen,
       newGoalDefaults,
+      newWorkQueueOpen,
+      newWorkQueueItemOpen,
+      newWorkQueueItemDefaults,
       newAgentOpen,
       onboardingOpen,
       onboardingOptions,
@@ -163,6 +204,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       closeNewProject,
       openNewGoal,
       closeNewGoal,
+      openNewWorkQueue,
+      closeNewWorkQueue,
+      openNewWorkQueueItem,
+      closeNewWorkQueueItem,
       openNewAgent,
       closeNewAgent,
       openOnboarding,
@@ -176,6 +221,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       closeNewProject,
       openNewGoal,
       closeNewGoal,
+      openNewWorkQueue,
+      closeNewWorkQueue,
+      openNewWorkQueueItem,
+      closeNewWorkQueueItem,
       openNewAgent,
       closeNewAgent,
       openOnboarding,

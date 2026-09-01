@@ -43,6 +43,8 @@ import { Schedule } from "./pages/Schedule";
 import { SchedulingRoutines } from "./pages/SchedulingRoutines";
 import { Artifacts } from "./pages/Artifacts";
 import { GoalDetail } from "./pages/GoalDetail";
+import { WorkQueues } from "./pages/WorkQueues";
+import { WorkQueueDetail } from "./pages/WorkQueueDetail";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Costs } from "./pages/Costs";
@@ -289,6 +291,8 @@ function boardRoutes() {
       <Route path="schedule" element={<Schedule />} />
       <Route path="schedule/routines" element={<SchedulingRoutines />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route path="work-queues" element={<WorkQueues />} />
+      <Route path="work-queues/:queueId" element={<WorkQueueDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -606,6 +610,8 @@ export function App() {
           <Route path="schedule/routines" element={<UnprefixedBoardRedirect />} />
           <Route path="goals" element={<UnprefixedBoardRedirect />} />
           <Route path="goals/:goalId" element={<UnprefixedBoardRedirect />} />
+          <Route path="work-queues" element={<UnprefixedBoardRedirect />} />
+          <Route path="work-queues/:queueId" element={<UnprefixedBoardRedirect />} />
           <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />

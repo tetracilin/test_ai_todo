@@ -12,6 +12,8 @@ import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
+import { NewWorkQueueDialog } from "./NewWorkQueueDialog";
+import { NewWorkQueueItemDialog } from "./NewWorkQueueItemDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
@@ -710,6 +712,8 @@ export function Layout() {
       <NewIssueDialog />
       <NewProjectDialog />
       <NewGoalDialog />
+      <NewWorkQueueDialog />
+      <NewWorkQueueItemDialog />
       <NewAgentDialog />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <ToastViewport />
