@@ -87,7 +87,10 @@ const CSS_PATH = resolve(UI_SRC, "index.css");
 // per-batch prose blocks NOT being in this format (they are not parsed;
 // only lines starting with "* allow " are).
 function loadAllowlist(cssPath) {
-  const css = readFileSync(cssPath, "utf8");
+  // Strip CRs so the line regex (anchored with $) also matches on CRLF
+  // checkouts (Windows, core.autocrlf) — otherwise zero entries load and
+  // every allowlisted site reports as a violation.
+  const css = readFileSync(cssPath, "utf8").replace(/\r/g, "");
   const entries = [];
   const lineRe = /^\s*\*\s*allow\s+(\S+)\s+(?:—|-{1,2})\s*(.*)$/;
   for (const rawLine of css.split("\n")) {
