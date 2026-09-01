@@ -14,6 +14,8 @@ trap cleanup EXIT INT TERM
 mkdir -p "$work_dir/secrets" "$work_dir/paperclip"
 printf '%s' 'test-postgres-p@ssword' > "$work_dir/secrets/postgres_password"
 printf '%s' 'test-better-auth-secret' > "$work_dir/secrets/better_auth_secret"
+printf '%s' 'test-s3-access-key' > "$work_dir/secrets/paperclip_artifacts_access_key"
+printf '%s' 'test-s3-secret-key' > "$work_dir/secrets/paperclip_artifacts_secret_key"
 : > "$work_dir/secrets/empty_better_auth_secret"
 chmod 0600 "$work_dir/secrets/"*
 
@@ -42,6 +44,8 @@ run_default_image() {
     -v "$DEPLOY_DIR/paperclip-config.json:/etc/paperclip/config.json:ro" \
     -v "$work_dir/secrets/postgres_password:/run/secrets/postgres_password:ro" \
     -v "$work_dir/secrets/better_auth_secret:/run/secrets/better_auth_secret:ro" \
+    -v "$work_dir/secrets/paperclip_artifacts_access_key:/run/secrets/paperclip_artifacts_access_key:ro" \
+    -v "$work_dir/secrets/paperclip_artifacts_secret_key:/run/secrets/paperclip_artifacts_secret_key:ro" \
     -v "$work_dir/paperclip:/paperclip" \
     "$paperclip_image" "$@"
 }
@@ -52,6 +56,8 @@ result=$(run_default_image sh -c '
   [ "$DATABASE_URL" = "postgresql://paperclip:test-postgres-p%40ssword@db:5432/paperclip" ]
   [ -z "${POSTGRES_PASSWORD:-}" ]
   [ -r "$PAPERCLIP_CONFIG" ]
+  [ "$(cat /run/paperclip-storage-secrets/paperclip_artifacts_access_key)" = "test-s3-access-key" ]
+  [ "$(cat /run/paperclip-storage-secrets/paperclip_artifacts_secret_key)" = "test-s3-secret-key" ]
   printf passed
 ')
 [ "$result" = passed ] || {

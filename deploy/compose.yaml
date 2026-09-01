@@ -41,6 +41,9 @@ services:
       PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
       PAPERCLIP_MIGRATION_PROMPT: never
       PAPERCLIP_SECRETS_STRICT_MODE: "true"
+      # Docker file secrets retain their host ownership. The entrypoint copies
+      # S3 credentials to this tmpfs with the runtime user's ownership.
+      PAPERCLIP_SECRETS_DIR: /run/paperclip-storage-secrets
       PAPERCLIP_TELEMETRY_DISABLED: "1"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
@@ -58,6 +61,8 @@ services:
       - paperclip-data:/paperclip
       - ./paperclip-config.json:/etc/paperclip/config.json:ro
       - ./scripts/container-entrypoint.sh:/usr/local/bin/t3-container-entrypoint:ro
+    tmpfs:
+      - /run/paperclip-storage-secrets:uid=1000,gid=1000,mode=0700
     ports:
       - "${PAPERCLIP_BIND_ADDRESS:-127.0.0.1}:${PAPERCLIP_PORT:-33100}:3100"
     extra_hosts:
