@@ -398,15 +398,33 @@ function DocumentRow({
  * thread.
  */
 export function IssuePropertiesArtifactsTab({ issue, documentDeepLink }: IssuePropertiesArtifactsTabProps) {
-  const { data: attachments } = useQuery({
+  const {
+    data: attachments,
+    isLoading: attachmentsLoading,
+    isError: attachmentsError,
+    error: attachmentsLoadError,
+    refetch: retryAttachments,
+  } = useQuery({
     queryKey: queryKeys.issues.attachments(issue.id),
     queryFn: () => issuesApi.listAttachments(issue.id),
   });
-  const { data: workProducts } = useQuery({
+  const {
+    data: workProducts,
+    isLoading: workProductsLoading,
+    isError: workProductsError,
+    error: workProductsLoadError,
+    refetch: retryWorkProducts,
+  } = useQuery({
     queryKey: queryKeys.issues.workProducts(issue.id),
     queryFn: () => issuesApi.listWorkProducts(issue.id),
   });
-  const { data: documents } = useIssueDocuments(issue.id);
+  const {
+    data: documents,
+    isLoading: documentsLoading,
+    isError: documentsError,
+    error: documentsLoadError,
+    refetch: retryDocuments,
+  } = useIssueDocuments(issue.id);
 
   const workProductRows = workProducts ?? [];
   // Proxy review documents (`artifact-review-*`) present only through their
@@ -414,10 +432,44 @@ export function IssuePropertiesArtifactsTab({ issue, documentDeepLink }: IssuePr
   const documentRows = (documents ?? []).filter((doc) => !isArtifactReviewDocumentKey(doc.key));
   const reviewDocsByKey = new Map((documents ?? []).map((doc) => [doc.key, doc]));
   const fileRows = selectAgentArtifactAttachments(attachments, workProducts);
+  const loadError = attachmentsLoadError ?? workProductsLoadError ?? documentsLoadError;
+  const loadFailed = attachmentsError || workProductsError || documentsError;
+  const accessDenied = loadError instanceof ApiError && [401, 403].includes(loadError.status);
+  const noArtifacts =
+    workProductRows.length === 0 && documentRows.length === 0 && fileRows.length === 0;
 
   return (
     <div className="flex flex-col gap-2 py-2">
       <IssueArtifactManager companyId={issue.companyId} issueId={issue.id} />
+      {noArtifacts ? (
+        <div className="px-1 py-6 text-sm text-muted-foreground">
+          {loadFailed ? (
+            <div className="space-y-2" role="alert">
+              <p>{accessDenied ? "You do not have permission to view task artifacts." : "Artifacts could not be loaded."}</p>
+              {!accessDenied ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-accent/50"
+                  onClick={() => {
+                    void retryAttachments();
+                    void retryWorkProducts();
+                    void retryDocuments();
+                  }}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          ) : attachmentsLoading || workProductsLoading || documentsLoading ? (
+            "Loading artifacts…"
+          ) : (
+            <div className="space-y-2">
+              <p>No artifacts yet.</p>
+              <p className="text-xs">Work products, documents, and agent-produced files will appear here. Add files from the task conversation.</p>
+            </div>
+          )}
+        </div>
+      ) : null}
       {workProductRows.length > 0 ? (
         <>
           <SectionHeading>Work products</SectionHeading>

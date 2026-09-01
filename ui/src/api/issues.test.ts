@@ -124,4 +124,30 @@ describe("issuesApi.list", () => {
       },
     );
   });
+  it("posts an issue-scoped active-run stop request", async () => {
+    await issuesApi.stopActiveRun("issue-1");
+
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/issues/issue-1/active-run/stop",
+      {},
+    );
+  });
+
+  it("sends explicit comment delivery without a legacy wake flag", async () => {
+    await issuesApi.addComment("issue-1", "Team-only note", undefined, undefined, undefined, "comment");
+
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/issues/issue-1/comments",
+      { body: "Team-only note", deliveryMode: "comment" },
+    );
+  });
+
+  it("maps legacy notifyAgent=false to explicit comment delivery", async () => {
+    await issuesApi.addComment("issue-1", "Compatibility note", undefined, undefined, false);
+
+    expect(mockApi.post).toHaveBeenCalledWith(
+      "/issues/issue-1/comments",
+      { body: "Compatibility note", deliveryMode: "comment", notifyAgent: false },
+    );
+  });
 });

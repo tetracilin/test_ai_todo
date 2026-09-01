@@ -85,9 +85,9 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="hello" nullable onSave={onSave} />);
     });
 
-    const display = container.querySelector("span");
+    const display = container.querySelector("button");
     expect(display).not.toBeNull();
-    expect(display?.textContent).toBe("hello");
+    expect(display?.textContent).toBe("Edit hello");
 
     act(() => {
       display!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -119,7 +119,7 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="hello" onSave={onSave} />);
     });
 
-    const display = container.querySelector("span");
+    const display = container.querySelector("button");
     expect(display).not.toBeNull();
 
     act(() => {

@@ -41,6 +41,13 @@ describe("INSTANCE_FEATURE_CATALOG", () => {
     }
   });
 
+  it("keeps Task Chat Redesign opt-in by default on self-hosted and cloud instances", () => {
+    expect(INSTANCE_FEATURE_CATALOG.enableTaskChatRedesign).toMatchObject({
+      cloudDefault: false,
+      selfHostedDefault: false,
+    });
+  });
+
   it("has a non-empty title, description, and valid tier for every flag", () => {
     for (const key of INSTANCE_FEATURE_KEYS) {
       const entry = INSTANCE_FEATURE_CATALOG[key];

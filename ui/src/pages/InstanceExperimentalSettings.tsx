@@ -368,6 +368,7 @@ export function InstanceExperimentalSettings() {
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
   const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
+  const enableTaskChatRedesign = experimentalQuery.data?.enableTaskChatRedesign === true;
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
   const enableIssuePlanDecompositions =
     experimentalQuery.data?.enableIssuePlanDecompositions === true;
@@ -841,6 +842,18 @@ export function InstanceExperimentalSettings() {
         settingKey="enableSummaries"
         managed={managedKeys.enableSummaries}
         ariaLabel="Toggle summaries experimental setting"
+      />
+
+      <ExperimentalToggleCard
+        title="Task Chat Redesign"
+        description="Enable the renewed Task View. The Classic Task Interface compatibility setting restores the classic page when enabled."
+        footnote="Switching takes effect immediately. No task data is affected."
+        checked={enableTaskChatRedesign}
+        onCheckedChange={(checked) => toggleMutation.mutate({ enableTaskChatRedesign: checked })}
+        disabled={toggleMutation.isPending}
+        settingKey="enableTaskChatRedesign"
+        managed={managedKeys.enableTaskChatRedesign}
+        ariaLabel="Toggle task chat redesign experimental setting"
       />
 
       <ExperimentalToggleCard
