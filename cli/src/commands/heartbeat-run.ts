@@ -279,6 +279,30 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       cliAdapter.formatStdoutEvent(stdoutJsonBuffer, debug);
       stdoutJsonBuffer = "";
     }
+    const isNotebookLmLocal = adapterType === "notebooklm_local";
+    if (isNotebookLmLocal && finalRun) {
+      const runRecord = asRecord(finalRun);
+      const resultObj = asRecord(finalRun.resultJson);
+      const errorCode =
+        (typeof runRecord?.errorCode === "string" && runRecord.errorCode) ||
+        (typeof resultObj?.errorCode === "string" && resultObj.errorCode) ||
+        (finalStatus === "timed_out" ? "notebooklm_local_timeout" : "");
+      // notebooklm_local emits deterministic command results rather than an
+      // agent event stream. Route its terminal result through its formatter so
+      // stdout/stderr and possible profile data receive the same bounded,
+      // redacted treatment as streamed output.
+      cliAdapter.formatStdoutEvent(
+        JSON.stringify({
+          type: "result",
+          exitCode: finalStatus === "succeeded" ? 0 : 1,
+          timedOut: finalStatus === "timed_out",
+          errorCode,
+          errorMessage: finalError ?? "",
+          resultJson: finalRun.resultJson ?? {},
+        }),
+        debug,
+      );
+    }
     const label = `Run ${activeRunId} completed with status ${finalStatus}`;
     if (finalStatus === "succeeded") {
       console.log(pc.green(label));
@@ -289,7 +313,7 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     if (finalError) {
       console.log(pc.red(`Error: ${finalError}`));
     }
-    if (finalRun) {
+    if (finalRun && !isNotebookLmLocal) {
       const resultObj = asRecord(finalRun.resultJson);
       if (resultObj) {
         const subtype = typeof resultObj.subtype === "string" ? resultObj.subtype : "";
