@@ -415,11 +415,13 @@ describe("adapter device-login routes", () => {
     // capability. The guard reads the registry capability, not the adapter name,
     // so the adapter passes the guard and starts a session. This proves no
     // adapter-name branch remains in the guard path. The test overrides an
-    // existing adapter type so the strict request schema accepts it.
+    // existing adapter type (kimi_local) so the strict request schema accepts it;
+    // gemini_local no longer exists in AGENT_ADAPTER_TYPES (the Gemini adapter was
+    // removed from the product), so it can no longer play this role.
     const app = await createApp();
     const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter({
-      type: "gemini_local",
+      type: "kimi_local",
       execute: async () => {
         throw new Error("not used");
       },
@@ -436,15 +438,15 @@ describe("adapter device-login routes", () => {
     });
     try {
       const res = await request(app)
-        .post(loginPath(COMPANY_1, "gemini_local"))
+        .post(loginPath(COMPANY_1, "kimi_local"))
         .send({ environmentId: SANDBOX_ENV_1 });
 
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body).toMatchObject({ environmentId: SANDBOX_ENV_1, status: "starting" });
       expect(harness.acquisitions).toHaveLength(1);
-      expect(harness.acquisitions[0]).toMatchObject({ adapterType: "gemini_local" });
+      expect(harness.acquisitions[0]).toMatchObject({ adapterType: "kimi_local" });
     } finally {
-      unregisterServerAdapter("gemini_local");
+      unregisterServerAdapter("kimi_local");
     }
   });
 

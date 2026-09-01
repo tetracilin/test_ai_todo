@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ciSmokeLabScenarios, type SmokeLabLifecycleTool, type SmokeLabScenario, type SmokeRunStepPath } from "./smoke-lab.catalog";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 
 type SmokeRunStepStatus = "pass" | "fail" | "skipped";
 
@@ -73,8 +74,8 @@ async function createScout(request: APIRequestContext, companyId: string): Promi
         role: "qa",
         title: "Smoke Lab scout",
         capabilities: "Runs deterministic Smoke Lab fixture calls.",
-        adapterType: "process",
-        adapterConfig: { command: "node", args: ["-e", "setTimeout(() => {}, 1000)"] },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
       },
     }),
   );
