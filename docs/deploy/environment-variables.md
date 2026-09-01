@@ -55,6 +55,25 @@ pair hiding with the desired default where it matters.
 | `PAPERCLIP_SECRETS_MASTER_KEY_FILE` | `~/.paperclip/.../secrets/master.key` | Path to key file |
 | `PAPERCLIP_SECRETS_STRICT_MODE` | `false` | Require secret refs for sensitive env vars |
 
+## Discord bridge deployment
+
+These values belong to the standalone `discord-bridge` process, never the Paperclip
+server or browser. For staging and production, use Docker/host/secret-manager files and
+set the corresponding `*_FILE` variable; do not put secret values in Compose or `.env`.
+`discord-bridge/.env.example` documents local development placeholders and
+`deploy-staging/.env.example` documents host-side file references.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_BOT_TOKEN` / `DISCORD_BOT_TOKEN_FILE` | Yes | Discord gateway bot token or mounted secret-file path |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_ID_FILE` | Yes | Discord application client ID or mounted secret-file path |
+| `DISCORD_WEBHOOK_SECRET` / `DISCORD_WEBHOOK_SECRET_FILE` | Yes | Reserved bridge webhook signing secret or mounted secret-file path |
+| `PAPERCLIP_API_KEY` / `PAPERCLIP_API_KEY_FILE` | Yes | Bridge-scoped Paperclip credential or mounted secret-file path |
+
+When both forms exist, direct value wins for local development. Production deployment
+must leave direct values unset. Secret files must be readable only by the bridge runtime
+user and are excluded from git under `deploy-staging/secrets/`.
+
 ## Agent Runtime (Injected into agent processes)
 
 These are set automatically by the server when invoking agents:
