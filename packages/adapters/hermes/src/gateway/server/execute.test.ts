@@ -260,6 +260,29 @@ describe("execute", () => {
     expect(body.input).toContain('"goal":"Ship approved client demo by Friday."');
   });
 
+  it("rejects secret-bearing agent-help context before POST /v1/runs", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ apiBaseUrl: "http://127.0.0.1:8642", apiKey: "test-key", timeoutSec: 5 });
+    ctx.context.agent_help = {
+      schema_version: "agent_help.task_context.v1",
+      task: {
+        id: "issue-1",
+        title: "Prepare client demo",
+        description: "postgres://test-user:synthetic-pass@db.invalid/app",
+        current_status: "in_progress",
+      },
+      project: { id: null, goal: null },
+    };
+
+    const result = await execute(ctx);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errorCode).toBe("task_context_contains_secret");
+    expect(result.errorMessage).not.toContain("synthetic-pass");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("routes a bare Hermes dashboard URL on port 9119 through the API prefix", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

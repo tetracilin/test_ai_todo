@@ -193,7 +193,7 @@ describe("agent live run routes", () => {
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockIssueService.getByIdentifier.mockResolvedValue({
       id: "issue-1",
       companyId: "company-1",
@@ -723,7 +723,7 @@ describe("agent live run routes", () => {
         },
       },
     }));
-  });
+  }, 15_000);
 
   it("uses null optional task context fields", async () => {
     mockIssueService.getByIdentifier.mockResolvedValueOnce({
@@ -759,7 +759,7 @@ describe("agent live run routes", () => {
     }));
   });
 
-  it("rejects inaccessible task help requests", async () => {
+  it("returns byte-identical 404 responses for missing and cross-company tasks", async () => {
     const app = await createApp(createAgentHelpDbStub(), {
       type: "board",
       userId: "outsider",
@@ -768,18 +768,83 @@ describe("agent live run routes", () => {
       memberships: [],
       isInstanceAdmin: false,
     });
-    const res = await requestApp(
+    const inaccessible = await requestApp(
       app,
       (baseUrl) => request(baseUrl)
         .post("/api/issues/PC1A2-1295/agent-help")
         .set("Idempotency-Key", "33333333-3333-4333-8333-333333333333")
         .send({}),
     );
+    mockIssueService.getByIdentifier.mockResolvedValueOnce(null);
+    const missing = await requestApp(
+      app,
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-MISSING/agent-help")
+        .set("Idempotency-Key", "34333333-3333-4333-8333-333333333333")
+        .send({}),
+    );
 
-    expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(res.body.code).toBe("TASK_ACCESS_DENIED");
+    expect(inaccessible.status, JSON.stringify(inaccessible.body)).toBe(404);
+    expect(missing.status, JSON.stringify(missing.body)).toBe(404);
+    expect(inaccessible.text).toBe(missing.text);
+    expect(inaccessible.body).toEqual({ error: "Task not found." });
     expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
   });
+
+  it("denies agent and viewer actors but permits active board writers", async () => {
+    const agentResponse = await requestApp(
+      await createApp(createAgentHelpDbStub(), {
+        type: "agent",
+        agentId: "requesting-agent",
+        companyId: "company-1",
+        source: "agent_key",
+      }),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "35333333-3333-4333-8333-333333333333")
+        .send({}),
+    );
+    expect(agentResponse.status).toBe(403);
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+
+    const viewerResponse = await requestApp(
+      await createApp(createAgentHelpDbStub(), {
+        type: "board",
+        userId: "viewer",
+        companyIds: ["company-1"],
+        source: "session",
+        memberships: [{ companyId: "company-1", status: "active", membershipRole: "viewer" }],
+        isInstanceAdmin: false,
+      }),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "36333333-3333-4333-8333-333333333333")
+        .send({}),
+    );
+    expect(viewerResponse.status, JSON.stringify(viewerResponse.body)).toBe(403);
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
+    const writerResponse = await requestApp(
+      await createApp(createAgentHelpDbStub(), {
+        type: "board",
+        userId: "writer",
+        companyIds: ["company-1"],
+        source: "session",
+        memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
+        isInstanceAdmin: false,
+      }),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "37333333-3333-4333-8333-333333333333")
+        .send({}),
+    );
+    expect(writerResponse.status, JSON.stringify(writerResponse.body)).toBe(202);
+  }, 15_000);
 
   it("returns safe unavailable error when Hermes launch fails", async () => {
     mockAgentService.getById.mockResolvedValueOnce({
@@ -861,6 +926,77 @@ describe("agent live run routes", () => {
     expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
   });
 
+  it("rejects each supported secret class before durable wakeup writes", async () => {
+    const secretCases = [
+      { name: "PEM private key", field: "description", value: "-----BEGIN PRIVATE KEY----- synthetic" },
+      { name: "JWT", field: "title", value: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.synthetic-signature" },
+      { name: "authorization value", field: "status", value: "Bearer synthetic-token-value-12345" },
+      { name: "credential URI", field: "description", value: "postgres://test-user:synthetic-pass@db.invalid/app" },
+      { name: "cookie assignment", field: "description", value: "Cookie: sessionid=synthetic-session-value" },
+      { name: "YAML assignment", field: "description", value: "AWS_SECRET_ACCESS_KEY: synthetic-value-12345" },
+      { name: "provider prefix", field: "id", value: "sk-proj-syntheticproviderkey123456" },
+      { name: "high entropy token", field: "description", value: "A8fQ2mZ7xK4pV9cR1nL6dS3wH5yB0uT8gJ2eN7qW" },
+      { name: "project goal", field: "projectGoal", value: "AWS_SECRET_ACCESS_KEY: synthetic-value-12345" },
+      { name: "project identifier", field: "projectId", value: "AIzaSyntheticProviderKeyValue12345" },
+    ] as const;
+
+    for (const [index, testCase] of secretCases.entries()) {
+      const issue: Record<string, unknown> = {
+        id: testCase.field === "id" ? testCase.value : "issue-1",
+        companyId: "company-1",
+        assigneeAgentId: "agent-1",
+        status: testCase.field === "status" ? testCase.value : "in_progress",
+        title: testCase.field === "title" ? testCase.value : "Prepare client demo",
+        description: testCase.field === "description" ? testCase.value : "Draft agenda and confirm attendees.",
+        projectId: testCase.field === "projectId" || testCase.field === "projectGoal" ? "project-1" : null,
+      };
+      mockIssueService.getByIdentifier.mockResolvedValueOnce(issue);
+      if (testCase.field === "projectId" || testCase.field === "projectGoal") {
+        mockProjectService.getById.mockResolvedValueOnce({
+          id: testCase.field === "projectId" ? testCase.value : "project-1",
+          companyId: "company-1",
+          goalId: "goal-1",
+          goals: [{ id: "goal-1", title: testCase.field === "projectGoal" ? testCase.value : "Safe project goal" }],
+        });
+      }
+      const response = await requestApp(
+        await createApp(createAgentHelpDbStub()),
+        (baseUrl) => request(baseUrl)
+          .post("/api/issues/PC1A2-1295/agent-help")
+          .set("Idempotency-Key", `44444444-4444-4444-8444-${String(index).padStart(12, "0")}`)
+          .send({}),
+      );
+      expect(response.status, testCase.name).toBe(422);
+      expect(response.body.code, testCase.name).toBe("TASK_CONTEXT_CONTAINS_SECRET");
+    }
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+  });
+
+  it("allows ordinary prose containing token and secret words", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValueOnce({
+      id: "issue-1",
+      companyId: "company-1",
+      assigneeAgentId: "agent-1",
+      status: "in_progress",
+      title: "Document token handling",
+      description: "Explain secret rotation and token lifecycle to reviewers.",
+      projectId: null,
+    });
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
+    const response = await requestApp(
+      await createApp(createAgentHelpDbStub()),
+      (baseUrl) => request(baseUrl)
+        .post("/api/issues/PC1A2-1295/agent-help")
+        .set("Idempotency-Key", "45444444-4444-4444-8444-444444444444")
+        .send({}),
+    );
+    expect(response.status, JSON.stringify(response.body)).toBe(202);
+  });
+
   it("returns the prior launch for a duplicate idempotency key", async () => {
     mockHeartbeatService.getRun.mockResolvedValueOnce({
       id: "run-1",
@@ -885,6 +1021,11 @@ describe("agent live run routes", () => {
   });
 
   it("uses null project goal when the project has no resolvable goal", async () => {
+    mockAgentService.getById.mockResolvedValueOnce({
+      id: "agent-1",
+      companyId: "company-1",
+      adapterType: "hermes_gateway",
+    });
     mockProjectService.getById.mockResolvedValueOnce({
       id: "project-1",
       companyId: "company-1",

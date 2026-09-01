@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
+import { containsStructuredSecret, normalizeSecretScanText } from "@paperclipai/adapter-utils";
 import { agentWakeupRequests, agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
@@ -227,7 +228,6 @@ function readRunIssueId(context: Record<string, unknown> | null) {
 
 const AGENT_HELP_SCHEMA_VERSION = "agent_help.task_context.v1";
 const AGENT_HELP_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const AGENT_HELP_SECRET_RE = /(?:-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----|\b(?:bearer|basic)\s+[a-z0-9+/_=-]{12,}|\beyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b|\b(?:api[_-]?key|token|password|secret)\s*=\s*[^\s]+)/i;
 
 type AgentHelpPayload = {
   schema_version: typeof AGENT_HELP_SCHEMA_VERSION;
@@ -249,11 +249,7 @@ function agentHelpError(status: number, code: string, message: string): HttpErro
 
 function normalizeAgentHelpText(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  return value
-    .normalize("NFC")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
-    .trim();
+  return normalizeSecretScanText(value, Number.MAX_SAFE_INTEGER);
 }
 
 function requireAgentHelpText(value: unknown, limit: number): string {
@@ -267,11 +263,11 @@ function requireAgentHelpText(value: unknown, limit: number): string {
 function optionalAgentHelpText(value: unknown, limit: number): string | null {
   const normalized = normalizeAgentHelpText(value);
   if (!normalized) return null;
-  return Array.from(normalized).slice(0, limit).join("");
+  return normalizeSecretScanText(normalized, limit);
 }
 
 function assertAgentHelpNoSecrets(values: Array<string | null>) {
-  if (values.some((value) => value && AGENT_HELP_SECRET_RE.test(value))) {
+  if (values.some((value) => value && containsStructuredSecret(value))) {
     throw agentHelpError(
       422,
       "TASK_CONTEXT_CONTAINS_SECRET",
@@ -5293,6 +5289,7 @@ export function agentRoutes(
 
   router.post("/issues/:issueId/agent-help", async (req, res) => {
     assertAuthenticated(req);
+    assertBoard(req);
     const rawIssueId = req.params.issueId as string;
     if (!rawIssueId || Buffer.byteLength(rawIssueId, "utf8") > 200) {
       throw agentHelpError(400, "INVALID_AGENT_HELP_REQUEST", "Agent-help request is invalid.");
@@ -5307,18 +5304,13 @@ export function agentRoutes(
 
     const identifier = normalizeIssueIdentifier(rawIssueId);
     const issueSvc = issueService(db);
-    const issue = await (identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawIssueId));
-    if (!issue) {
-      throw agentHelpError(404, "TASK_NOT_FOUND", "Task not found.");
-    }
-    if (!hasCompanyAccess(req, issue.companyId)) {
-      throw agentHelpError(403, "TASK_ACCESS_DENIED", "You do not have access to this task.");
-    }
-    try {
-      assertCompanyAccess(req, issue.companyId);
-    } catch {
-      throw agentHelpError(403, "TASK_ACCESS_DENIED", "You do not have access to this task.");
-    }
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawIssueId),
+      "Task not found.",
+    );
+    if (!issue) return;
 
     const actor = getActorInfo(req);
     const idempotencyKey = `agent-help:${actor.actorType}:${actor.actorId}:${issue.id}:${header}`;
@@ -5361,17 +5353,19 @@ export function agentRoutes(
       }
     }
 
-    assertAgentHelpNoSecrets([title, currentStatus, description, projectGoal]);
+    const taskId = requireAgentHelpText(issue.id, 200);
+    const normalizedProjectId = projectId ? optionalAgentHelpText(projectId, 200) : null;
+    assertAgentHelpNoSecrets([taskId, title, currentStatus, description, normalizedProjectId, projectGoal]);
     const payload: AgentHelpPayload = {
       schema_version: AGENT_HELP_SCHEMA_VERSION,
       task: {
-        id: requireAgentHelpText(issue.id, 200),
+        id: taskId,
         title,
         description,
         current_status: currentStatus,
       },
       project: {
-        id: projectId,
+        id: normalizedProjectId,
         goal: projectGoal,
       },
     };
@@ -5394,7 +5388,7 @@ export function agentRoutes(
         requestedByActorType: actor.actorType,
         requestedByActorId: actor.actorId,
         payload: { issueId: issue.id, agent_help: payload },
-        contextSnapshot: { issueId: issue.id, projectId, agent_help: payload },
+        contextSnapshot: { issueId: issue.id, projectId: normalizedProjectId, agent_help: payload },
       });
     } catch {
       throw agentHelpError(503, "AGENT_LAUNCH_UNAVAILABLE", "Agent launch is unavailable. Retry shortly.");
