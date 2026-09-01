@@ -599,6 +599,18 @@ export {
 } from "./goal.js";
 
 export {
+  workQueueItemStatusSchema,
+  createWorkQueueSchema,
+  createWorkQueueItemSchema,
+  promoteWorkQueueItemSchema,
+  dismissWorkQueueItemSchema,
+  type CreateWorkQueue,
+  type CreateWorkQueueItem,
+  type PromoteWorkQueueItem,
+  type DismissWorkQueueItem,
+} from "./work-queue.js";
+
+export {
   applyOnboardingSeedSchema,
   type ApplyOnboardingSeed,
 } from "./onboarding-seed.js";
