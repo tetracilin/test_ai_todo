@@ -1205,7 +1205,9 @@ export type {
   CompanyPortabilityIssueWorkProductManifestEntry,
   CompanyPortabilityIssueMonitorManifestEntry,
   CompanyPortabilityIssueAttachmentManifestEntry,
+  CompanyPortabilityIssueEvidenceLinkManifestEntry,
   CompanyPortabilityIssueManifestEntry,
+  CompanyPortabilityExternalObjectManifestEntry,
   CompanyPortabilityManifest,
   CompanyPortabilityExportResult,
   CompanyPortabilityExportPreviewFile,
@@ -2625,3 +2627,35 @@ export {
   type CreateArtifactComment,
   type ListExternalStorageObjects,
 } from "./validators/artifact-version.js";
+
+// WP-0 canonical Vietnamese phrase table. Re-exported from the package root so
+// the inbound classifier the WP-0 chat path consumes is reachable the same way
+// as everything else here, instead of through a hardcoded
+// `@paperclipai/shared/wp0-phrases.js` subpath in every consumer.
+export {
+  WP0_CARD_REFERENCE_EXAMPLE,
+  WP0_CARD_REFERENCE_PATTERN,
+  WP0_CARD_REPLY_INSTRUCTION,
+  WP0_MESSAGE_IDS,
+  WP0_MESSAGE_TEMPLATES,
+  WP0_RETRY_NOTICES,
+  WP0_RETRY_OWNERS,
+  WP0_VERB_IDS,
+  WP0_VERB_PHRASES,
+  classifyWp0Inbound,
+  normalizeWp0Phrase,
+  renderWp0AgentPromptSection,
+  renderWp0HelpMessage,
+  renderWp0Message,
+  resolveWp0CardReference,
+  resolveWp0Verb,
+  wp0MessagePlaceholders,
+  wp0PhraseIndex,
+  type Wp0InboundClassification,
+  type Wp0InboundContext,
+  type Wp0MessageId,
+  type Wp0MessageTemplate,
+  type Wp0RetryOwner,
+  type Wp0VerbId,
+  type Wp0VerbPhrase,
+} from "./wp0-phrases.js";
