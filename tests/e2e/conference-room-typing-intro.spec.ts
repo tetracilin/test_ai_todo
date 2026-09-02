@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 import {
   expectLandsOnFirstTaskWithoutDashboardBounce,
   instrumentNavLog,
@@ -24,7 +25,8 @@ const FIRST_TASK_TITLE = "Paperclip onboarding";
 /**
  * Intercept the two side-effecting calls the wizard makes so no real CLI check
  * runs and no real agent process spawns (the hire still happens server-side
- * with an inert http adapter).
+ * with an inert hermes_gateway adapter pointed at the deterministic test
+ * fixture; the hired agent never executes a run).
  */
 async function installLaunchIntercepts(page: Page, baseURL?: string) {
   await page.route("**/test-environment", (route) =>
@@ -47,8 +49,8 @@ async function installLaunchIntercepts(page: Page, baseURL?: string) {
       body: JSON.stringify({
         name: body.name,
         role: body.role,
-        adapterType: "http",
-        adapterConfig: { url: "http://127.0.0.1:1/dead" },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
         runtimeConfig: { heartbeat: { enabled: false } },
       }),
     });

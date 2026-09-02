@@ -561,6 +561,12 @@ const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapter
   label: adapterLabels[adapter.type] ?? getAdapterLabel(adapter.type),
 }));
 
+// Types the picker can actually render. The fallback must never select an
+// adapter outside this set: /api/adapters can report retired/removed types
+// (e.g. the acpx_local tombstone) that have no UI adapter module, and the
+// select would silently render its first option instead of the chosen type.
+const IMPORT_ADAPTER_OPTION_TYPES = new Set(IMPORT_ADAPTER_OPTIONS.map((option) => option.value));
+
 // ── Adapter picker for imported agents ───────────────────────────────
 
 interface AdapterPickerItem {
@@ -1562,14 +1568,15 @@ export function CompanyImport() {
       slug: a.slug,
       name: a.name,
       adapterType: a.adapterType,
-      // The fallback must itself be installed: the CEO's adapter when it is,
-      // else any installed adapter, else null so the manifest adapter stands
-      // and the server's unknown-adapter rejection is the backstop.
+      // The fallback must itself be installed AND renderable in the picker:
+      // the CEO's adapter when it is, else any installed adapter the picker
+      // offers, else null so the manifest adapter stands and the server's
+      // unknown-adapter rejection is the backstop.
       fallbackAdapterType:
         availableAdapterTypes && !availableAdapterTypes.has(a.adapterType)
-          ? availableAdapterTypes.has(ceoAdapterType)
+          ? availableAdapterTypes.has(ceoAdapterType) && IMPORT_ADAPTER_OPTION_TYPES.has(ceoAdapterType)
             ? ceoAdapterType
-            : [...availableAdapterTypes][0] ?? null
+            : [...availableAdapterTypes].find((type) => IMPORT_ADAPTER_OPTION_TYPES.has(type)) ?? null
           : null,
     }));
   }, [importPreview, availableAdapterTypes, ceoAdapterType]);

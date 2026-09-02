@@ -210,8 +210,12 @@ describe("markdown work product review row", () => {
     await renderTab();
 
     // The proxy document maps onto the work-product row instead of a
-    // standalone Documents row.
-    expect(container.textContent).not.toContain("Documents");
+    // standalone Documents row. Check the section heading specifically:
+    // the full text also contains IssueArtifactManager's "Documents are
+    // editable and versioned" copy, which must not trip this assertion.
+    expect(
+      Array.from(container.querySelectorAll("h3")).map((heading) => heading.textContent),
+    ).not.toContain("Documents");
     expect(container.querySelector(`[data-testid="annotation-count-${REVIEW_KEY}"]`)).not.toBeNull();
 
     await act(async () => expandButton().click());
