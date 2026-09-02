@@ -24,6 +24,9 @@ jobs:
 
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        # Dependency graph is disabled on this repository. Keep optional review
+        # signal when available without turning the non-required review check red.
+        continue-on-error: true
         with:
           base-ref: ${{ github.event.pull_request.base.sha }}
           head-ref: ${{ github.event.pull_request.head.sha }}
