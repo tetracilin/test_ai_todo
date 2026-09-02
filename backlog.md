@@ -455,4 +455,4 @@ Record issue numbers here as they are filed.
 
 | Story | Issue # | Filed |
 |---|---|---|
-| (none yet) | — | — |
+| PC-001 | [#41](https://github.com/tetracilin/test_ai_todo/issues/41) | 2026-09-02 |
