@@ -210,8 +210,12 @@ describe("markdown work product review row", () => {
     await renderTab();
 
     // The proxy document maps onto the work-product row instead of a
-    // standalone Documents row.
-    expect(container.textContent).not.toContain("Documents");
+    // standalone Documents row (a "Documents" SectionHeading). Check for that
+    // heading specifically rather than the raw substring: unrelated copy
+    // elsewhere on the tab ("Documents are editable and versioned...") also
+    // contains the word "Documents".
+    const headings = Array.from(container.querySelectorAll("h3")).map((h) => h.textContent);
+    expect(headings).not.toContain("Documents");
     expect(container.querySelector(`[data-testid="annotation-count-${REVIEW_KEY}"]`)).not.toBeNull();
 
     await act(async () => expandButton().click());
