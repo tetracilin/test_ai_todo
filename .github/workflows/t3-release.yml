@@ -45,7 +45,7 @@ jobs:
       tag: ${{ steps.t.outputs.tag }}
       sha: ${{ steps.t.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # actions/checkout passes --no-tags unless told otherwise. On the
@@ -84,7 +84,7 @@ jobs:
       url: http://100.103.41.112:33100
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.verify-tag.outputs.sha }}
           fetch-depth: 1
