@@ -3,6 +3,7 @@ import { Link } from "@/lib/router";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -15,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   SortableContext,
   useSortable,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { StatusIcon } from "./StatusIcon";
@@ -154,6 +156,8 @@ interface KanbanBoardProps {
   collapsedStatuses?: string[];
   initialVisibleCount?: number;
   revealIncrement?: number;
+  /** Each lane contains references to canonical issues. Updates stay issue-ID based. */
+  swimlanes?: Array<{ key: string; label: string; issues: Issue[] }>;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -390,6 +394,7 @@ export function KanbanBoard({
   collapsedStatuses = [],
   initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
   revealIncrement = KANBAN_COLUMN_REVEAL_INCREMENT,
+  swimlanes,
   onUpdateIssue,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -402,7 +407,11 @@ export function KanbanBoard({
   const collapsedStatusSet = useMemo(() => new Set(collapsedStatuses), [collapsedStatuses]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Keyboard alternative to drag (WCAG 2.1.1): Space starts a drag on the
+    // focused card, arrows move it, Enter/Space drops it into the target
+    // column — the same status change a pointer drag performs.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const columnIssues = useMemo(() => {
@@ -452,6 +461,31 @@ export function KanbanBoard({
 
   function handleDragOver(_event: DragOverEvent) {
     // Could be used for visual feedback; keeping simple for now
+  }
+
+  if (swimlanes) {
+    return (
+      <div className="space-y-5" aria-label="Kanban tag swimlanes">
+        {swimlanes.map((swimlane) => (
+          <section key={swimlane.key} aria-label={`${swimlane.label} tag swimlane`} className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-border pb-1">
+              <h4 className="text-sm font-medium">{swimlane.label}</h4>
+              <span className="text-xs text-muted-foreground">{swimlane.issues.length}</span>
+            </div>
+            <KanbanBoard
+              issues={swimlane.issues}
+              agents={agents}
+              liveIssueIds={liveIssueIds}
+              compactCards={compactCards}
+              collapsedStatuses={collapsedStatuses}
+              initialVisibleCount={initialVisibleCount}
+              revealIncrement={revealIncrement}
+              onUpdateIssue={onUpdateIssue}
+            />
+          </section>
+        ))}
+      </div>
+    );
   }
 
   return (

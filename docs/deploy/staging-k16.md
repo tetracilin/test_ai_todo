@@ -32,6 +32,12 @@ cd deploy-staging
 install -d -m 0700 secrets backups
 openssl rand -hex 32 > secrets/postgres_password
 openssl rand -hex 32 > secrets/better_auth_secret
+# Provision Discord values from the operator secret manager; never generate,
+# print, or commit them from this repository.
+# secrets/discord_bot_token
+# secrets/discord_client_id
+# secrets/discord_webhook_secret
+# secrets/paperclip_discord_bridge_token
 chmod 0600 secrets/*
 # 2. .env (gitignored) — see .env.example for names
 # 3. seed data volume from live backup (see below)
@@ -121,3 +127,63 @@ docker exec <staging-paperclip> curl --fail --silent http://host.docker.internal
 
 `docker compose -f deploy-staging/compose.yaml down` (keep volumes); live
 Paperclip is untouched and keeps serving 3100. Never `down -v` during recovery.
+
+## Discord bridge service
+
+`deploy-staging/compose.yaml` defines a `discord-bridge` service: the standalone Node
+transport process from `discord-bridge/`. It builds from `../discord-bridge`
+(`PAPERCLIP_DISCORD_BRIDGE_IMAGE` overrides the `ghcr.io/paperclipai/paperclip-discord-bridge:canary`
+default), joins the `gateway` network, calls the staging server at the internal
+`http://paperclip:3100`, and starts only after the `paperclip` service is healthy.
+It has no published ports.
+
+The server side of the bridge contract needs two non-secret additions from the same
+Compose file: `PAPERCLIP_DASHBOARD_URL` (issue deep links sent to Discord) and
+`PAPERCLIP_DISCORD_BRIDGE_TOKEN_FILE` (the bridge-only bearer credential the server
+validates on `/api/integrations/discord/*`; the container entrypoint materializes it
+from the mounted secret).
+
+### Healthcheck
+
+The bridge runs a loopback readiness endpoint (`HEALTH_PORT`, default `8080`):
+`/health` returns `200 {"status":"ready"}` only after the Discord gateway connection is
+established, and `503 {"status":"starting"}` until then. The Compose healthcheck probes
+it every 15s with a 5s timeout, 12 retries, and a 30s start period; a failed Discord
+login exits the process so the container restarts and stays unhealthy rather than
+serving a half-connected bot. `scripts/healthcheck.sh` also probes the endpoint.
+
+### Secrets
+
+Discord bridge credentials remain external to git. Start from
+`deploy-staging/.env.example`, then place values supplied by the Discord Developer
+Portal and the Paperclip operator credential store in the four gitignored files named
+there. The Compose definitions declare those files as Docker secrets; the bridge
+service receives only `DISCORD_BOT_TOKEN_FILE`, `DISCORD_CLIENT_ID_FILE`,
+`DISCORD_WEBHOOK_SECRET_FILE`, and `PAPERCLIP_API_KEY_FILE` paths. An optional fifth
+file, `secrets/discord_dev_guild_id`, restricts slash-command registration to one
+staging guild; when absent the bridge registers commands globally.
+
+Before bringing up a staging bridge service, verify each file exists, has mode `0600`,
+and is owned by the deployment operator. Do not put values in `deploy-staging/.env`, a
+Compose `environment` value, logs, CI output, or shell history.
+
+### CI/CD
+
+`.github/workflows/discord-staging.yml` deploys the bridge from CI. Dispatch it manually
+with the ref to deploy (default `main`). The `build` job runs the bridge test suite,
+typechecks/builds, validates the Compose file, and builds the image; the `deploy-staging`
+job then SSHes to the staging host, writes the credential files (from the protected
+`discord-staging` GitHub Environment, never repo variables), checks out the exact
+deployed SHA, and runs `docker compose up -d --build` followed by `./scripts/healthcheck.sh`.
+Secret values are streamed over ssh stdin and never echoed or committed.
+
+### Human provisioning gate
+
+The workflow cannot run until an authorized GitHub administrator creates the protected
+`discord-staging` Environment and grants staging SSH access. That Environment must hold
+`STAGING_SSH_PRIVATE_KEY`, `STAGING_SSH_HOST`, `STAGING_SSH_USER`,
+`STAGING_DEPLOY_PATH`, `PAPERCLIP_DISCORD_BRIDGE_TOKEN`, `DISCORD_BOT_TOKEN`,
+`DISCORD_CLIENT_ID`, and `DISCORD_WEBHOOK_SECRET` (plus optional
+`DISCORD_DEV_GUILD_ID`). These credentials are human-provisioned; do not add them to
+this repository or attempt to fabricate them. After provisioning, an authorized operator
+may manually dispatch `.github/workflows/discord-staging.yml`.

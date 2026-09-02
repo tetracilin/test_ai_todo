@@ -11,6 +11,13 @@ describe("instance experimental settings validators", () => {
     expect(settings.enableServerInfoDebugView).toBe(false);
   });
 
+  it("defaults the Task Chat Redesign gate off and accepts patches", () => {
+    expect(instanceExperimentalSettingsSchema.parse({}).enableTaskChatRedesign).toBe(false);
+    expect(
+      patchInstanceExperimentalSettingsSchema.parse({ enableTaskChatRedesign: true }),
+    ).toEqual({ enableTaskChatRedesign: true });
+  });
+
   it("defaults workspace branch repair settings on", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 

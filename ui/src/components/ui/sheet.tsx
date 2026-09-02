@@ -59,6 +59,10 @@ function SheetContent({
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        // Pinned radix-ui@1.6.7 Dialog omits aria-modal on its Content; every
+        // Sheet here is a focus-trapping modal dialog (APG pattern), so set it
+        // explicitly (WCAG 4.1.2).
+        aria-modal="true"
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&

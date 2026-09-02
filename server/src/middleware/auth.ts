@@ -72,6 +72,24 @@ function invalidAgentTokenMessage(token: string) {
   return "Agent token did not verify; obtain fresh credentials and retry";
 }
 
+const DISCORD_BRIDGE_PATH = /^\/api\/integrations\/discord\/(?:link-codes\/consume|link|unlink|commands\/task-create|deliveries\/pending|events\/[^/]+\/deliveries\/[^/]+)$/;
+
+/**
+ * The Discord bridge owns a token scoped only to integration transport
+ * endpoints. It is not an agent credential, so it must bypass agent-token
+ * verification and let the route's assertBridge() run its own constant-time
+ * authorization check.
+ */
+export function isAuthorizedDiscordBridgeRequest(req: Pick<Request, "path" | "header">): boolean {
+  if (!DISCORD_BRIDGE_PATH.test(req.path)) return false;
+  const expected = process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN?.trim();
+  const supplied = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  if (!expected || !supplied) return false;
+  const expectedBuffer = Buffer.from(expected);
+  const suppliedBuffer = Buffer.from(supplied);
+  return expectedBuffer.length === suppliedBuffer.length && timingSafeEqual(expectedBuffer, suppliedBuffer);
+}
+
 async function resolveLegacyRunResponsibleUserId(
   db: Db,
   input: { companyId: string; agentId: string; runId: string },
@@ -222,6 +240,14 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 
     const authHeader = req.header("authorization");
     const hasBearerCredentials = /^bearer(?:\s|$)/i.test(authHeader ?? "");
+    if (hasBearerCredentials && isAuthorizedDiscordBridgeRequest(req)) {
+      // The target route's assertBridge() authorizes this token. Keeping the
+      // actor unauthenticated prevents this transport credential from gaining
+      // generic board or agent authority.
+      req.actor = { type: "none", source: "none" };
+      next();
+      return;
+    }
     if (!hasBearerCredentials) {
       if (opts.deploymentMode === "authenticated" && opts.resolveSession) {
         const cloudTenantActor = await resolveCloudTenantActor(db, req);

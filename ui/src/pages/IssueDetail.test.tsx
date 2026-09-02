@@ -103,6 +103,10 @@ const mockIssuesListRender = vi.hoisted(() => vi.fn());
 const mockIssueChatThreadRender = vi.hoisted(() => vi.fn());
 const mockImageGalleryRender = vi.hoisted(() => vi.fn());
 const mockIssueWorkspaceCardRender = vi.hoisted(() => vi.fn());
+const mockIssueWorkerLogRender = vi.hoisted(() => vi.fn());
+const mockTabsState = vi.hoisted(() => ({
+  onValueChange: undefined as ((value: string) => void) | undefined,
+}));
 
 class ResizeObserverStub {
   observe() {}
@@ -379,6 +383,13 @@ vi.mock("../components/IssueRunLedger", () => ({
   IssueRunLedger: () => <div>Runs</div>,
 }));
 
+vi.mock("../components/IssueWorkerLog", () => ({
+  IssueWorkerLog: (props: unknown) => {
+    mockIssueWorkerLogRender(props);
+    return <div data-testid="issue-worker-log">Worker log content</div>;
+  },
+}));
+
 vi.mock("../components/IssueWorkspaceCard", () => ({
   IssueWorkspaceCard: (props: { onBrowseFiles?: () => void; onOpenFileByPath?: () => void }) => {
     mockIssueWorkspaceCardRender(props);
@@ -493,10 +504,15 @@ vi.mock("@/components/ui/skeleton", () => ({
 }));
 
 vi.mock("@/components/ui/tabs", () => ({
-  Tabs: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Tabs: ({ children, value, onValueChange }: { children?: ReactNode; value?: string; onValueChange?: (value: string) => void }) => {
+    mockTabsState.onValueChange = onValueChange;
+    return <div data-tabs-value={value}>{children}</div>;
+  },
   TabsContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   TabsList: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TabsTrigger: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>,
+  TabsTrigger: ({ children, value }: { children?: ReactNode; value?: string }) => (
+    <button type="button" onClick={() => value && mockTabsState.onValueChange?.(value)}>{children}</button>
+  ),
 }));
 
 vi.mock("@/components/ui/textarea", () => ({
@@ -1082,6 +1098,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.listAcceptedPlanDecompositions.mockResolvedValue([]);
     mockIssuesApi.getDocument.mockResolvedValue(null);
@@ -1093,6 +1110,8 @@ describe("IssueDetail", () => {
     mockIssueChatThreadRender.mockClear();
     mockImageGalleryRender.mockClear();
     mockIssueWorkspaceCardRender.mockClear();
+    mockIssueWorkerLogRender.mockClear();
+    mockTabsState.onValueChange = undefined;
     mockNavigate.mockClear();
     mockOpenNewIssue.mockClear();
     mockOpenNewProject.mockClear();
@@ -1168,6 +1187,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: true,
     });
     mockIssuesApi.get.mockResolvedValue(createIssue());
@@ -1339,6 +1359,9 @@ describe("IssueDetail", () => {
       expect.objectContaining({
         createIssueLabel: "Sub-task",
         showProgressSummary: true,
+        enableTagGrouping: true,
+        filterLabelTitle: "Tags",
+        clearEmptyStateFiltersLabel: "Clear filters",
       }),
     );
   });
@@ -2129,6 +2152,7 @@ describe("IssueDetail", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: true,
+      enableTaskChatRedesign: true,
     });
 
     await act(async () => {
@@ -2150,6 +2174,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2179,6 +2204,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2222,6 +2248,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(
       createIssue({ originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND }),
@@ -2246,6 +2273,7 @@ describe("IssueDetail", () => {
       enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
+      enableTaskChatRedesign: true,
     });
     mockIssuesApi.get.mockResolvedValue(createIssue({ originKind: "manual" }));
 
@@ -2958,7 +2986,13 @@ describe("IssueDetail", () => {
     }
   });
 
-  it("renders the task chat thread as the default thread", async () => {
+  it("renders the task chat thread when the positive redesign flag is enabled", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableExperimentalFileViewer: false,
+      enableExternalObjects: false,
+      enableTaskChatRedesign: true,
+    });
     mockIssuesApi.get.mockResolvedValue(createIssue());
 
     await act(async () => {
@@ -2972,6 +3006,33 @@ describe("IssueDetail", () => {
 
     expect(container.querySelector('[data-testid="task-chat-thread"]')).not.toBeNull();
     expect(mockIssueChatThreadRender).toHaveBeenCalled();
+  });
+
+  it("shows Worker Log only in the positive redesign shell and passes task-run context", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue({ status: "in_progress" }));
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const workerLogTab = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Worker Log");
+    expect(workerLogTab).toBeDefined();
+    await act(async () => {
+      workerLogTab?.click();
+    });
+
+    expect(container.querySelector('[data-testid="issue-worker-log"]')).not.toBeNull();
+    expect(mockIssueWorkerLogRender).toHaveBeenLastCalledWith(expect.objectContaining({
+      issueId: "issue-1",
+      issueStatus: "in_progress",
+      hasLiveRuns: false,
+    }));
   });
 
   it("renders the legacy issue chat thread when the classic task interface flag is on", async () => {

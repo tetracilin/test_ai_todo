@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { usePanel } from "../context/PanelContext";
-import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
+import { useTaskChatRedesignEnabled } from "../hooks/useTaskChatRedesignEnabled";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function PropertiesPanel() {
   const { panelContent, panelVisible, setPanelVisible } = usePanel();
-  const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
+  const { enabled: taskChatRedesignEnabled } = useTaskChatRedesignEnabled();
 
   if (!panelContent) return null;
 
-  if (classicTaskInterfaceEnabled) {
+  if (!taskChatRedesignEnabled) {
     return (
       <aside
         className="hidden md:flex border-l border-border bg-card flex-col shrink-0 overflow-hidden transition-(--tp-width-opacity) duration-200 ease-in-out h-full"
@@ -21,7 +21,13 @@ export function PropertiesPanel() {
         <div className="w-80 flex-1 flex flex-col min-w-(--sz-320px) min-h-0">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border">
             <span className="text-sm font-medium">Properties</span>
-            <Button variant="ghost" size="icon-xs" onClick={() => setPanelVisible(false)}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setPanelVisible(false)}
+              title="Close panel"
+              aria-label="Close panel"
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -61,10 +67,10 @@ export const PROPERTIES_PANE_HEADER_SLOT_ID = "properties-pane-header-slot";
 export const PROPERTIES_PANE_FOOTER_SLOT_ID = "properties-pane-footer-slot";
 
 const WIDTH_STORAGE_KEY = "taskChatRedesign.propertiesPaneWidth";
-const DEFAULT_PANE_WIDTH = 322;
-const MIN_PANE_WIDTH = 260;
-/** ~236px sidebar + ~420px minimum center column stay usable while resizing. */
-const RESERVED_LAYOUT_WIDTH = 656;
+const DEFAULT_PANE_WIDTH = 360;
+const MIN_PANE_WIDTH = 300;
+/** Keep the primary task workspace usable at desktop widths. */
+const MIN_PRIMARY_PANE_WIDTH = 560;
 /** Content cap while maximized so text doesn't span the full viewport. */
 const MAXIMIZED_CONTENT_MAX_WIDTH = 840;
 /**
@@ -78,7 +84,10 @@ function clampPaneWidth(width: number): number {
   const max =
     typeof window === "undefined"
       ? Number.POSITIVE_INFINITY
-      : Math.max(MIN_PANE_WIDTH, window.innerWidth - RESERVED_LAYOUT_WIDTH);
+      : Math.max(
+          MIN_PANE_WIDTH,
+          Math.min(window.innerWidth * 0.6, window.innerWidth - MIN_PRIMARY_PANE_WIDTH),
+        );
   return Math.min(Math.max(Math.round(width), MIN_PANE_WIDTH), max);
 }
 
@@ -231,6 +240,33 @@ function ResizablePropertiesPanel({
     clearStoredPaneWidth();
   }, []);
 
+  const handleGripKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const maxWidth = clampPaneWidth(Number.MAX_SAFE_INTEGER);
+    let nextWidth: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        nextWidth = widthRef.current - 20;
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+        nextWidth = widthRef.current + 20;
+        break;
+      case "Home":
+        nextWidth = MIN_PANE_WIDTH;
+        break;
+      case "End":
+        nextWidth = maxWidth;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const clampedWidth = clampPaneWidth(nextWidth);
+    setWidth(clampedWidth);
+    persistPaneWidth(clampedWidth);
+  }, []);
+
   const handleMaximize = useCallback(() => {
     const aside = asideRef.current;
     const row = aside?.parentElement;
@@ -331,6 +367,11 @@ function ResizablePropertiesPanel({
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize panel"
+            aria-valuemin={MIN_PANE_WIDTH}
+            aria-valuemax={clampPaneWidth(Number.MAX_SAFE_INTEGER)}
+            aria-valuenow={width}
+            aria-valuetext={`${width} pixels`}
+            tabIndex={0}
             data-dragging={dragging ? "" : undefined}
             className="group absolute inset-y-0 z-10 cursor-col-resize touch-none"
             style={{ left: -4, width: 8 }}
@@ -340,6 +381,7 @@ function ResizablePropertiesPanel({
             onPointerCancel={handleGripPointerUp}
             onLostPointerCapture={handleGripLostPointerCapture}
             onDoubleClick={handleGripDoubleClick}
+            onKeyDown={handleGripKeyDown}
           >
             <div
               className={cn(
@@ -378,7 +420,13 @@ function ResizablePropertiesPanel({
                   <Maximize2 className="h-3.5 w-3.5" />
                 )}
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => setPanelVisible(false)}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setPanelVisible(false)}
+                title="Close panel"
+                aria-label="Close panel"
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>

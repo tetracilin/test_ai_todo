@@ -318,7 +318,8 @@ export const issuesApi = {
     body: string,
     reopen?: boolean,
     interrupt?: boolean,
-    deliveryMode: "agent" | "comment" = "agent",
+    notifyAgent?: boolean,
+    deliveryMode: "agent" | "comment" = notifyAgent === false ? "comment" : "agent",
   ) =>
     api.post<IssueComment>(
       `/issues/${id}/comments`,
@@ -327,6 +328,7 @@ export const issuesApi = {
         deliveryMode,
         ...(reopen === undefined ? {} : { reopen }),
         ...(interrupt === undefined ? {} : { interrupt }),
+        ...(notifyAgent === undefined ? {} : { notifyAgent }),
       },
     ),
   cancelComment: (id: string, commentId: string) =>

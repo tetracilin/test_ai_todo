@@ -102,6 +102,9 @@ function createApp(db: any, deploymentMode: "authenticated" | "local_trusted" = 
   app.get("/actor", (req, res) => {
     res.json(req.actor);
   });
+  app.get("/api/integrations/discord/deliveries/pending", (req, res) => {
+    res.json(req.actor);
+  });
   app.get("/companies/:companyId/protected", (req, res) => {
     assertCompanyAccess(req, req.params.companyId);
     res.json({ ok: true });
@@ -154,6 +157,7 @@ describe("agent auth middleware", () => {
   const originalSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
   const originalTtl = process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS;
   const originalInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+  const originalDiscordBridgeToken = process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN;
 
   beforeEach(() => {
     process.env.PAPERCLIP_AGENT_JWT_SECRET = "auth-middleware-secret";
@@ -161,6 +165,7 @@ describe("agent auth middleware", () => {
     // Pin the control-plane instance so mint/verify (and the hand-crafted
     // legacy token helper) all derive keys under the "default" live instance.
     delete process.env.PAPERCLIP_INSTANCE_ID;
+    delete process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN;
   });
 
   afterEach(() => {
@@ -170,6 +175,37 @@ describe("agent auth middleware", () => {
     else process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS = originalTtl;
     if (originalInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
     else process.env.PAPERCLIP_INSTANCE_ID = originalInstanceId;
+    if (originalDiscordBridgeToken === undefined) delete process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN;
+    else process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = originalDiscordBridgeToken;
+  });
+
+  it("passes a valid bridge token only through Discord bridge-scoped routes", async () => {
+    process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = "discord-bridge-test-token";
+    const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
+
+    const bridgeResponse = await request(createApp(db))
+      .get("/api/integrations/discord/deliveries/pending")
+      .set("Authorization", "Bearer discord-bridge-test-token");
+    const unrelatedResponse = await request(createApp(db))
+      .get("/actor")
+      .set("Authorization", "Bearer discord-bridge-test-token");
+
+    expect(bridgeResponse.status).toBe(200);
+    expect(bridgeResponse.body).toMatchObject({ type: "none", source: "none" });
+    expect(unrelatedResponse.status).toBe(401);
+    expect(unrelatedResponse.body.error).toContain("Agent token did not verify");
+  });
+
+  it("does not bypass agent authentication for an invalid bridge token", async () => {
+    process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = "discord-bridge-test-token";
+    const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
+
+    const response = await request(createApp(db))
+      .get("/api/integrations/discord/deliveries/pending")
+      .set("Authorization", "Bearer wrong-token");
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toContain("Agent token did not verify");
   });
 
   it("keeps header-less local requests as the implicit board actor with their run id", async () => {

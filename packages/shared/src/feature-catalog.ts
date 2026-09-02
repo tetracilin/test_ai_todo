@@ -104,6 +104,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableTaskChatRedesign: {
+    title: "Task Chat Redesign",
+    description:
+      "Enable the renewed Task View. The Classic Task Interface compatibility setting overrides it when enabled.",
+    tier: "preference",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableClassicTaskInterface: {
     title: "Classic Task Interface",
     description:

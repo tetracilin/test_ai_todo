@@ -16,6 +16,7 @@ import type { Issue, IssueDocument } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueProperties } from "./IssueProperties";
 import { queryKeys } from "../lib/queryKeys";
+import { ApiError } from "../api/client";
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -437,6 +438,13 @@ function renderPropertiesWithQueryClient(container: HTMLDivElement, props: Compo
       queries: { retry: false },
     },
   });
+  // Most properties assertions exercise chat-shell behavior. Seed the explicit
+  // positive opt-in so those tests do not momentarily assert the now-default
+  // classic shell before their mocked settings request settles.
+  queryClient.setQueryData(queryKeys.instance.experimentalSettings, {
+    enableTaskChatRedesign: true,
+    enableClassicTaskInterface: false,
+  });
   const root = createRoot(container);
   act(() => {
     root.render(
@@ -460,6 +468,7 @@ describe("IssueProperties", () => {
     mockSidebarState.isMobile = false;
     container = document.createElement("div");
     document.body.appendChild(container);
+    window.sessionStorage.clear();
     mockAgentsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
@@ -498,16 +507,20 @@ describe("IssueProperties", () => {
     });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
     });
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
+    window.sessionStorage.clear();
   });
 
   it("keeps the Plan tab visible for a planning-mode issue without a plan document", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     mockIssuesApi.listInteractions.mockResolvedValue([
@@ -542,6 +555,186 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
+  it("shows an authorized 'Ask agent to plan' action in the Plan empty state and invokes it", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const onRequestPlan = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+      canRequestPlan: true,
+      onRequestPlan,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.");
+      const cta = container.querySelector('[data-testid="plan-empty-state-ask-agent"]') as HTMLButtonElement | null;
+      expect(cta).not.toBeNull();
+      cta!.click();
+    });
+    expect(onRequestPlan).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+  });
+
+  it("keeps the Plan empty state guidance-only without write authorization", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta-readonly" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No plan yet. Use Plan mode in the task composer to ask an agent to prepare one.");
+    });
+    expect(container.querySelector('[data-testid="plan-empty-state-ask-agent"]')).toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it("offers the 'Ask agent to plan' action in the planning-mode empty state", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const onRequestPlan = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-plan-cta-planning", workMode: "planning" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+      canRequestPlan: true,
+      onRequestPlan,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("This task is in plan mode but no plan document has been written yet.");
+      expect(container.querySelector('[data-testid="plan-empty-state-ask-agent"]')).not.toBeNull();
+    });
+    const cta = container.querySelector('[data-testid="plan-empty-state-ask-agent"]') as HTMLButtonElement;
+    await act(async () => {
+      cta.click();
+    });
+    expect(onRequestPlan).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+  });
+
+  it("keeps Plan and Artifacts tabs visible for an empty task and restores its selected tab", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    const issue = createIssue({ id: "issue-empty" });
+    const props = {
+      issue,
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    } satisfies ComponentProps<typeof IssueProperties>;
+    const { root } = renderPropertiesWithQueryClient(container, props);
+
+    await waitForAssertion(() => {
+      const labels = Array.from(container.querySelectorAll("button")).map((button) => button.textContent);
+      expect(labels).toContain("Plan");
+      expect(labels).toContain("Artifacts");
+    });
+
+    const artifactsTab = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Artifacts");
+    await act(async () => {
+      artifactsTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No artifacts yet.");
+      expect(window.sessionStorage.getItem("taskChatRedesign.propertiesPaneTab:issue-empty")).toBe("artifacts");
+    });
+
+    act(() => root.unmount());
+    const remount = renderPropertiesWithQueryClient(container, props);
+    await waitForAssertion(() => {
+      const selectedArtifactsTab = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Artifacts");
+      expect(selectedArtifactsTab?.getAttribute("data-state")).toBe("active");
+    });
+    act(() => remount.root.unmount());
+  });
+
+  it("keeps empty document tabs useful when their content cannot load", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
+      enableClassicTaskInterface: false,
+    });
+    mockIssuesApi.getDocument.mockRejectedValue(new ApiError("Plan unavailable", 500, null));
+    mockIssuesApi.listAttachments.mockRejectedValue(new ApiError("Artifacts unavailable", 500, null));
+    const root = renderProperties(container, {
+      issue: createIssue({ id: "issue-load-error" }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+
+    await waitForAssertion(() => {
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Plan")).toBe(true);
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Artifacts")).toBe(true);
+    });
+    const planTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Plan could not be loaded.");
+      expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Retry")).toBe(true);
+    });
+
+    const artifactsTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Artifacts");
+    await act(async () => {
+      artifactsTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Artifacts could not be loaded.");
+    });
+    act(() => root.unmount());
+  });
+
   it("overrides a previously selected pane tab for a document deep link", async () => {
     const planDocument = {
       id: "document-plan",
@@ -573,6 +766,7 @@ describe("IssueProperties", () => {
     } satisfies IssueDocument;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableTaskWatchdogs: false,
+      enableTaskChatRedesign: true,
       enableClassicTaskInterface: false,
     });
     mockIssuesApi.getDocument.mockResolvedValue(planDocument);
@@ -586,10 +780,15 @@ describe("IssueProperties", () => {
       inline: true,
     } satisfies ComponentProps<typeof IssueProperties>;
     const { root, queryClient } = renderPropertiesWithQueryClient(container, props);
+    const planTab = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Plan");
+    await act(async () => {
+      planTab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
     await waitForAssertion(() => {
-      const planTab = Array.from(container.querySelectorAll("button"))
+      const selectedPlanTab = Array.from(container.querySelectorAll("button"))
         .find((button) => button.textContent === "Plan");
-      expect(planTab?.getAttribute("data-state")).toBe("active");
+      expect(selectedPlanTab?.getAttribute("data-state")).toBe("active");
     });
 
     await act(async () => {
@@ -856,8 +1055,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).toContain("No assignee");
-    expect(container.textContent).not.toContain("No matches.");
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No assignee");
+      expect(container.textContent).not.toContain("No matches.");
+    });
 
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -866,8 +1067,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("No assignee");
-    expect(container.textContent).toContain("No matches.");
+    await waitForAssertion(() => {
+      expect(container.textContent).not.toContain("No assignee");
+      expect(container.textContent).toContain("No matches.");
+    });
 
     act(() => root.unmount());
   });
@@ -915,8 +1118,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("Add sub-task");
-    expect(container.textContent).not.toContain("Sub-tasks");
+    await waitForAssertion(() => {
+      expect(container.textContent).not.toContain("Add sub-task");
+      expect(container.textContent).not.toContain("Sub-tasks");
+    });
 
     act(() => root.unmount());
   });
@@ -1128,8 +1333,10 @@ describe("IssueProperties", () => {
     });
     await flush();
 
+    await waitForAssertion(() => {
+      expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).not.toBeNull();
+    });
     const removeButton = container.querySelector('button[aria-label="Remove PAP-2 as blocker"]');
-    expect(removeButton).not.toBeNull();
 
     await act(async () => {
       removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1182,10 +1389,12 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.querySelector('a[href="/issues/PAP-2"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).toBeNull();
+    await waitForAssertion(() => {
+      expect(container.querySelector('a[href="/issues/PAP-2"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="Remove PAP-2 as blocker"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="Actions for blocker PAP-2"]')).not.toBeNull();
+    });
     const blockerActions = container.querySelector('button[aria-label="Actions for blocker PAP-2"]');
-    expect(blockerActions).not.toBeNull();
 
     await act(async () => {
       blockerActions!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
@@ -1648,18 +1857,22 @@ describe("IssueProperties", () => {
     });
     await flush();
 
+    await waitForAssertion(() => {
+      expect(container.querySelector('button[aria-label="Copy pap-1-workspace to clipboard"]')).not.toBeNull();
+    });
     const branchCopyButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Copy pap-1-workspace to clipboard"]',
     );
-    expect(branchCopyButton).not.toBeNull();
 
     await act(async () => {
       branchCopyButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
-    expect(writeText).toHaveBeenCalledWith("pap-1-workspace");
-    expect(container.textContent).toContain("Copied");
+    await waitForAssertion(() => {
+      expect(writeText).toHaveBeenCalledWith("pap-1-workspace");
+      expect(container.textContent).toContain("Copied");
+    });
 
     act(() => root.unmount());
   });
