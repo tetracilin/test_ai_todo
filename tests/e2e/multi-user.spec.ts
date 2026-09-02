@@ -1,4 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 
 /**
  * E2E: Multi-user implementation tests (local_trusted mode).
@@ -58,7 +59,8 @@ async function createCompanyViaWizard(
         name: "CEO",
         role: "ceo",
         title: "CEO",
-        adapterType: "claude_local",
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
       },
     }
   );
@@ -484,7 +486,8 @@ test.describe("Multi-user: Agent invite flow", () => {
         data: {
           requestType: "agent",
           agentName: "TestAgent",
-          adapterType: "claude_local",
+          adapterType: "hermes_gateway",
+          agentDefaultsPayload: hermesGatewayE2eAdapterConfig(),
         },
       }
     );

@@ -28,6 +28,7 @@
 import { promises as fs } from "node:fs";
 import { chromium } from "playwright";
 import { ciSmokeLabScenarios } from "./smoke-lab.catalog.ts";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture.ts";
 
 const BASE = (process.env.SMOKE_BASE ?? "http://127.0.0.1:3211").replace(/\/$/, "");
 const SHOT_DIR = process.env.SMOKE_SHOT_DIR ?? "/tmp/pap13350-shots";
@@ -92,7 +93,9 @@ async function main() {
   const scout = await api("POST", `/api/companies/${companyId}/agents`, {
     name: `Smoke Scout ${Date.now()}`, role: "qa", title: "Smoke Lab scout",
     capabilities: "Runs deterministic Smoke Lab fixture calls.",
-    adapterType: "process", adapterConfig: { command: "node", args: ["-e", "setTimeout(()=>{},1000)"] },
+    // Agent creation is gateway-only since c1ffeec67; the scout is a
+    // hermes_gateway agent with the loopback fixture config.
+    adapterType: "hermes_gateway", adapterConfig: hermesGatewayE2eAdapterConfig(),
   });
   console.log(`company=${companyId} prefix=${prefix} scout=${scout.id}`);
 
