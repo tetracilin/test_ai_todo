@@ -115,6 +115,11 @@ jobs:
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
           PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
+          # not SECRETS_DIR directly — without them it falls back to a
+          # relative ./secrets/... path that doesn't exist on the runner.
+          POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
+          BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
@@ -203,7 +208,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Full vitest suite (general + serialized)
-        run: pnpm test:run
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
 
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
