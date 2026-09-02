@@ -16,6 +16,7 @@ function attachment(sha256: string) {
     originalFilename: null,
     byteSize: 1,
     commentIndex: null,
+    source: "manual",
   };
 }
 
