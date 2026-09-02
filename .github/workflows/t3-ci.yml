@@ -37,7 +37,7 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
@@ -80,6 +80,29 @@ jobs:
         run: node --test ./scripts/link-plugin-dev-sdk.test.js
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
+
+      # PLAN_CICD.md section 1.2 classifies code-behaviour tests as fast
+      # (< 5 min -> this job) or slow (sharded server vitest, e2e ->
+      # t3-nightly.yml). The fast half was never wired up: before this step the
+      # job ran guard scripts and four `node --test` script tests, and no
+      # vitest at all, so a pull request went green with every unit test in it
+      # failing.
+      #
+      # These two groups are the non-server vitest projects. They need no
+      # embedded Postgres, which is what makes the server suites slow and
+      # contention-prone. `general-server` and the serialized suites stay in
+      # t3-nightly.yml, exactly as section 1.2 specifies.
+      - name: Unit tests (shared, db, adapters, plugin SDK)
+        run: pnpm run test:run:general --group general-workspaces-b
+      - name: Unit tests (ui, cli)
+        run: pnpm run test:run:general --group general-workspaces-a
+
+      # discord-bridge is not a pnpm workspace member (see pnpm-workspace.yaml)
+      # and carries its own package-lock.json, so the vitest projects above
+      # never reach it. It needs its own npm invocation.
+      - name: Unit tests (discord-bridge)
+        working-directory: discord-bridge
+        run: npm ci && npm test
 
   # Salvaged wholesale from pr.yml `build`. The client-bundle scan and the
   # no-google network guard are security gates and must block a merge, so this
