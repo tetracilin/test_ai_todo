@@ -1,7 +1,12 @@
-# CI — runs on every PR into develop or main, and on pushes to those branches.
+# CI — gate for PRs into develop and main.
 # Runs on GitHub-hosted runners (never on kmv8): PR code is untrusted until merged.
-# Required status checks for branch protection: "ci / build-image".
-# NOTE: Lint/test jobs disabled temporarily (A4 fix: no pnpm lint script exists).
+# Required status check for branch protection: "ci / build-image".
+#
+# Scope note: the heavy test gauntlet (policy/verify/e2e, sharded suites) lives in
+# pr.yml and runs on PRs into main. This workflow is deliberately narrow — the image
+# build is the gate that matters for deployment: if the Dockerfile doesn't build,
+# nightly and release cannot deploy. Duplicating the full vitest suite here made the
+# job take 11+ minutes and get cancelled by the concurrency guard.
 
 name: ci
 
@@ -9,7 +14,7 @@ on:
   pull_request:
     branches: [develop, main]
   push:
-    branches: [develop, main]
+    branches: [develop]
 
 permissions:
   contents: read
@@ -19,40 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ASSUMPTION A4: pnpm/Node monorepo with test scripts.
-  # Lint step disabled — no `pnpm lint` script exists. Add when linting is configured.
-  lint-test:
-    name: lint-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        # version is read from package.json "packageManager" field; set explicitly if absent
-        # with: { version: 9 }
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # - name: Lint
-      #   run: pnpm lint
-      #   (disabled: no pnpm lint script exists; enable when linting is configured)
-
-      - name: Test
-        run: pnpm test
-
-  # The image build is the real gate: if the Dockerfile doesn't build, nothing deploys.
-  # Uses the same build-args the deploy workflows use so CI exercises the same path.
   build-image:
     name: build-image
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [lint-test]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
