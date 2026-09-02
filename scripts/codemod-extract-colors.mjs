@@ -71,7 +71,7 @@ const NEW_TOKENS = [
   // --- Project-color-fallback indigo cluster (TOKEN-AUDIT.md 1.3) ---
   { name: "hex-6366f1", value: "#6366f1", comment: "Project-color-fallback indigo seed default (ProjectDetail/PipelineSettings/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3." },
 
-  // --- Gradient tokens (verbatim, one per distinct gradient string; DESIGN.md: mint, don't collapse) ---
+  // --- Gradient tokens (verbatim, one per distinct gradient string; DESIGN-UI.md: mint, don't collapse) ---
   { name: "gradient-extract-1", value: "linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02))", comment: "Dashboard.tsx budget-alert card gradient." },
   { name: "gradient-extract-2", value: "linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))", comment: "Costs.tsx subtle white card gradient." },
   { name: "gradient-extract-3", value: "radial-gradient(circle at top left,rgba(244,114,182,0.08),transparent 35%),radial-gradient(circle at bottom right,rgba(56,189,248,0.1),transparent 32%)", comment: "AccountingModelCard.tsx decorative overlay." },
@@ -102,7 +102,7 @@ const NEW_TOKENS = [
  * Existing-token reuse map — hardcoded value -> existing index.css token,
  * used ONLY where the value exact-matches (case-insensitive) a token whose
  * value is IDENTICAL in :root and .dark (mode-independent brand tier per
- * DESIGN.md). Both matches found in this batch are status hues with no
+ * DESIGN-UI.md). Both matches found in this batch are status hues with no
  * `.dark` override in index.css.
  */
 const REUSE = {

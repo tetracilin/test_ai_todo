@@ -1611,6 +1611,13 @@
       "when": 1788093000000,
       "tag": "0231_discord_integration_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1788284421462,
+      "tag": "0232_naive_cerise",
+      "breakpoints": true
     }
   ]
 }

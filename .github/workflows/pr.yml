@@ -46,6 +46,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Enforce SSoT guards
+        run: node ./scripts/check-ssot-guards.mjs
+
       - name: Validate Dockerfile deps stage
         run: node ./scripts/check-docker-deps-stage.mjs
 

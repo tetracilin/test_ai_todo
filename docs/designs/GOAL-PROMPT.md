@@ -1,6 +1,6 @@
 # /goal Prompt — Design Language Simplification, Run 1 (v3)
 
-Paste everything inside the code block below into Claude Code after typing `/goal`, from inside this worktree. Prerequisites already satisfied on this branch: DESIGN.md, PRIOR-ART.md, KNOWN-DUPLICATES.md at repo root; token-auditor + codemod-runner in `.claude/agents/`.
+Paste everything inside the code block below into Claude Code after typing `/goal`, from inside this worktree. Prerequisites already satisfied on this branch: DESIGN-UI.md, PRIOR-ART.md, KNOWN-DUPLICATES.md at repo root; token-auditor + codemod-runner in `.claude/agents/`.
 
 v3: condensed under the /goal 4,000-character limit (v2 was 4,648 and got rejected). The paste block now carries only mission + DONE-WHEN + guardrails; the full phase spec lives in the "Phase spec" section below, which the run reads from this file on disk.
 
@@ -8,7 +8,7 @@ v3: condensed under the /goal 4,000-character limit (v2 was 4,648 and got reject
 Refactor Paperclip's UI so every visual value flows through the single
 existing token layer, with provably zero visual change, working only in
 this git worktree on branch design/token-extraction. Never touch master
-or other working trees. DESIGN.md at the repo root is the source of
+or other working trees. docs/designs/DESIGN-UI.md is the source of
 truth; follow it exactly. Read PRIOR-ART.md before auditing. Execute
 Phases 0-2 exactly as specified in the "Phase spec" section of
 GOAL-PROMPT.md at the repo root (Phase 0 external baseline archive,
@@ -48,7 +48,7 @@ GUARDRAILS
   recommendations-only in COMPONENT-INVENTORY.md), no copy renames
   (issue->task is a separate later run), no new dependencies beyond
   snapshot tooling, no server or app-logic changes.
-- If reality conflicts with DESIGN.md, record the conflict in
+- If reality conflicts with DESIGN-UI.md, record the conflict in
   TOKEN-AUDIT.md instead of guessing. If a phase cannot be completed,
   stop and report rather than partially applying it.
 ```

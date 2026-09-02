@@ -6,12 +6,13 @@ Guidance for human and AI contributors working in this repository.
 
 Paperclip is a control plane for AI-agent companies.
 The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
-
-This repository is the T3 AI Todo fork of `paperclipai/paperclip`. Fork changes are integrated on
-`integration/paperclip`; `main` remains the preserved legacy application until an explicit human
-cutover. Keep `upstream` pointed at `https://github.com/paperclipai/paperclip.git`, follow
-`doc/UPSTREAM-SYNC.md`, and preserve `LICENSE` and `NOTICE` when copying or distributing upstream
-code. Never force-push `integration/paperclip` or `main`.
+This repository is a hard fork of `paperclipai/paperclip` with an independent roadmap, used as
+the starting scaffold for T3 AI Todo. `main` is the development branch; the former
+`integration/paperclip` integration branch is retired. Nothing is ever contributed back to
+upstream. Upstream changes land only as one-way, selective cherry-picks (security fixes and
+useful core improvements) at the owner's discretion — see `doc/UPSTREAM-SYNC.md`. No `upstream`
+remote is configured until the first actual cherry-pick. Preserve `LICENSE` and `NOTICE` for any
+code carried over from paperclip. Never force-push `main`.
 
 ## 2. Read This First
 
@@ -191,4 +192,4 @@ A change is done when all are true:
 
 ## Design system
 
-`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+[`docs/designs/DESIGN-UI.md`](docs/designs/DESIGN-UI.md) is the source of truth for UI design decisions. (The repo-root `design.md` is the fork's architecture note, part of the `roadmap.md`/`backlog.md`/`design.md` SSoT trio — a different document.) The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.

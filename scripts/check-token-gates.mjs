@@ -3,7 +3,7 @@
  * check-token-gates.mjs
  *
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
- * run (branch design/token-extraction; see DESIGN.md, GOAL-PROMPT.md,
+ * run (branch design/token-extraction; see docs/designs/DESIGN-UI.md, GOAL-PROMPT.md,
  * TOKEN-AUDIT.md). Scans `ui/src/components/**` and `ui/src/pages/**`
  * (excluding `ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:
@@ -45,7 +45,7 @@
  *
  *   Gate 3 — zero raw FONT-SIZE declarations: `text-[Npx]`/`text-[N.Nrem]`
  *     Tailwind arbitrary font-size utilities (a subset of gate 2, checked
- *     explicitly since font-size is its own DESIGN.md-named category) and
+ *     explicitly since font-size is its own DESIGN-UI.md-named category) and
  *     `fontSize: "..."` / `font-size:` string-literal declarations in
  *     inline styles or css-in-js.
  *
@@ -87,7 +87,10 @@ const CSS_PATH = resolve(UI_SRC, "index.css");
 // per-batch prose blocks NOT being in this format (they are not parsed;
 // only lines starting with "* allow " are).
 function loadAllowlist(cssPath) {
-  const css = readFileSync(cssPath, "utf8");
+  // Strip CRs so the line regex (anchored with $) also matches on CRLF
+  // checkouts (Windows, core.autocrlf) — otherwise zero entries load and
+  // every allowlisted site reports as a violation.
+  const css = readFileSync(cssPath, "utf8").replace(/\r/g, "");
   const entries = [];
   const lineRe = /^\s*\*\s*allow\s+(\S+)\s+(?:—|-{1,2})\s*(.*)$/;
   for (const rawLine of css.split("\n")) {
