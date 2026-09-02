@@ -135,7 +135,7 @@ function OpenFileDialog({ companyId, issueId, onDone }: OpenFileDialogProps) {
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedFile(event.target.files?.[0] ?? null)}
                 />
                 <p className="text-(length:--text-micro) text-muted-foreground">
-                  Selected file is copied into Paperclip internal artifact storage.
+                  Selected file is copied into Purpose Robot internal artifact storage.
                 </p>
               </div>
             ) : externalSource?.configured ? (

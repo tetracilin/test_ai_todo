@@ -23,6 +23,8 @@ metrics:
   selfdev_autopr_health_review_days: "60"
 ---
 
+<!-- /autoplan restore point: ~/.gstack/projects/tetracilin-test_ai_todo/rebrand-purpose-robot-autoplan-restore-20260901-233950.md -->
+
 # T3 Backlog
 
 This file is one of the three fork-owned source-of-truth (SSoT) documents, together with
@@ -32,18 +34,18 @@ live in the single file-level `metrics:` map in the frontmatter above — not in
 blocks.
 
 Master business process (Pre-sales → Design → Procurement → Implement & Integration → FAT)
-mapped to user-story specs for the Paperclip fork. 34 PC-xxx stories + PC-010, 6 epics,
+mapped to user-story specs for the Purpose Robot fork. 34 PC-xxx stories + PC-010, 6 epics,
 plus WP-0 (the four-verb chat bot).
 
 **Rules for agents working from this file:**
 - Story IDs `PC-xxx` are canonical. Branches for a story are named `PC-xxx-*` (commits auto-link as evidence, see PC-007/PC-402).
-- Do NOT invent new tables. Every binding below is an existing Paperclip service per the K6 domain map.
+- Do NOT invent new tables. Every binding below is an existing Purpose Robot service per the K6 domain map.
 - Confidential (defense/B2G) content never enters chat bridges (Discord/WhatsApp) or this repo (AD-021, C16). NAS drop folder only; cards carry path references.
 - When a story is filed as a GitHub issue, record the issue number next to its ID here.
 
-## Process → Paperclip mapping
+## Process → Purpose Robot mapping
 
-| In the swimlane diagram | In Paperclip | Notes |
+| In the swimlane diagram | In Purpose Robot | Notes |
 |---|---|---|
 | Contract / customer system | `projects` | One project per contract (per opportunity in pre-sales) |
 | Process phase | parent `issues` with label `WP` | WPs are parent issues via `parent_id` (K6 rule — no work_packages table) |
@@ -165,10 +167,10 @@ mirroring; this story is the separate, bidirectional tabular capability.
 ### Supporting platform [Slice 1]
 
 #### PC-003 Personal agent onboarding — [Engineer] [Slice 1]
-As an engineer, I want a personal agent in chat bound to my Paperclip identity, so that the
+As an engineer, I want a personal agent in chat bound to my Purpose Robot identity, so that the
 recorder works for me instead of me working for it (AD-033).
 1. Hermes profile `eng-<name>` registered through existing `hermes-gateway` adapter as an `agents` row.
-2. Chat user ↔ Paperclip user mapping; agent acts only on cards where that engineer is assignee or creator.
+2. Chat user ↔ Purpose Robot user mapping; agent acts only on cards where that engineer is assignee or creator.
 3. `max_turns` defaults to 150 (AD-037 spend governor).
 4. Onboarding one engineer takes <30 min and is documented as a runbook.
 - Binding: `packages/adapters/hermes-gateway`, `agents`, chat bridge (Discord shipped, WhatsApp per WP-0)
@@ -178,7 +180,7 @@ As the PM, I want cards mirrored into Teable rows, so that the Teable board stay
 17 office-software staff (AD-022, AD-027).
 1. Card create/status/assignee changes propagate to base "Tecotec CN" within 5 minutes.
 2. Teable row linked on the card as external object (provider `teable`).
-3. Direction Paperclip → Teable for MVP; Teable-side edits flagged as conflicts, never overwritten. (Agent-authored Teable writes are PC-010, not this story.)
+3. Direction Purpose Robot → Teable for MVP; Teable-side edits flagged as conflicts, never overwritten. (Agent-authored Teable writes are PC-010, not this story.)
 4. Sync failures surface in activity log and retry with backoff.
 - Binding: `external_objects(provider=teable)`, Teable REST, Hermes cron
 
@@ -207,7 +209,7 @@ As the Director, I want every Phê duyệt diamond recorded as an approval, so t
 what, when, is never reconstructed from memory.
 1. Gate cards create `approvals` type `request_board_approval` linked via `issue_approvals`.
 2. "No" = `revision_requested` with note; reopens the loop-back card exactly as the diagram routes.
-3. Customer approvals recorded by Sale on the customer's behalf with email/minutes as evidence — customers are never Paperclip users.
+3. Customer approvals recorded by Sale on the customer's behalf with email/minutes as evidence — customers are never Purpose Robot users.
 4. Downstream stage cards blocked via `issue_relations(type=blocks)` until gate approved.
 - Gates: #1 khái toán/báo giá · #2 proposal · #3 hồ sơ thầu · #4 design
 - Binding: `approvals`, `issue_approvals`, `issue_relations`

@@ -184,7 +184,7 @@ describe("NewAgentDialog", () => {
     });
     expect(getInviteOnboardingMock).toHaveBeenCalledWith("agent-token");
     expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      expect.stringContaining("You're invited to join a Paperclip company as an agent."),
+      expect.stringContaining("You're invited to join a Purpose Robot company as an agent."),
     );
     expect(container.textContent).toContain("Agent onboarding prompt");
     expect(container.textContent).toContain("Send this prompt to the external agent");

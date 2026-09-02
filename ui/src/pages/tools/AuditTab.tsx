@@ -106,7 +106,7 @@ function plainReason(event: ToolGatewayActivityEvent): string {
     case "failed":
       return "The app was allowed to run it, but returned an error.";
     default:
-      return "Recorded by Paperclip.";
+      return "Recorded by Purpose Robot.";
   }
 }
 
@@ -491,7 +491,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Recorded by Paperclip — entries can't be edited. Sensitive values are never stored.
+        Recorded by Purpose Robot — entries can't be edited. Sensitive values are never stored.
       </p>
     </div>
   );

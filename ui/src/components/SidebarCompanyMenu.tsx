@@ -231,7 +231,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     userId: currentUserId,
   });
 
-  // In Paperclip Cloud the switcher lists the signed-in user's stacks
+  // In Purpose Robot Cloud the switcher lists the signed-in user's stacks
   // (organizations) instead of the instance's companies: a cloud instance holds
   // exactly one company, and switching means leaving this tenant host entirely.
   const cloud = useCloudInstance();

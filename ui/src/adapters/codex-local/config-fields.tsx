@@ -51,7 +51,7 @@ export function CodexLocalConfigFields({
     ? "Fast mode will be passed through for this manual model. If Codex rejects it, turn the toggle off."
     : fastModeSupported
       ? "Fast mode consumes credits/tokens much faster than standard Codex runs."
-      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. Paperclip will ignore this toggle until the model is switched.`;
+      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. Purpose Robot will ignore this toggle until the model is switched.`;
 
   return (
     <>
@@ -136,7 +136,7 @@ export function CodexLocalConfigFields({
           </Field>
           <Field
             label="ACP state directory"
-            hint="Optional ACP session state directory. Defaults to Paperclip-managed company/agent scoped storage."
+            hint="Optional ACP session state directory. Defaults to Purpose Robot-managed company/agent scoped storage."
           >
             <div className="flex items-center gap-2">
               <DraftInput

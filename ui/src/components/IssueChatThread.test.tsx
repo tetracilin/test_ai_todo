@@ -2812,7 +2812,7 @@ describe("IssueChatThread", () => {
     });
   });
 
-  it("renders the transcript directly from stable Paperclip messages", () => {
+  it("renders the transcript directly from stable Purpose Robot messages", () => {
     const root = createRoot(container);
 
     act(() => {

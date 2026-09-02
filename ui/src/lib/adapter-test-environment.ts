@@ -4,7 +4,7 @@
  * Mirrors the server's run-time resolution
  * (`resolveExecutionWorkspaceEnvironmentId`): the agent's own environment
  * wins, otherwise the instance default, otherwise none (the server probes
- * the Paperclip host). Without the instance-default fallback, the Test
+ * the Purpose Robot host). Without the instance-default fallback, the Test
  * button probes the host for agents that rely on the instance default and
  * fails on commands that only exist inside the default environment — for
  * example a sandbox image with an extra CLI installed — even though a real

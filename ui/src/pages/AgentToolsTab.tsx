@@ -432,7 +432,7 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
         title="Effective access"
         body={
           <>
-            This is exactly the tool set Paperclip will accept for{" "}
+            This is exactly the tool set Purpose Robot will accept for{" "}
             <span className="font-medium">{agent.name}</span>. Profile and policy edits are
             reflected within ~5 seconds. The agent's prompt can narrow this list but{" "}
             <span className="font-medium">cannot expand it</span> — everything else is blocked by
@@ -609,7 +609,7 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
               ) : (
                 <>
                   <p className="text-(length:--text-micro) text-muted-foreground">
-                    Tools the agent could name but Paperclip would block:
+                    Tools the agent could name but Purpose Robot would block:
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {deniedTools.slice(0, DENIED_TOOLS_DISPLAY_LIMIT).map((tool) => (
