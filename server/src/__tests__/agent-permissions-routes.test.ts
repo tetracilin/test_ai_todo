@@ -298,7 +298,31 @@ describe.sequential("agent permission routes", () => {
     vi.doUnmock("../services/secrets.js");
     vi.doUnmock("../services/environments.js");
     vi.doUnmock("../services/workspace-operations.js");
-    vi.doUnmock("../adapters/index.js");
+    vi.doMock("../adapters/index.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../adapters/index.js")>();
+      return {
+        ...actual,
+        // This suite covers permission and environment semantics. Keep adapter
+        // admission policy isolated to agent-adapter-validation-routes.test.ts.
+        listSelectableServerAdapters: () => [
+          { type: "acpx_local" },
+          { type: "claude_local" },
+          { type: "codex_local" },
+          { type: "cursor" },
+          { type: "cursor_cloud" },
+          { type: "failing_profile_discovery" },
+          { type: "grok_local" },
+          { type: "hermes_gateway" },
+          { type: "hermes_local" },
+          { type: "http" },
+          { type: "kimi_local" },
+          { type: "openclaw_gateway" },
+          { type: "opencode_local" },
+          { type: "pi_local" },
+          { type: "process" },
+        ],
+      };
+    });
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
@@ -1442,7 +1466,7 @@ describe.sequential("agent permission routes", () => {
   const sshCapableAdapterCases = [
     { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
     { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
-    { adapterType: "gemini_local", name: "Gemini Builder", adapterConfig: {} },
+    { adapterType: "grok_local", name: "Grok Builder", adapterConfig: {} },
     { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
     { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
     { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },

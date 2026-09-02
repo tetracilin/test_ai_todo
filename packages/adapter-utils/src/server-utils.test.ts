@@ -444,6 +444,28 @@ describe("runChildProcess", () => {
     expect(finishedAt - startedAt).toBeGreaterThanOrEqual(spawnDelayMs);
   });
 
+  it("does not surface EPIPE when a child exits while spawn persistence delays stdin", async () => {
+    const result = await runChildProcess(
+      randomUUID(),
+      process.execPath,
+      ["-e", "process.stdin.destroy();setTimeout(() => process.exit(0), 500)"],
+      {
+        cwd: process.cwd(),
+        env: {},
+        stdin: "input sent after child exit",
+        timeoutSec: 5,
+        graceSec: 1,
+        onLog: async () => {},
+        onSpawn: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+  });
+
   it.skipIf(process.platform === "win32")("kills descendant processes on timeout via the process group", async () => {
     let descendantPid: number | null = null;
 

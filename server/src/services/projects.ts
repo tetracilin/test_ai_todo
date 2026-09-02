@@ -599,7 +599,20 @@ export function projectService(db: Db) {
       const where = includeArchived
         ? eq(projects.companyId, companyId)
         : and(eq(projects.companyId, companyId), isNull(projects.archivedAt));
-      const rows = await db.select().from(projects).where(where);
+      // Deterministic ordering: active projects first, then archived, then oldest
+      // first. Without an explicit ORDER BY Postgres may return any row order, which
+      // made list responses (and their tests) unstable. `createdAt` alone is not a
+      // sufficient tiebreak because rows inserted in one statement share `now()`, so
+      // `id` closes the total order.
+      const rows = await db
+        .select()
+        .from(projects)
+        .where(where)
+        .orderBy(
+          asc(sql`${projects.archivedAt} is not null`),
+          asc(projects.createdAt),
+          asc(projects.id),
+        );
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
       return attachListMetrics(db, companyId, withWorkspaces);

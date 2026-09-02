@@ -3464,8 +3464,22 @@ export async function runChildProcess(
         if (opts.stdin != null && stdin) {
           void spawnPersistPromise.finally(() => {
             if (child.killed || stdin.destroyed) return;
-            stdin.write(opts.stdin as string);
-            stdin.end();
+            // Spawn persistence can complete after a short-lived child has
+            // already closed its input pipe. Consume that late EPIPE rather
+            // than letting Node surface an unhandled stream error in the host.
+            stdin.once("error", (err: NodeJS.ErrnoException) => {
+              if (err.code !== "EPIPE") {
+                onLogError(err, runId, "failed to send stdin to child process");
+              }
+            });
+            try {
+              stdin.end(opts.stdin as string);
+            } catch (err) {
+              const errno = err as NodeJS.ErrnoException;
+              if (errno.code !== "EPIPE") {
+                onLogError(errno, runId, "failed to send stdin to child process");
+              }
+            }
           });
         }
 

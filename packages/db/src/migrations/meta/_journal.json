@@ -1608,8 +1608,22 @@
     {
       "idx": 231,
       "version": "7",
+      "when": 1788069000000,
+      "tag": "0231_project_minio_nas_folder",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1788069000001,
+      "tag": "0232_company_artifact_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
       "when": 1788093000000,
-      "tag": "0231_discord_integration_authority",
+      "tag": "0233_discord_integration_authority",
       "breakpoints": true
     },
     {

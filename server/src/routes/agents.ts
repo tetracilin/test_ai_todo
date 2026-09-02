@@ -92,6 +92,7 @@ import {
   refreshAdapterModels,
   requireServerAdapter,
 } from "../adapters/index.js";
+import { validateNotebookLmLocalAdapterConfig } from "../adapters/registry.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
@@ -1874,6 +1875,13 @@ export function agentRoutes(
         throw unprocessable(
           "Invalid hermes_gateway adapterConfig: apiBaseUrl and secret-backed apiKey are required",
         );
+      }
+      return;
+    }
+    if (adapterType === "notebooklm_local") {
+      const issues = validateNotebookLmLocalAdapterConfig(adapterConfig);
+      if (issues.length > 0) {
+        throw unprocessable(`Invalid notebooklm_local adapterConfig: ${issues.map((issue) => `${issue.key}: ${issue.message}`).join(" ")}`);
       }
       return;
     }
@@ -5163,7 +5171,7 @@ export function agentRoutes(
       .where(
         and(
           eq(heartbeatRuns.companyId, issue.companyId),
-          inArray(heartbeatRuns.status, ["queued", "running"]),
+          inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
           sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issue.id}`,
         ),
       )
@@ -5191,7 +5199,7 @@ export function agentRoutes(
     if (
       run &&
       (
-        (run.status !== "queued" && run.status !== "running") ||
+        !["queued", "running", "scheduled_retry"].includes(run.status) ||
         run.issueId !== issue.id
       )
     ) {
@@ -5224,6 +5232,102 @@ export function agentRoutes(
       adapterType: agent.adapterType,
       outputSilence: await heartbeat.buildRunOutputSilence({ ...run, companyId: issue.companyId }),
     });
+  });
+
+  router.post("/issues/:issueId/active-run/stop", async (req, res) => {
+    // This action stops a process. Only board operators may request it; an
+    // agent must never stop a peer by supplying a task id.
+    assertBoard(req);
+
+    const rawId = req.params.issueId as string;
+    const identifier = normalizeIssueIdentifier(rawId);
+    const issueSvc = issueService(db);
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawId),
+      "Issue not found",
+    );
+    if (!issue) return;
+
+    if (issue.status === "done") throw conflict("Task is already completed");
+    if (issue.status === "cancelled") throw conflict("Task is already stopped");
+
+    // An execution pointer can be stale. The candidate fallback is permitted
+    // only when its persisted task context names this exact issue, preventing
+    // a task control from stopping unrelated work by the same agent.
+    let run = issue.executionRunId ? await heartbeat.getRun(issue.executionRunId) : null;
+    if (run && (run.companyId !== issue.companyId || readRunIssueId(readObject(run.contextSnapshot)) !== issue.id)) {
+      run = null;
+    }
+    if (!run && issue.assigneeAgentId) {
+      const candidate = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
+      if (
+        candidate
+        && candidate.companyId === issue.companyId
+        && readRunIssueId(readObject(candidate.contextSnapshot)) === issue.id
+      ) {
+        run = candidate;
+      }
+    }
+
+    if (!run) throw conflict("Task agent is already stopped");
+    // Keep this exactly aligned with HeartbeatService.cancelRun's documented
+    // cancellable status set.
+    if (!["queued", "running", "scheduled_retry"].includes(run.status)) {
+      throw conflict(`Task agent cannot be stopped from ${run.status} state`);
+    }
+
+    const actor = getActorInfo(req);
+    const cancelledRun = await heartbeat.cancelRun(
+      run.id,
+      "Cancelled by board operator from task view",
+      {
+        errorCode: "operator_cancelled_task",
+        resultJson: {
+          cancelledFromTaskView: true,
+          cancelledIssueId: issue.id,
+          cancelledByActorType: actor.actorType,
+          cancelledByActorId: actor.actorId,
+        },
+        eventMessage: "run cancelled by board operator from task view",
+        eventPayload: {
+          issueId: issue.id,
+          source: "task_view",
+          cancelledByActorType: actor.actorType,
+          cancelledByActorId: actor.actorId,
+        },
+      },
+    );
+    // Only a durable run cancellation may cancel the task. If stopping the
+    // process fails, leave the task actionable rather than reporting a false
+    // stop in the refreshed view.
+    const updatedIssue = await issueSvc.update(issue.id, {
+      status: "cancelled",
+      actorAgentId: null,
+      actorUserId: actor.actorId,
+    });
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "heartbeat.cancelled",
+      entityType: "heartbeat_run",
+      entityId: run.id,
+      issueId: issue.id,
+      details: {
+        agentId: run.agentId,
+        source: "task_view",
+        issueId: issue.id,
+        cancellationKind: "operator_cancelled_task",
+      },
+    });
+
+    res.json({ issue: updatedIssue, run: cancelledRun });
   });
 
   return router;

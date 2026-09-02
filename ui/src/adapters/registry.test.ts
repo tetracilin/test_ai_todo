@@ -38,6 +38,38 @@ describe("ui adapter registry", () => {
     expect(listUIAdapters().some((adapter) => adapter.type === "external_test")).toBe(true);
   });
 
+  it("registers notebooklm_local with schema-driven config", () => {
+    const adapter = findUIAdapter("notebooklm_local");
+    expect(adapter).not.toBeNull();
+    expect(adapter?.label).toBe("NotebookLM");
+    expect(adapter?.ConfigFields).toBe(SchemaConfigFields);
+    expect(adapter?.buildAdapterConfig({
+      adapterType: "notebooklm_local",
+      cwd: "",
+      instructionsFilePath: "",
+      promptTemplate: "",
+      model: "",
+      thinkingEffort: "",
+      chrome: false,
+      dangerouslySkipPermissions: false,
+      search: false,
+      fastMode: false,
+      dangerouslyBypassSandbox: false,
+      command: "",
+      args: "",
+      extraArgs: "",
+      envVars: "",
+      envBindings: {},
+      url: "",
+      bootstrapPrompt: "",
+      maxTurnsPerRun: 1000,
+      heartbeatEnabled: false,
+      intervalSec: 300,
+      adapterSchemaValues: { subcommand: "notebook", args: "list" },
+    })).toMatchObject({ command: "nlm", profile: "default", subcommand: "notebook", args: "list", timeoutSec: 60, graceSec: 15 });
+    expect(listUIAdapters().filter((entry) => entry.type === "notebooklm_local")).toHaveLength(1);
+  });
+
   it("falls back to the process parser for unknown types after unregistering", () => {
     registerUIAdapter(externalUIAdapter);
 

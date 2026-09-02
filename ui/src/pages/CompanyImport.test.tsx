@@ -1099,18 +1099,18 @@ describe("CompanyImport", () => {
     // Neither codex_local nor the CEO fallback (claude_local) is installed;
     // the fallback must be an adapter that actually exists on the
     // destination, never an unavailable type the server would reject.
-    mockAdaptersApi.list.mockResolvedValue([{ type: "gemini_local", disabled: false }]);
+    mockAdaptersApi.list.mockResolvedValue([{ type: "notebooklm_local", disabled: false }]);
     await previewMixedAdapterPackage();
 
     expect(container.textContent).toContain("source adapter codex_local is not installed here");
-    expect(findAdapterSelects().map((select) => select.value)).toEqual(["gemini_local", "gemini_local"]);
+    expect(findAdapterSelects().map((select) => select.value)).toEqual(["notebooklm_local", "notebooklm_local"]);
 
     await clickButton((text) => text.startsWith("Import 3 file"));
     await settle();
 
     expect(lastImportMeta().adapterOverrides).toEqual({
-      researcher: { adapterType: "gemini_local" },
-      coder: { adapterType: "gemini_local" },
+      researcher: { adapterType: "notebooklm_local" },
+      coder: { adapterType: "notebooklm_local" },
     });
   });
 

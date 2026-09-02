@@ -39,6 +39,8 @@ const ONLY = (process.env.SMOKE_ONLY ?? "")
   .map((s) => s.trim().toUpperCase())
   .filter(Boolean);
 const TRIGGER = process.env.SMOKE_TRIGGER ?? "manual";
+const HERMES_API_BASE_URL = process.env.PAPERCLIP_E2E_HERMES_API_BASE_URL ?? "http://127.0.0.1:8643/api";
+const HERMES_API_KEY = process.env.PAPERCLIP_E2E_HERMES_API_KEY;
 
 type Json = Record<string, any>;
 
@@ -74,6 +76,9 @@ async function uploadShot(companyId: string, file: string): Promise<string> {
 }
 
 async function main() {
+  if (!HERMES_API_KEY) {
+    throw new Error("PAPERCLIP_E2E_HERMES_API_KEY is required");
+  }
   await fs.mkdir(SHOT_DIR, { recursive: true });
 
   // Company + scout
@@ -92,7 +97,7 @@ async function main() {
   const scout = await api("POST", `/api/companies/${companyId}/agents`, {
     name: `Smoke Scout ${Date.now()}`, role: "qa", title: "Smoke Lab scout",
     capabilities: "Runs deterministic Smoke Lab fixture calls.",
-    adapterType: "process", adapterConfig: { command: "node", args: ["-e", "setTimeout(()=>{},1000)"] },
+    adapterType: "hermes_gateway", adapterConfig: { apiBaseUrl: HERMES_API_BASE_URL, apiKey: HERMES_API_KEY },
   });
   console.log(`company=${companyId} prefix=${prefix} scout=${scout.id}`);
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import express, { type Router } from "express";
 import { isNotNull } from "drizzle-orm";
 import {
+  activityLog,
   companies,
   companyMemberships,
   createDb,
@@ -137,5 +138,8 @@ export async function resetCompanyIssueFixtures(db: Db) {
   await db.delete(issues);
   await db.delete(principalPermissionGrants);
   await db.delete(companyMemberships);
+  // Route actions log activity rows that reference the company; clear them
+  // before deleting the company or the FK constraint fails with 23503.
+  await db.delete(activityLog);
   await db.delete(companies);
 }

@@ -2,7 +2,7 @@ import { buffer } from "node:stream/consumers";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { artifactComments, artifacts, artifactVersions, issues } from "@paperclipai/db";
+import { artifactComments, artifacts, artifactVersions, companies, issues } from "@paperclipai/db";
 import {
   ARTIFACT_VERSION_NAME_MAX_LENGTH,
   classifyArtifactFormat,
@@ -12,7 +12,7 @@ import {
   type ArtifactWithCurrentVersion,
 } from "@paperclipai/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
-import type { StorageProvider, StorageService } from "../storage/types.js";
+import type { StorageService } from "../storage/types.js";
 
 export interface ArtifactActor {
   createdByUserId: string | null;
@@ -21,7 +21,7 @@ export interface ArtifactActor {
 
 export interface ArtifactExternalSource {
   label: string;
-  provider: StorageProvider | null;
+  storage: StorageService | null;
 }
 
 interface ArtifactRow {
@@ -207,19 +207,46 @@ export function artifactService(
     return row as VersionRow;
   }
 
+  async function storageForCompany(companyId: string): Promise<{
+    storage: StorageService;
+    source: "internal" | "external";
+  }> {
+    const company = await db
+      .select({ artifactStorage: companies.artifactStorage })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    if (!company) throw notFound("Company not found");
+    if (company.artifactStorage === "nas_minio") {
+      if (!external?.storage) throw unprocessable("NAS MinIO artifact storage is not configured");
+      return { storage: external.storage, source: "external" };
+    }
+    return { storage, source: "internal" };
+  }
+
+  function storageForVersion(source: string): StorageService {
+    if (source === "external") {
+      if (!external?.storage) throw unprocessable("NAS MinIO artifact storage is not configured");
+      return external.storage;
+    }
+    return storage;
+  }
+
   async function storeObject(
     companyId: string,
     name: string,
     contentType: string,
     body: Buffer,
   ) {
-    return storage.putFile({
+    const target = await storageForCompany(companyId);
+    const stored = await target.storage.putFile({
       companyId,
       namespace: "artifacts",
       originalFilename: name,
       contentType,
       body,
     });
+    return { ...stored, source: target.source };
   }
 
   /**
@@ -356,7 +383,7 @@ export function artifactService(
         contentType: stored.contentType,
         format,
         versionName: input.versionName,
-        source: "internal",
+        source: stored.source,
         provider: stored.provider,
         objectKey: stored.objectKey,
         byteSize: stored.byteSize,
@@ -381,20 +408,17 @@ export function artifactService(
       await requireIssue(input.companyId, input.issueId);
       let contentType = "application/octet-stream";
       let body: Buffer;
-      let sourceProvider: string;
 
       if (input.source === "external") {
-        if (!external?.provider) throw unprocessable("External storage is not configured");
+        if (!external?.storage) throw unprocessable("External storage is not configured");
         assertExternalObjectBelongsToCompany(input.companyId, input.objectKey);
-        const object = await external.provider.getObject({ objectKey: input.objectKey });
+        const object = await external.storage.getObject(input.companyId, input.objectKey);
         body = Buffer.from(await buffer(object.stream));
         contentType = object.contentType ?? "application/octet-stream";
-        sourceProvider = "s3";
       } else {
         const object = await storage.getObject(input.companyId, input.objectKey);
         body = Buffer.from(await buffer(object.stream));
         contentType = object.contentType ?? "application/octet-stream";
-        sourceProvider = storage.provider;
       }
 
       if (body.length <= 0) throw unprocessable("File is empty");
@@ -409,7 +433,7 @@ export function artifactService(
         contentType: stored.contentType,
         format,
         versionName: input.versionName,
-        source: input.source,
+        source: stored.source,
         provider: stored.provider,
         objectKey: stored.objectKey,
         byteSize: stored.byteSize,
@@ -457,7 +481,7 @@ export function artifactService(
             artifactId: artifact.id,
             versionNumber: nextNumber,
             versionName: input.versionName,
-            source: "internal",
+            source: stored.source,
             provider: stored.provider,
             objectKey: stored.objectKey,
             contentType: stored.contentType,
@@ -508,7 +532,7 @@ export function artifactService(
             artifactId: artifact.id,
             versionNumber: nextNumber,
             versionName,
-            source: "internal",
+            source: stored.source,
             provider: stored.provider,
             objectKey: stored.objectKey,
             contentType: stored.contentType,
@@ -561,7 +585,7 @@ export function artifactService(
             artifactId: artifact.id,
             versionNumber: nextNumber,
             versionName: defaultVersionName(nextNumber, true),
-            source: "internal",
+            source: stored.source,
             provider: stored.provider,
             objectKey: stored.objectKey,
             contentType: stored.contentType,
@@ -598,7 +622,7 @@ export function artifactService(
       if (artifact.currentVersionId === target.id) {
         throw conflict("Selected version is already the latest version");
       }
-      const object = await storage.getObject(input.companyId, target.objectKey);
+      const object = await storageForVersion(target.source).getObject(input.companyId, target.objectKey);
       const body = Buffer.from(await buffer(object.stream));
       const stored = await storeObject(
         input.companyId,
@@ -617,7 +641,7 @@ export function artifactService(
             artifactId: artifact.id,
             versionNumber: nextNumber,
             versionName,
-            source: "internal",
+            source: stored.source,
             provider: stored.provider,
             objectKey: stored.objectKey,
             contentType: stored.contentType,
@@ -647,7 +671,7 @@ export function artifactService(
       const targetVersionId = versionId ?? artifact.currentVersionId;
       if (!targetVersionId) throw notFound("Artifact has no content");
       const version = await getVersion(companyId, artifactId, targetVersionId);
-      const object = await storage.getObject(companyId, version.objectKey);
+      const object = await storageForVersion(version.source).getObject(companyId, version.objectKey);
       return { artifact: mapArtifact(artifact), version: mapVersion(version), object };
     },
 
@@ -691,11 +715,11 @@ export function artifactService(
     },
 
     listExternalObjects: async (companyId: string, prefix?: string, limit?: number) => {
-      if (!external?.provider) throw unprocessable("External storage is not configured");
+      if (!external?.storage) throw unprocessable("External storage is not configured");
       const companyPrefix = `${companyId}/`;
       const requestedPrefix = prefix?.replace(/\\/g, "/").trim() || companyPrefix;
       assertExternalObjectBelongsToCompany(companyId, requestedPrefix);
-      const result = await external.provider.listObjects({ prefix: requestedPrefix, limit });
+      const result = await external.storage.listObjects({ prefix: requestedPrefix, limit });
       return result.objects
         .filter((o) => !o.key.endsWith("/"))
         .map((o) => ({

@@ -376,6 +376,10 @@ function resolveInterruptibleIssueRun(
   );
 }
 
+function isTaskRunCancellable(run: { status: string } | null | undefined) {
+  return run?.status === "queued" || run?.status === "running" || run?.status === "scheduled_retry";
+}
+
 function dedupeLiveRunsById(liveRuns: readonly LiveRunForIssue[]) {
   const seen = new Set<string>();
   return liveRuns.filter((run) => {
@@ -1770,6 +1774,7 @@ export function IssueDetail() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [treeControlOpen, setTreeControlOpen] = useState(false);
+  const [cancelTaskOpen, setCancelTaskOpen] = useState(false);
   const [treeControlMode, setTreeControlMode] = useState<IssueTreeControlMode>("pause");
   const [treeControlReason, setTreeControlReason] = useState("");
   const [treeControlWakeAgentsOnResume, setTreeControlWakeAgentsOnResume] = useState(false);
@@ -1890,25 +1895,23 @@ export function IssueDetail() {
     placeholderData: keepPreviousDataForSameQueryTail<IssueWorkProduct[]>(issueId ?? "pending"),
   });
 
-  const { data: liveRunCount = 0 } = useQuery<LiveRunForIssue[], Error, number>({
+  const { data: issueLiveRuns = [] } = useQuery<LiveRunForIssue[]>({
     queryKey: queryKeys.issues.liveRuns(issueId!),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId!),
     enabled: !!issueId,
     refetchInterval: 3000,
-    select: (runs) => runs.length,
     placeholderData: keepPreviousDataForSameQueryTail<LiveRunForIssue[]>(issueId ?? "pending"),
   });
 
-  const { data: hasActiveRun = false } = useQuery<ActiveRunForIssue | null, Error, boolean>({
+  const { data: issueActiveRun = null } = useQuery<ActiveRunForIssue | null>({
     queryKey: queryKeys.issues.activeRun(issueId!),
     queryFn: () => heartbeatsApi.activeRunForIssue(issueId!),
     enabled: !!issueId && (!!issue?.executionRunId || issue?.status === "in_progress"),
-    refetchInterval: liveRunCount > 0 ? false : 3000,
-    select: (run) => !!run,
+    refetchInterval: issueLiveRuns.length > 0 ? false : 3000,
     placeholderData: keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(issueId ?? "pending"),
   });
-  const resolvedHasActiveRun = issue ? shouldTrackIssueActiveRun(issue) && hasActiveRun : hasActiveRun;
-  const hasLiveRuns = liveRunCount > 0 || resolvedHasActiveRun;
+  const resolvedHasActiveRun = issue ? shouldTrackIssueActiveRun(issue) && Boolean(issueActiveRun) : Boolean(issueActiveRun);
+  const hasLiveRuns = issueLiveRuns.length > 0 || resolvedHasActiveRun;
   useEffect(() => {
     if (!hasLiveRuns && locallyQueuedCommentRunIds.size > 0) {
       setLocallyQueuedCommentRunIds(new Map());
@@ -2641,6 +2644,42 @@ export function IssueDetail() {
       if (selectedCompanyId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
       }
+    },
+  });
+  const cancelTaskActiveRun = useMutation({
+    mutationFn: () => issuesApi.stopActiveRun(issueId!),
+    onSuccess: async ({ issue: nextIssue }) => {
+      const issueRefs = new Set<string>([issueId!, nextIssue.id]);
+      if (nextIssue.identifier) issueRefs.add(nextIssue.identifier);
+      mergeIssueResponseIntoCaches(issueRefs, nextIssue);
+      setCancelTaskOpen(false);
+      pushToast({
+        title: "Task cancelled",
+        body: "Agent stopped and task marked cancelled.",
+        tone: "success",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(issueId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(issueId!) }),
+      ]);
+      invalidateIssueCollections();
+    },
+    onError: (err) => {
+      const alreadyStopped = err instanceof ApiError && err.status === 409;
+      pushToast({
+        title: alreadyStopped ? "Task already stopped" : "Unable to cancel task",
+        body: err instanceof Error ? err.message : "Unable to stop this task's agent.",
+        tone: alreadyStopped ? "warn" : "error",
+      });
+      if (alreadyStopped) setCancelTaskOpen(false);
+    },
+    onSettled: () => {
+      invalidateIssueDetail();
+      invalidateIssueRunState();
+      invalidateIssueCollections();
     },
   });
   const handleIssuePropertiesUpdate = useCallback((data: Record<string, unknown>) => {
@@ -4438,6 +4477,8 @@ export function IssueDetail() {
   const canResumeSubtree = canShowSubtreeControls && activePauseHold?.isRoot === true;
   const canRestoreSubtree = canShowSubtreeControls && activeCancelHolds.length > 0;
   const isTerminalIssue = issue.status === "done" || issue.status === "cancelled";
+  const canCancelTask = !isTerminalIssue
+    && (issueLiveRuns.some(isTaskRunCancellable) || isTaskRunCancellable(issueActiveRun));
   const isAgentOwnedNonTerminalIssue = Boolean(issue.assigneeAgentId) && !isTerminalIssue;
   const canPauseLeafWork = canManageTreeControl && childIssues.length === 0 && !activePauseHold && !isTerminalIssue;
   const canResumeLeafWork = canManageTreeControl && childIssues.length === 0 && activePauseHold?.isRoot === true;
@@ -4820,6 +4861,19 @@ export function IssueDetail() {
                 >
                   <PlayCircle className="h-3 w-3" />
                   Resume work
+                </button>
+              ) : null}
+              {canCancelTask ? (
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => {
+                    setCancelTaskOpen(true);
+                    setMoreOpen(false);
+                  }}
+                  disabled={cancelTaskActiveRun.isPending}
+                >
+                  <XCircle className="h-3 w-3" />
+                  Cancel task...
                 </button>
               ) : null}
               {canShowSubtreeControls ? (
@@ -5661,6 +5715,38 @@ export function IssueDetail() {
               variant={treeControlMode === "cancel" ? "destructive" : "default"}
             >
               {executeTreeControl.isPending ? "Applying..." : treeControlPrimaryButtonLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cancelTaskOpen}
+        onOpenChange={(open) => {
+          if (!cancelTaskActiveRun.isPending) setCancelTaskOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-(--sz-480px)">
+          <DialogHeader>
+            <DialogTitle>Cancel task?</DialogTitle>
+            <DialogDescription>
+              This stops active agent work and marks this task cancelled. This cannot be undone from this task view.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTaskOpen(false)}
+              disabled={cancelTaskActiveRun.isPending}
+            >
+              Keep task
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelTaskActiveRun.mutate()}
+              disabled={cancelTaskActiveRun.isPending}
+            >
+              {cancelTaskActiveRun.isPending ? "Cancelling..." : "Cancel task"}
             </Button>
           </DialogFooter>
         </DialogContent>

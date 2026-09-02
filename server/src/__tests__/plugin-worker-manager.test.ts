@@ -1171,6 +1171,74 @@ describe("plugin worker manager setup-token pty route gate", () => {
     }
   });
 
+  it("replays output and exit received in the open-reply batch", async () => {
+    const handle = makeSetupTokenPtyHandle();
+    try {
+      await handle.start();
+      const session = await handle.openSetupTokenPtySession(
+        ptyOpenInput({
+          batchWithOpenReply: true,
+          workerSessionId: "ws-A",
+          outputs: [{ chunk: "early-output" }],
+          exitCode: 0,
+        }),
+      );
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      await expect(session.wait()).resolves.toEqual({ exitCode: 0 });
+      expect(chunks).toEqual(["early-output"]);
+      await session.close();
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("fails closed when pre-open notification frames exceed the configured cap", async () => {
+    const handle = makeSetupTokenPtyHandle({
+      setupTokenPtyLimits: { maxPreOpenFrames: 2, maxPreOpenBytes: 10_000 },
+    });
+    try {
+      await handle.start();
+      const session = await handle.openSetupTokenPtySession(
+        ptyOpenInput({
+          batchWithOpenReply: true,
+          workerSessionId: "ws-A",
+          outputs: [{ chunk: "a" }, { chunk: "b" }, { chunk: "c" }],
+          exitCode: 0,
+        }),
+      );
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+      expect(chunks).toEqual(["a", "b"]);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("fails closed when serialized pre-open notifications exceed the configured byte cap", async () => {
+    const handle = makeSetupTokenPtyHandle({
+      setupTokenPtyLimits: { maxPreOpenFrames: 10, maxPreOpenBytes: 1 },
+    });
+    try {
+      await handle.start();
+      const session = await handle.openSetupTokenPtySession(
+        ptyOpenInput({
+          batchWithOpenReply: true,
+          workerSessionId: "ws-A",
+          outputs: [{ chunk: "early-output" }],
+          exitCode: 0,
+        }),
+      );
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+      expect(chunks).toEqual([]);
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
   it("routes delayed input to the worker and back to the listener", async () => {
     const handle = makeSetupTokenPtyHandle();
     try {

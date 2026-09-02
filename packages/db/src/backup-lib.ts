@@ -809,6 +809,51 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       emit("");
     }
 
+    // Unique indexes that are not constraint-backed (pg_index with
+    // indisunique, no pg_constraint row) also satisfy FK references, so they
+    // must be created before any foreign key that points at their column pair.
+    // The generic index dump below excludes them to avoid emitting them twice.
+    const allUniqueIndexes = await sql<{
+      schema_name: string;
+      tablename: string;
+      index_name: string;
+      indexdef: string;
+    }[]>`
+      SELECT n.nspname AS schema_name,
+             t.relname AS tablename,
+             i.relname AS index_name,
+             pg_get_indexdef(idx.indexrelid) AS indexdef
+      FROM pg_index idx
+      JOIN pg_class t ON t.oid = idx.indrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      JOIN pg_class i ON i.oid = idx.indexrelid
+      WHERE idx.indisunique
+        AND NOT EXISTS (
+          -- Exclude unique indexes that back a UNIQUE or PRIMARY KEY
+          -- constraint (they are recreated by the constraint DDL). FK
+          -- constraints also point conindid at the referenced unique index,
+          -- so filtering only on conindid would drop exactly the indexes FKs
+          -- need created first.
+          SELECT 1 FROM pg_constraint c
+          WHERE c.conindid = idx.indexrelid
+            AND c.contype IN ('u', 'p')
+        )
+        AND ${sql.unsafe(nonSystemSchemaPredicate("n.nspname"))}
+      ORDER BY n.nspname, t.relname, i.relname
+    `;
+    const uniqueIndexes = allUniqueIndexes.filter(
+      (entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)),
+    );
+    const uniqueIndexNames = new Set(uniqueIndexes.map((entry) => entry.index_name));
+
+    if (uniqueIndexes.length > 0) {
+      emit("-- Unique indexes");
+      for (const ux of uniqueIndexes) {
+        emitStatement(`${ux.indexdef};`);
+      }
+      emit("");
+    }
+
     // Foreign keys (after all tables and referenced unique constraints are created)
     const allForeignKeys = await sql<{
       constraint_name: string;
@@ -861,9 +906,10 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       emit("");
     }
 
-    // Indexes (non-primary, non-unique-constraint)
-    const allIndexes = await sql<{ schema_name: string; tablename: string; indexdef: string }[]>`
-      SELECT schemaname AS schema_name, tablename, indexdef
+    // Indexes (non-primary, non-unique-constraint, non-unique-index — unique
+    // indexes were already emitted above so FKs referencing them restore).
+    const allIndexes = await sql<{ schema_name: string; tablename: string; indexname: string; indexdef: string }[]>`
+      SELECT schemaname AS schema_name, tablename, indexname, indexdef
       FROM pg_indexes
       WHERE ${sql.unsafe(nonSystemSchemaPredicate("schemaname"))}
         AND indexname NOT IN (
@@ -873,7 +919,11 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         )
       ORDER BY schemaname, tablename, indexname
     `;
-    const indexes = allIndexes.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
+    const indexes = allIndexes.filter(
+      (entry) =>
+        includedTableNames.has(tableKey(entry.schema_name, entry.tablename))
+        && !uniqueIndexNames.has(entry.indexname),
+    );
 
     if (indexes.length > 0) {
       emit("-- Indexes");

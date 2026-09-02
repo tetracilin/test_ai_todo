@@ -9,8 +9,11 @@ const mockAgentService = vi.hoisted(() => ({
 const mockHeartbeatService = vi.hoisted(() => ({
   buildRunOutputSilence: vi.fn(),
   decorateActiveRunStatus: vi.fn(),
+  getRun: vi.fn(),
   getRunIssueSummary: vi.fn(),
+  getActiveRunForAgent: vi.fn(),
   getActiveRunIssueSummaryForAgent: vi.fn(),
+  cancelRun: vi.fn(),
   getRunLogAccess: vi.fn(),
   readLog: vi.fn(),
   wakeup: vi.fn(),
@@ -19,6 +22,7 @@ const mockHeartbeatService = vi.hoisted(() => ({
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   getByIdentifier: vi.fn(),
+  update: vi.fn(),
 }));
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
@@ -92,7 +96,16 @@ function registerModuleMocks() {
   }));
 }
 
-async function createApp(db: Record<string, unknown> = {}) {
+async function createApp(
+  db: Record<string, unknown> = {},
+  actor: Record<string, unknown> = {
+    type: "board",
+    userId: "local-board",
+    companyIds: ["company-1"],
+    source: "local_implicit",
+    isInstanceAdmin: false,
+  },
+) {
   const [{ agentRoutes }, { errorHandler }] = await Promise.all([
     vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
@@ -100,13 +113,7 @@ async function createApp(db: Record<string, unknown> = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
-      companyIds: ["company-1"],
-      source: "local_implicit",
-      isInstanceAdmin: false,
-    };
+    (req as any).actor = actor;
     next();
   });
   app.use("/api", agentRoutes(db as any));
@@ -184,6 +191,12 @@ describe("agent live run routes", () => {
       status: "in_progress",
     });
     mockIssueService.getById.mockResolvedValue(null);
+    mockIssueService.update.mockImplementation(async (issueId: string, patch: Record<string, unknown>) => ({
+      id: issueId,
+      companyId: "company-1",
+      status: "in_progress",
+      ...patch,
+    }));
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
@@ -223,6 +236,20 @@ describe("agent live run routes", () => {
       issueId: "issue-1",
     });
     mockHeartbeatService.getActiveRunIssueSummaryForAgent.mockResolvedValue(null);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      agentId: "agent-1",
+      status: "running",
+      contextSnapshot: { issueId: "issue-1" },
+    });
+    mockHeartbeatService.getActiveRunForAgent.mockResolvedValue(null);
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      agentId: "agent-1",
+      status: "cancelled",
+    });
     mockHeartbeatService.buildRunOutputSilence.mockResolvedValue(null);
     mockHeartbeatService.getRunLogAccess.mockResolvedValue({
       id: "run-1",
@@ -276,6 +303,30 @@ describe("agent live run routes", () => {
     expect(res.body).not.toHaveProperty("contextSnapshot");
     expect(res.body).not.toHaveProperty("logRef");
   }, 10_000);
+
+  it("returns a scheduled retry so task view can cancel it", async () => {
+    mockHeartbeatService.getRunIssueSummary.mockResolvedValue({
+      id: "run-1",
+      status: "scheduled_retry",
+      invocationSource: "automation",
+      triggerDetail: "system",
+      contextCommentId: null,
+      contextWakeCommentId: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: new Date("2026-04-10T09:29:59.000Z"),
+      agentId: "agent-1",
+      issueId: "issue-1",
+    });
+
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl).get("/api/issues/PC1A2-1295/active-run"),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ id: "run-1", status: "scheduled_retry", issueId: "issue-1" });
+  });
 
   it("ignores a stale execution run from another issue and falls back to the assignee's matching run", async () => {
     mockHeartbeatService.getRunIssueSummary.mockResolvedValue({
@@ -345,6 +396,129 @@ describe("agent live run routes", () => {
       lastAssistantSnippet: "Inspecting files",
       lastEventAt: "2026-04-10T09:30:06.000Z",
     });
+  });
+
+  it("stops only selected task agent and persists cancelled task/run state", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({
+      id: routeAgentId,
+      companyId: "company-1",
+      executionRunId: "run-1",
+      assigneeAgentId: "agent-1",
+      status: "in_progress",
+    });
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      agentId: "agent-1",
+      status: "running",
+      contextSnapshot: { issueId: routeAgentId },
+    });
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl).post("/api/issues/PC1A2-1295/active-run/stop"),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockIssueService.update).toHaveBeenCalledWith(routeAgentId, {
+      status: "cancelled",
+      actorAgentId: null,
+      actorUserId: "local-board",
+    });
+    expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1",
+      "Cancelled by board operator from task view",
+      expect.objectContaining({
+        errorCode: "operator_cancelled_task",
+        resultJson: expect.objectContaining({ cancelledIssueId: routeAgentId }),
+      }),
+    );
+    expect(res.body).toMatchObject({
+      issue: { id: routeAgentId, status: "cancelled" },
+      run: { id: "run-1", status: "cancelled" },
+    });
+  });
+
+  it("denies task-agent stops to non-board callers", async () => {
+    const res = await requestApp(
+      await createApp({}, {
+        type: "agent",
+        agentId: "agent-1",
+        companyId: "company-1",
+        source: "agent_key",
+      }),
+      (baseUrl) => request(baseUrl).post("/api/issues/PC1A2-1295/active-run/stop"),
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Board access required");
+    expect(mockIssueService.getByIdentifier).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["done", "Task is already completed"],
+    ["cancelled", "Task is already stopped"],
+  ])("rejects %s task-stop state without touching its run", async (status, error) => {
+    mockIssueService.getByIdentifier.mockResolvedValue({
+      id: "issue-1",
+      companyId: "company-1",
+      executionRunId: "run-1",
+      assigneeAgentId: "agent-1",
+      status,
+    });
+
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl).post("/api/issues/PC1A2-1295/active-run/stop"),
+    );
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(error);
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+  });
+
+  it("rejects failed or task-foreign runs without stopping another task agent", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({
+      id: routeAgentId,
+      companyId: "company-1",
+      executionRunId: "run-1",
+      assigneeAgentId: "agent-1",
+      status: "in_progress",
+    });
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      agentId: "agent-1",
+      status: "failed",
+      contextSnapshot: { issueId: routeAgentId },
+    });
+
+    const failed = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl).post("/api/issues/PC1A2-1295/active-run/stop"),
+    );
+
+    expect(failed.status).toBe(409);
+    expect(failed.body.error).toBe("Task agent cannot be stopped from failed state");
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      agentId: "agent-1",
+      status: "running",
+      contextSnapshot: { issueId: "other-issue" },
+    });
+    mockHeartbeatService.getActiveRunForAgent.mockResolvedValue(null);
+
+    const foreign = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl).post("/api/issues/PC1A2-1295/active-run/stop"),
+    );
+
+    expect(foreign.status).toBe(409);
+    expect(foreign.body.error).toBe("Task agent is already stopped");
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
   });
 
   it("uses narrow run log metadata lookups for log polling", async () => {

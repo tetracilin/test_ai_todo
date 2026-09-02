@@ -451,6 +451,95 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
   );
 
   it(
+    "emits unique indexes before foreign keys that reference them",
+    async () => {
+      const sourceConnectionString = await createTempDatabase();
+      const restoreConnectionString = await createSiblingDatabase(
+        sourceConnectionString,
+        "paperclip_unique_index_fk_restore_target",
+      );
+      const backupDir = createTempDir("paperclip-db-unique-index-fk-backup-");
+      const sourceSql = postgres(sourceConnectionString, { max: 1, onnotice: () => {} });
+      const restoreSql = postgres(restoreConnectionString, { max: 1, onnotice: () => {} });
+
+      try {
+        // Mirrors migration 0228: the referenced uniqueness is a UNIQUE INDEX
+        // (pg_index, not pg_constraint), and the FK references its column pair.
+        // The JS engine must emit the unique index before the FK or restore
+        // fails with "no unique constraint matching given keys".
+        await sourceSql.unsafe(`
+          CREATE SCHEMA "plugin_unique_index_fk";
+          CREATE TABLE "plugin_unique_index_fk"."parents" (
+            "company_id" uuid NOT NULL,
+            "id" uuid NOT NULL,
+            "title" text NOT NULL
+          );
+          CREATE UNIQUE INDEX "parents_company_id_unique_idx"
+            ON "plugin_unique_index_fk"."parents" USING btree ("company_id", "id");
+          CREATE TABLE "plugin_unique_index_fk"."children" (
+            "company_id" uuid NOT NULL,
+            "parent_id" uuid NOT NULL,
+            "note" text NOT NULL,
+            CONSTRAINT "children_company_parent_fk"
+              FOREIGN KEY ("company_id", "parent_id")
+              REFERENCES "plugin_unique_index_fk"."parents" ("company_id", "id")
+              ON DELETE CASCADE
+          );
+          INSERT INTO "plugin_unique_index_fk"."parents" ("company_id", "id", "title")
+          VALUES (
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+            'parent'
+          );
+          INSERT INTO "plugin_unique_index_fk"."children" ("company_id", "parent_id", "note")
+          VALUES (
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+            'child'
+          );
+        `);
+
+        const result = await runDatabaseBackup({
+          connectionString: sourceConnectionString,
+          backupDir,
+          retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+          filenamePrefix: "paperclip-unique-index-fk-test",
+          backupEngine: "javascript",
+        });
+
+        await runDatabaseRestore({
+          connectionString: restoreConnectionString,
+          backupFile: result.backupFile,
+        });
+
+        const rows = await restoreSql.unsafe<{ note: string; title: string }[]>(`
+          SELECT child."note", parent."title"
+          FROM "plugin_unique_index_fk"."children" child
+          JOIN "plugin_unique_index_fk"."parents" parent
+            ON parent."company_id" = child."company_id"
+           AND parent."id" = child."parent_id"
+        `);
+        expect(rows).toEqual([{ note: "child", title: "parent" }]);
+
+        await expect(
+          restoreSql.unsafe(`
+            INSERT INTO "plugin_unique_index_fk"."parents" ("company_id", "id", "title")
+            VALUES (
+              '11111111-1111-4111-8111-111111111111',
+              '22222222-2222-4222-8222-222222222222',
+              'duplicate'
+            )
+          `),
+        ).rejects.toThrow();
+      } finally {
+        await sourceSql.end();
+        await restoreSql.end();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "restores fallback COPY data when child tables are dumped before parent tables",
     async () => {
       const sourceConnectionString = await createTempDatabase();

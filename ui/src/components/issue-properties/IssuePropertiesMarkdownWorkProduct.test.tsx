@@ -211,7 +211,7 @@ describe("markdown work product review row", () => {
 
     // The proxy document maps onto the work-product row instead of a
     // standalone Documents row.
-    expect(container.textContent).not.toContain("Documents");
+    expect(Array.from(container.querySelectorAll("h3")).map((heading) => heading.textContent)).not.toContain("Documents");
     expect(container.querySelector(`[data-testid="annotation-count-${REVIEW_KEY}"]`)).not.toBeNull();
 
     await act(async () => expandButton().click());

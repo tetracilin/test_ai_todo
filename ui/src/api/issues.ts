@@ -55,6 +55,7 @@ export type StopIssueActiveRunResponse = {
     status: string;
   };
 };
+
 export type ArtifactEditorSession = {
   actionUrl: string;
   formParameters: Record<string, string>;

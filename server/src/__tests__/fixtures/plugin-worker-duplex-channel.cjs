@@ -12,6 +12,8 @@
 //     notification after the open reply. `sid` defaults to the real worker session
 //     id; a test sets a wrong `sid` to prove the host drops a mismatched
 //     notification and counts a protocol error.
+//   - `dataDelayMs`: delay scripted frames after the open reply. A test uses it
+//     to bind a listener before delivery without relying on promise scheduling.
 //   - `exitCode`: when set, the fixture emits an exit notification after the data.
 //   - `echoInput`: when true, the fixture echoes each `duplexChannelWrite` back as
 //     one data notification for the bound session.
@@ -133,9 +135,14 @@ rl.on("line", (line) => {
 
     // Emit the scripted data and the exit after the open reply, so the host
     // binds the route first.
-    setImmediate(() => {
+    const sendScriptedFrames = () => {
       process.stdout.write(scriptedFrameLines(directive, workerSessionId));
-    });
+    };
+    if (typeof directive.dataDelayMs === "number" && directive.dataDelayMs > 0) {
+      setTimeout(sendScriptedFrames, directive.dataDelayMs);
+    } else {
+      setImmediate(sendScriptedFrames);
+    }
     return;
   }
 

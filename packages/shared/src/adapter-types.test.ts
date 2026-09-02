@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_ROLE_LABELS, acceptInviteSchema, createAgentSchema, updateAgentSchema } from "./index.js";
+import {
+  AGENT_ADAPTER_TYPES,
+  AGENT_ROLE_LABELS,
+  acceptInviteSchema,
+  createAgentSchema,
+  updateAgentSchema,
+} from "./index.js";
 
 describe("dynamic adapter type validation schemas", () => {
+  it("lists notebooklm_local as a known built-in adapter", () => {
+    expect(AGENT_ADAPTER_TYPES).toContain("notebooklm_local");
+  });
+
   it("accepts external adapter types in create/update agent schemas", () => {
     expect(
       createAgentSchema.parse({

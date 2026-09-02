@@ -20,6 +20,10 @@ export interface CompanyPortabilityEnvInput {
   requirement: "required" | "optional";
   defaultValue: string | null;
   portability: "portable" | "system_dependent";
+  /** When set, the import binding is written to this adapterConfig path
+   * instead of `adapterConfig.env[input.key]` (e.g. `["apiKey"]` for the
+   * hermes_gateway adapter's secret-backed API key). */
+  configPath?: string[] | null;
 }
 
 export type CompanyPortabilityFileEntry =

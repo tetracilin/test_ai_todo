@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 import {
   expectLandsOnFirstTaskWithoutDashboardBounce,
   instrumentNavLog,
@@ -11,6 +13,7 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   const timestamp = Date.now();
   const companyName = `PAP-3413-${timestamp}`;
   const screenshotDir = "test-results/planning-mode";
+  await mkdir(screenshotDir, { recursive: true });
 
   await instrumentNavLog(page);
 
@@ -34,8 +37,8 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
       body: JSON.stringify({
         name: body.name,
         role: body.role,
-        adapterType: "http",
-        adapterConfig: { url: "http://127.0.0.1:1/dead" },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
         runtimeConfig: { heartbeat: { enabled: false } },
       }),
     });

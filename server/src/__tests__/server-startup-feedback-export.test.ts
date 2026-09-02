@@ -184,6 +184,8 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     storageS3ForcePathStyle: false,
     storageS3AccessKeySecretRef: undefined,
     storageS3SecretKeySecretRef: undefined,
+    storageS3ConsoleUrl: undefined,
+    storageS3NasRootPrefix: undefined,
     feedbackExportBackendUrl: "https://telemetry.example.com",
     feedbackExportBackendToken: "telemetry-token",
     heartbeatSchedulerEnabled: false,
@@ -323,6 +325,7 @@ vi.mock("../services/secret-proposals.js", () => ({
 
 vi.mock("../storage/index.js", () => ({
   createStorageServiceFromConfig: vi.fn(() => ({ id: "storage-service" })),
+  createExternalStorageServiceFromConfig: vi.fn(() => null),
 }));
 
 vi.mock("../services/feedback-share-client.js", () => ({

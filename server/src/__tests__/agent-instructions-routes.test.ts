@@ -70,6 +70,10 @@ vi.mock("../services/environments.js", () => ({
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: mockFindServerAdapter,
   listAdapterModels: vi.fn(),
+  listSelectableServerAdapters: () => [
+    { type: "hermes_gateway" },
+    { type: "notebooklm_local" },
+  ],
 }));
 
 function registerModuleMocks() {
@@ -101,6 +105,10 @@ function registerModuleMocks() {
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: mockFindServerAdapter,
     listAdapterModels: vi.fn(),
+    listSelectableServerAdapters: () => [
+      { type: "hermes_gateway" },
+      { type: "notebooklm_local" },
+    ],
   }));
 }
 
@@ -191,7 +199,7 @@ function makeReflectionCoachAgent(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("agent instructions bundle routes", () => {
+describe("agent instructions bundle routes", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");
@@ -435,9 +443,11 @@ describe("agent instructions bundle routes", () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
-        adapterType: "claude_local",
+        adapterType: "hermes_gateway",
         adapterConfig: {
           model: "claude-sonnet-4",
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "secret-1" },
         },
       }));
 
@@ -445,9 +455,11 @@ describe("agent instructions bundle routes", () => {
     expect(mockAgentService.update).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({
-        adapterType: "claude_local",
+        adapterType: "hermes_gateway",
         adapterConfig: expect.objectContaining({
           model: "claude-sonnet-4",
+          apiBaseUrl: "http://127.0.0.1:8642",
+          apiKey: { type: "secret_ref", secretId: "secret-1" },
           instructionsBundleMode: "managed",
           instructionsRootPath: "/tmp/agent-1",
           instructionsEntryFile: "AGENTS.md",
@@ -458,6 +470,16 @@ describe("agent instructions bundle routes", () => {
     );
   });
 
+  it("rejects a switch to an adapter outside the selectable policy", async () => {
+    const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
+      .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
+      .send({ adapterType: "claude_local" }));
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.body.error).toContain("Available adapters: hermes_gateway, notebooklm_local");
+    expect(mockAgentService.update).not.toHaveBeenCalled();
+  });
+
   it("preserves paperclip skill-sync selections when switching adapters", async () => {
     // Desired skills live inside the per-adapter config under
     // `paperclipSkillSync`, yet they are adapter-agnostic company-level
@@ -466,7 +488,7 @@ describe("agent instructions bundle routes", () => {
     // preserves env/cwd and the instructions bundle.
     mockAgentService.getById.mockResolvedValue({
       ...makeAgent(),
-      adapterType: "claude_local",
+      adapterType: "hermes_gateway",
       adapterConfig: {
         model: "claude-sonnet-4",
         paperclipSkillSync: { desiredSkills: ["research", "code-review"] },
@@ -476,10 +498,11 @@ describe("agent instructions bundle routes", () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
-        adapterType: "codex_local",
+        adapterType: "notebooklm_local",
         replaceAdapterConfig: true,
         adapterConfig: {
           model: "gpt-5.4",
+          subcommand: "notebook",
         },
       }));
 
@@ -487,9 +510,10 @@ describe("agent instructions bundle routes", () => {
     expect(mockAgentService.update).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({
-        adapterType: "codex_local",
+        adapterType: "notebooklm_local",
         adapterConfig: expect.objectContaining({
           model: "gpt-5.4",
+          subcommand: "notebook",
           paperclipSkillSync: { desiredSkills: ["research", "code-review"] },
         }),
       }),

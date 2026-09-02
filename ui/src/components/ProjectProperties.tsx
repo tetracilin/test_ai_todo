@@ -24,6 +24,7 @@ import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
 import { EnvironmentVariablesEditor } from "./environment-variables-editor";
 import { Badge } from "@/components/ui/badge";
+import { ProjectStorageConfig } from "./ProjectStorageConfig";
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -816,6 +817,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                 </div>
               </div>
             </div>
+
+            <ProjectStorageConfig project={project} />
 
             {hasAdditionalLegacyWorkspaces && (
               <div className="text-(length:--text-micro) text-muted-foreground">

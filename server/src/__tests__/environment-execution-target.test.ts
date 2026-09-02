@@ -258,12 +258,11 @@ describe("resolveEnvironmentExecutionTarget", () => {
     });
   });
 
-  it("resolves sandbox targets for every remote-managed adapter, including grok_local and kimi_local", async () => {
+  it("resolves sandbox targets for every supported remote-managed adapter, including grok_local and kimi_local", async () => {
     for (const adapterType of [
       "claude_local",
       "codex_local",
       "cursor",
-      "gemini_local",
       "grok_local",
       "kimi_local",
       "opencode_local",

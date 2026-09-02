@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 import { ciSmokeLabScenarios, type SmokeLabLifecycleTool, type SmokeLabScenario, type SmokeRunStepPath } from "./smoke-lab.catalog";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 
 type SmokeRunStepStatus = "pass" | "fail" | "skipped";
 
@@ -73,8 +75,8 @@ async function createScout(request: APIRequestContext, companyId: string): Promi
         role: "qa",
         title: "Smoke Lab scout",
         capabilities: "Runs deterministic Smoke Lab fixture calls.",
-        adapterType: "process",
-        adapterConfig: { command: "node", args: ["-e", "setTimeout(() => {}, 1000)"] },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
       },
     }),
   );
@@ -142,6 +144,7 @@ async function recordStep(
 }
 
 async function screenshot(page: Page, scenario: SmokeLabScenario, step: string) {
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
   const path = `${SCREENSHOT_DIR}/${scenario.path.toLowerCase()}-${step}.png`;
   await page.screenshot({ path, fullPage: true });
   return path;
@@ -155,7 +158,12 @@ async function navigateForEvidence(page: Page, seed: Seed, connectionId: string,
   }
   if (scenario.uiEntryPath === "review") {
     await page.goto(`/${seed.prefix}/apps/${connectionId}/review`);
-    await expect(page.getByText(/Nothing is waiting for your OK|new actions? (need|to) review/i).first()).toBeVisible({ timeout: 20_000 });
+    // The app-detail Review tab renders either the quarantine review card
+    // ("Review N new actions") when fresh catalog entries are quarantined, or
+    // the reassure empty state once the queue is clear. Both are valid review
+    // surfaces; assert the actual UI contract instead of a stale empty-only
+    // copy (PAP-16302-era wording no longer exists).
+    await expect(page.getByText(/Nothing is waiting for your OK|Review \d+ new actions?/i).first()).toBeVisible({ timeout: 20_000 });
     return;
   }
   if (scenario.uiEntryPath === "activity") {
@@ -301,7 +309,11 @@ async function gatewayFetch(request: APIRequestContext, path: string, token: str
 }
 
 test.describe.serial("Smoke Lab scenario catalog mirror", () => {
-  test.setTimeout(240_000);
+  // The P1-P7 loop records ~30 page navigations and ~50 API round-trips on a
+  // throwaway dev-mode server; 240s was too tight on slower hosts and the
+  // budget expired mid-navigation at the final scenarios. 8 minutes gives the
+  // full lifecycle deterministic headroom without masking per-step failures.
+  test.setTimeout(480_000);
 
   test("records the P1-P7 CI-safe Smoke Lab lifecycle into the results API @smoke-lab", async ({ page, request }) => {
     const seed = await newCompany(request, "catalog");

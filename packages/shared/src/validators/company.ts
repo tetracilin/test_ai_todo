@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   COMPANY_STATUSES,
+  COMPANY_ARTIFACT_STORAGES,
   ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
 } from "../constants.js";
@@ -53,6 +54,7 @@ export const updateCompanySchema = objectWithoutDefaults(
       brandColor: brandColorSchema,
       logoAssetId: logoAssetIdSchema,
       attachmentMaxBytes: attachmentMaxBytesSchema.optional(),
+      artifactStorage: z.enum(COMPANY_ARTIFACT_STORAGES).optional(),
     }),
 );
 

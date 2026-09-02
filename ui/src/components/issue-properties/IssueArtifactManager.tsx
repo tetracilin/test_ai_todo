@@ -62,7 +62,7 @@ function OpenFileDialog({ companyId, issueId, onDone }: OpenFileDialogProps) {
     queryFn: () => issuesApi.listArtifactStorageSources(companyId),
     enabled: open,
   });
-  const externalSource = storageSources?.sources.find((entry) => entry.id === "external");
+  const externalSource = storageSources?.sources?.find((entry) => entry.id === "external");
   const { data: externalObjects, isFetching: externalObjectsLoading, error: externalObjectsError } = useQuery({
     queryKey: queryKeys.issues.externalArtifactObjects(companyId, prefix),
     queryFn: () => issuesApi.listExternalArtifactObjects(companyId, prefix),

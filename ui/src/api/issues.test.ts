@@ -124,6 +124,7 @@ describe("issuesApi.list", () => {
       },
     );
   });
+
   it("posts an issue-scoped active-run stop request", async () => {
     await issuesApi.stopActiveRun("issue-1");
 

@@ -35,6 +35,26 @@ function parseDirective(raw) {
   }
 }
 
+function scriptedFrameLines(directive, workerSessionId) {
+  const outputs = Array.isArray(directive.outputs) ? directive.outputs : [];
+  let lines = "";
+  for (const entry of outputs) {
+    lines += `${JSON.stringify({
+      jsonrpc: "2.0",
+      method: "setupTokenPty.output",
+      params: { workerSessionId: entry.sid ?? workerSessionId, chunk: entry.chunk },
+    })}\n`;
+  }
+  if (typeof directive.exitCode === "number") {
+    lines += `${JSON.stringify({
+      jsonrpc: "2.0",
+      method: "setupTokenPty.exit",
+      params: { workerSessionId, exitCode: directive.exitCode },
+    })}\n`;
+  }
+  return lines;
+}
+
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
 rl.on("line", (line) => {
@@ -77,8 +97,17 @@ rl.on("line", (line) => {
       return;
     }
 
-    const reply = () =>
-      send({ jsonrpc: "2.0", id: message.id, result: { workerSessionId } });
+    const openReplyLine = `${JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { workerSessionId },
+    })}\n`;
+    if (directive.batchWithOpenReply === true) {
+      process.stdout.write(openReplyLine + scriptedFrameLines(directive, workerSessionId));
+      return;
+    }
+
+    const reply = () => process.stdout.write(openReplyLine);
     reply();
     if (mode === "duplicate-open-reply") {
       // Send a second open reply for the same request id. The host drops it.
@@ -88,24 +117,7 @@ rl.on("line", (line) => {
     // Emit the scripted output and the exit after the open reply, so the host
     // binds the route first.
     setImmediate(() => {
-      const outputs = Array.isArray(directive.outputs) ? directive.outputs : [];
-      for (const entry of outputs) {
-        send({
-          jsonrpc: "2.0",
-          method: "setupTokenPty.output",
-          params: {
-            workerSessionId: entry.sid ?? workerSessionId,
-            chunk: entry.chunk,
-          },
-        });
-      }
-      if (typeof directive.exitCode === "number") {
-        send({
-          jsonrpc: "2.0",
-          method: "setupTokenPty.exit",
-          params: { workerSessionId, exitCode: directive.exitCode },
-        });
-      }
+      process.stdout.write(scriptedFrameLines(directive, workerSessionId));
     });
     return;
   }
