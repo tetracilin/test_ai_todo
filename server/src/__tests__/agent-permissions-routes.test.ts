@@ -1,7 +1,6 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
 
 vi.mock("acpx/runtime", () => ({
@@ -13,6 +12,19 @@ vi.mock("acpx/runtime", () => ({
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
+
+// Agent creation is gateway-only since c1ffeec67 ("enforce Hermes Gateway AI
+// flow"): `listSelectableServerAdapters()` returns just hermes_gateway. Every
+// create/hire in this suite therefore uses a valid hermes_gateway adapter
+// config (apiBaseUrl + secret-backed apiKey), mirroring the contract tests in
+// agent-adapter-validation-routes.test.ts.
+const GATEWAY_ADAPTER_CONFIG = {
+  apiBaseUrl: "http://127.0.0.1:8642",
+  apiKey: {
+    type: "secret_ref",
+    secretId: "33333333-3333-4333-8333-333333333333",
+  },
+};
 
 const baseAgent = {
   id: agentId,
@@ -799,8 +811,9 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Injected",
         role: "engineer",
-        adapterType: "codex_local",
+        adapterType: "hermes_gateway",
         adapterConfig: {
+          ...GATEWAY_ADAPTER_CONFIG,
           instructionsRootPath: "/etc",
           instructionsEntryFile: "passwd",
         },
@@ -854,8 +867,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
       }));
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
@@ -919,8 +932,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
       }));
 
     expect([200, 201]).toContain(res.status);
@@ -973,8 +986,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "codex_local",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
         runtimeConfig: {
           heartbeat: {
             intervalSec: 3600,
@@ -990,10 +1003,12 @@ describe.sequential("agent permission routes", () => {
           heartbeat: {
             enabled: false,
             intervalSec: 3600,
-            maxConcurrentRuns: 20,
-          },
-          modelProfiles: {
-            cheap: { enabled: false },
+            // Hermes Gateway agents default to one concurrent run
+            // (agent-adapter-validation-routes test "defaults new Hermes
+            // Gateway agents to one concurrent run"). The gateway adapter
+            // declares no `cheap` model profile, so no modelProfiles entry is
+            // injected for it.
+            maxConcurrentRuns: 1,
           },
         },
       }),
@@ -1002,12 +1017,17 @@ describe.sequential("agent permission routes", () => {
   });
 
   it("creates agents when optional adapter model profile discovery fails", async () => {
+    // Agent selection is gateway-only since c1ffeec67, and dynamically
+    // registered external adapters are no longer selectable. The behavior under
+    // test — creation tolerates an optional model-profile discovery failure —
+    // still applies to the selectable adapter, so we override hermes_gateway
+    // with a module whose discovery throws and create a gateway agent.
     const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter({
-      type: "failing_profile_discovery",
+      type: "hermes_gateway",
       execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
       testEnvironment: async () => ({
-        adapterType: "failing_profile_discovery",
+        adapterType: "hermes_gateway",
         status: "pass",
         checks: [],
         testedAt: new Date(0).toISOString(),
@@ -1031,8 +1051,8 @@ describe.sequential("agent permission routes", () => {
         .send({
           name: "Builder",
           role: "engineer",
-          adapterType: "failing_profile_discovery",
-          adapterConfig: {},
+          adapterType: "hermes_gateway",
+          adapterConfig: GATEWAY_ADAPTER_CONFIG,
           runtimeConfig: {
             modelProfiles: {
               cheap: {
@@ -1050,7 +1070,8 @@ describe.sequential("agent permission routes", () => {
           runtimeConfig: {
             heartbeat: {
               enabled: false,
-              maxConcurrentRuns: 20,
+              // Hermes Gateway agents default to one concurrent run.
+              maxConcurrentRuns: 1,
             },
             modelProfiles: {
               cheap: {
@@ -1063,11 +1084,16 @@ describe.sequential("agent permission routes", () => {
         { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
       );
     } finally {
-      unregisterServerAdapter("failing_profile_discovery");
+      unregisterServerAdapter("hermes_gateway");
     }
   });
 
-  it("seeds opencode agent creation with the static default model without live discovery", async () => {
+  it("rejects opencode agent creation because Hermes Gateway is sole, without host-side discovery", async () => {
+    // opencode_local is no longer a selectable agent adapter (agent creation is
+    // gateway-only since c1ffeec67). The contract that this test guards — the
+    // create path must never invoke live host-side model discovery (`opencode
+    // models`) as a side effect — still holds on the rejection path: the route
+    // refuses the selection before any discovery routine runs.
     mockEnsureOpenCodeModelConfiguredAndAvailable.mockRejectedValue(
       new Error("`opencode models` should not be called during creation"),
     );
@@ -1089,21 +1115,13 @@ describe.sequential("agent permission routes", () => {
         adapterConfig: {},
       }));
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("is not available on this instance");
     expect(mockEnsureOpenCodeModelConfiguredAndAvailable).not.toHaveBeenCalled();
-    expect(mockAgentService.create).toHaveBeenCalledWith(
-      companyId,
-      expect.objectContaining({
-        adapterType: "opencode_local",
-        adapterConfig: expect.objectContaining({
-          model: DEFAULT_OPENCODE_LOCAL_MODEL,
-        }),
-      }),
-      { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-    );
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("accepts manual opencode provider/model values without host-side discovery", async () => {
+  it("rejects manual opencode provider/model values because Hermes Gateway is sole, without host-side discovery", async () => {
     mockEnsureOpenCodeModelConfiguredAndAvailable.mockRejectedValue(
       new Error("`opencode models` should not be called during creation"),
     );
@@ -1127,18 +1145,10 @@ describe.sequential("agent permission routes", () => {
         },
       }));
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(String(res.body.error ?? "")).toContain("is not available on this instance");
     expect(mockEnsureOpenCodeModelConfiguredAndAvailable).not.toHaveBeenCalled();
-    expect(mockAgentService.create).toHaveBeenCalledWith(
-      companyId,
-      expect.objectContaining({
-        adapterType: "opencode_local",
-        adapterConfig: expect.objectContaining({
-          model: "anthropic/claude-sonnet-4-5",
-        }),
-      }),
-      { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-    );
+    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
   it("normalizes hire requests to disable timer heartbeats by default", async () => {
@@ -1155,8 +1165,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "codex_local",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
         runtimeConfig: {
           heartbeat: {
             intervalSec: 3600,
@@ -1172,10 +1182,8 @@ describe.sequential("agent permission routes", () => {
           heartbeat: {
             enabled: false,
             intervalSec: 3600,
-            maxConcurrentRuns: 20,
-          },
-          modelProfiles: {
-            cheap: { enabled: false },
+            // Hermes Gateway agents default to one concurrent run.
+            maxConcurrentRuns: 1,
           },
         },
       }),
@@ -1392,8 +1400,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
         defaultEnvironmentId: environmentId,
       }));
 
@@ -1429,8 +1437,8 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
-        adapterConfig: {},
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
         defaultEnvironmentId: environmentId,
       }));
 
@@ -1439,17 +1447,20 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  const sshCapableAdapterCases = [
+  // Agent creation is gateway-only since c1ffeec67: only hermes_gateway is
+  // selectable, and the gateway runtime supports the `local` driver only. The
+  // legacy local CLI adapters (codex, claude, gemini, opencode, cursor, pi) are
+  // no longer selectable at creation — pinning that contract here per adapter.
+  const nonSelectableAdapterCases = [
     { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
     { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
-    { adapterType: "gemini_local", name: "Gemini Builder", adapterConfig: {} },
     { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
     { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
     { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },
   ];
 
-  for (const adapterCase of sshCapableAdapterCases) {
-    it(`allows creating a ${adapterCase.adapterType} agent with an SSH default environment`, async () => {
+  for (const adapterCase of nonSelectableAdapterCases) {
+    it(`rejects creating an ${adapterCase.adapterType} agent because Hermes Gateway is sole`, async () => {
       const environmentId = "33333333-3333-4333-8333-333333333333";
       mockEnvironmentService.getById.mockResolvedValue({
         id: environmentId,
@@ -1482,15 +1493,9 @@ describe.sequential("agent permission routes", () => {
           defaultEnvironmentId: environmentId,
         }));
 
-      expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(mockAgentService.create).toHaveBeenCalledWith(
-        companyId,
-        expect.objectContaining({
-          adapterType: adapterCase.adapterType,
-          defaultEnvironmentId: environmentId,
-        }),
-        { claudeLogin: { storedSessionId: null, ownerUserId: "board-user", applyExistingWithoutClaim: false } },
-      );
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(String(res.body.error ?? "")).toContain("is not available on this instance");
+      expect(mockAgentService.create).not.toHaveBeenCalled();
     });
   }
 
@@ -1522,7 +1527,11 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
-  for (const adapterCase of sshCapableAdapterCases) {
+  // Updating a default environment does not reselect the adapter, so the
+  // existing agents on the legacy local adapters keep SSH default envs. gemini
+  // is dropped from the list: the Gemini adapter was removed from the product,
+  // so there is no existing gemini_local agent to update.
+  for (const adapterCase of nonSelectableAdapterCases) {
     it(`allows updating a ${adapterCase.adapterType} agent with an SSH default environment`, async () => {
       const environmentId = "33333333-3333-4333-8333-333333333333";
       mockEnvironmentService.getById.mockResolvedValue({
@@ -1591,10 +1600,15 @@ describe.sequential("agent permission routes", () => {
       companyIds: [companyId],
     });
 
+    // The only selectable adapter today is hermes_gateway, which supports the
+    // `local` driver only. Switching the codex_local agent onto it while
+    // keeping the SSH default environment must still be rejected by the
+    // environment-selectability guard, not silently dropped.
     const res = await requestApp(app, (baseUrl) => request(baseUrl)
       .patch(`/api/agents/${agentId}`)
       .send({
-        adapterType: "process",
+        adapterType: "hermes_gateway",
+        adapterConfig: GATEWAY_ADAPTER_CONFIG,
       }));
 
     expect(res.status).toBe(422);

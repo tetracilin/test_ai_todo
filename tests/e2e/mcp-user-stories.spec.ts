@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { listenOnFetchAllowedPort } from "./fetch-allowed-port";
+import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 import { storyById } from "./mcp-user-stories.catalog";
 
 const SCREENSHOT_DIR = "test-results/mcp-user-stories";
@@ -13,7 +15,7 @@ type MockMcpServer = {
   captures: Array<{ method: string; toolName: string | null; params: unknown }>;
   close: () => Promise<void>;
 };
-type HeartbeatRun = { id: string; status: string; error?: string | null };
+
 
 async function json<T = Json>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
   expect(response.ok(), `${response.url()} failed ${response.status()}: ${await response.text()}`).toBe(true);
@@ -36,86 +38,14 @@ async function createScout(request: APIRequestContext, companyId: string): Promi
         role: "qa",
         title: "MCP story scout",
         capabilities: "Runs governed MCP user-story fixture calls.",
-        adapterType: "process",
-        adapterConfig: { command: "node", args: ["-e", "process.exit(0)"] },
+        adapterType: "hermes_gateway",
+        adapterConfig: hermesGatewayE2eAdapterConfig(),
       },
     }),
   );
   return { id: body.id, name: body.name };
 }
 
-function buildGatewayCallScript(connectionId: string, toolName: string, parameters: Json = {}) {
-  return `
-const required = ["PAPERCLIP_API_URL", "PAPERCLIP_API_KEY", "PAPERCLIP_RUN_ID"];
-for (const key of required) {
-  if (!process.env[key]) throw new Error(\`Missing \${key}\`);
-}
-const headers = {
-  "authorization": \`Bearer \${process.env.PAPERCLIP_API_KEY}\`,
-  "content-type": "application/json"
-};
-const sessionRes = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool-gateway/sessions\`, {
-  method: "POST",
-  headers,
-  body: JSON.stringify({ runId: process.env.PAPERCLIP_RUN_ID, ttlMs: 60000 })
-});
-if (!sessionRes.ok) throw new Error(\`session \${sessionRes.status}: \${await sessionRes.text()}\`);
-const session = await sessionRes.json();
-const toolsRes = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool-gateway/tools\`, {
-  headers: { "x-paperclip-tool-gateway-token": session.token }
-});
-if (!toolsRes.ok) throw new Error(\`tools \${toolsRes.status}: \${await toolsRes.text()}\`);
-const tools = await toolsRes.json();
-const tool = tools.find((entry) =>
-  entry.connectionId === ${JSON.stringify(connectionId)}
-  && (entry.upstreamToolName === ${JSON.stringify(toolName)} || entry.name === ${JSON.stringify(toolName)})
-);
-if (!tool) throw new Error(\`Missing gateway tool for ${toolName}\`);
-const callRes = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool-gateway/tools/call\`, {
-  method: "POST",
-  headers: {
-    "content-type": "application/json",
-    "x-paperclip-tool-gateway-token": session.token
-  },
-  body: JSON.stringify({
-    tool: tool.name,
-    parameters: ${JSON.stringify(parameters)}
-  })
-});
-const text = await callRes.text();
-if (!callRes.ok) throw new Error(\`tool call \${callRes.status}: \${text}\`);
-console.log(text);
-`;
-}
-
-async function setScoutScript(
-  request: APIRequestContext,
-  scout: Scout,
-  script: string,
-) {
-  await json(await request.patch(`/api/agents/${scout.id}`, {
-    data: {
-      adapterConfig: {
-        command: process.execPath,
-        args: ["--input-type=module", "-e", script],
-      },
-      replaceAdapterConfig: true,
-    },
-  }));
-}
-
-async function invokeHeartbeat(request: APIRequestContext, agentId: string) {
-  return await json<HeartbeatRun>(await request.post(`/api/agents/${agentId}/heartbeat/invoke`));
-}
-
-async function waitForRun(request: APIRequestContext, runId: string) {
-  for (let i = 0; i < 60; i += 1) {
-    const run = await json<HeartbeatRun>(await request.get(`/api/heartbeat-runs/${runId}`));
-    if (!["queued", "running"].includes(run.status)) return run;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`Timed out waiting for heartbeat run ${runId}`);
-}
 
 async function startMockMcp(): Promise<MockMcpServer> {
   const captures: MockMcpServer["captures"] = [];
@@ -195,6 +125,7 @@ async function startMockMcp(): Promise<MockMcpServer> {
 }
 
 async function screenshot(page: Page, storyId: string, step: string) {
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${storyId.toLowerCase()}-${step}.png`, fullPage: true });
 }
 
@@ -291,10 +222,8 @@ test.describe.serial("MCP prod Phase 5a user-story harness", () => {
       await expect(page.getByRole("heading", { name: /Sheets Fixture us1/i })).toBeVisible({ timeout: 30_000 });
       await screenshot(page, "US-1", "01-connected-app");
 
-      await setScoutScript(request, scout, buildGatewayCallScript(connectionId, "sheets:list_rows"));
-      const invoked = await invokeHeartbeat(request, scout.id);
-      const run = await waitForRun(request, invoked.id);
-      expect(run.status, run.error ?? `heartbeat run ${run.id} did not succeed`).toBe("succeeded");
+      const allowed = await testCall(request, connectionId, scout, "sheets:list_rows");
+      expect(allowed.decision).toBe("allowed");
       expect(mock.captures.some((capture) => capture.method === "tools/call" && capture.toolName === "sheets:list_rows")).toBe(true);
       await expectAuditEvent(request, seed.companyId, { connectionId, agentId: scout.id, search: "sheets:list_rows" });
 

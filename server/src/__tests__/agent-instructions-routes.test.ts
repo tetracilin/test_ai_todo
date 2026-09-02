@@ -70,6 +70,10 @@ vi.mock("../services/environments.js", () => ({
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: mockFindServerAdapter,
   listAdapterModels: vi.fn(),
+  // The enforcement contract (c1ffeec67) exposes only hermes_gateway as
+  // selectable for agent creation / adapter switches. PATCH tests that switch
+  // adapters target hermes_gateway, so the selectable registry lists it.
+  listSelectableServerAdapters: () => [{ type: "hermes_gateway" }],
 }));
 
 function registerModuleMocks() {
@@ -101,6 +105,9 @@ function registerModuleMocks() {
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: mockFindServerAdapter,
     listAdapterModels: vi.fn(),
+    // See the top-level mock: selectable adapters are hermes_gateway-only
+    // since c1ffeec67.
+    listSelectableServerAdapters: () => [{ type: "hermes_gateway" }],
   }));
 }
 
@@ -435,9 +442,17 @@ describe("agent instructions bundle routes", () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
-        adapterType: "claude_local",
+        // Switching an existing agent is a new selection, and hermes_gateway is
+        // the only selectable adapter since c1ffeec67. The instructions bundle
+        // is adapter-agnostic, so the switch must still carry it over.
+        adapterType: "hermes_gateway",
         adapterConfig: {
-          model: "claude-sonnet-4",
+          apiBaseUrl: "http://127.0.0.1:8642/api",
+          apiKey: {
+            type: "secret_ref",
+            secretId: "11111111-1111-4111-8111-111111111112",
+          },
+          model: "gpt-5.4",
         },
       }));
 
@@ -445,9 +460,9 @@ describe("agent instructions bundle routes", () => {
     expect(mockAgentService.update).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({
-        adapterType: "claude_local",
+        adapterType: "hermes_gateway",
         adapterConfig: expect.objectContaining({
-          model: "claude-sonnet-4",
+          model: "gpt-5.4",
           instructionsBundleMode: "managed",
           instructionsRootPath: "/tmp/agent-1",
           instructionsEntryFile: "AGENTS.md",
@@ -476,9 +491,17 @@ describe("agent instructions bundle routes", () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
-        adapterType: "codex_local",
+        // Paperclip skill-sync selections are adapter-agnostic and must be
+        // carried over when the agent moves onto the only selectable adapter
+        // (hermes_gateway) since c1ffeec67.
+        adapterType: "hermes_gateway",
         replaceAdapterConfig: true,
         adapterConfig: {
+          apiBaseUrl: "http://127.0.0.1:8642/api",
+          apiKey: {
+            type: "secret_ref",
+            secretId: "11111111-1111-4111-8111-111111111112",
+          },
           model: "gpt-5.4",
         },
       }));
@@ -487,7 +510,7 @@ describe("agent instructions bundle routes", () => {
     expect(mockAgentService.update).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({
-        adapterType: "codex_local",
+        adapterType: "hermes_gateway",
         adapterConfig: expect.objectContaining({
           model: "gpt-5.4",
           paperclipSkillSync: { desiredSkills: ["research", "code-review"] },

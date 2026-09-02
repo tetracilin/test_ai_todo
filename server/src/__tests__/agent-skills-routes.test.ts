@@ -114,6 +114,11 @@ vi.mock("../services/instance-settings.js", async (importOriginal) => ({
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: vi.fn(() => mockAdapter),
   findActiveServerAdapter: vi.fn(() => mockAdapter),
+  // This suite exercises skills and instruction-bundle behavior, not adapter
+  // availability. Its Claude fixtures must remain selectable to reach those
+  // route contracts after creation-time adapter enforcement.
+  listSelectableServerAdapters: vi.fn(() => [{ type: "claude_local" }]),
+  listAdapterModelProfiles: vi.fn(() => []),
   listAdapterModels: vi.fn(),
   detectAdapterModel: vi.fn(),
 }));
@@ -157,6 +162,8 @@ function registerModuleMocks() {
   vi.doMock("../adapters/index.js", () => ({
     findServerAdapter: vi.fn(() => mockAdapter),
     findActiveServerAdapter: vi.fn(() => mockAdapter),
+    listSelectableServerAdapters: vi.fn(() => [{ type: "claude_local" }]),
+    listAdapterModelProfiles: vi.fn(() => []),
     listAdapterModels: vi.fn(),
     detectAdapterModel: vi.fn(),
   }));

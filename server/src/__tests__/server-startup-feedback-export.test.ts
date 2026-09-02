@@ -323,6 +323,7 @@ vi.mock("../services/secret-proposals.js", () => ({
 
 vi.mock("../storage/index.js", () => ({
   createStorageServiceFromConfig: vi.fn(() => ({ id: "storage-service" })),
+  createExternalStorageProviderFromConfig: vi.fn(() => ({ id: "external-storage-provider" })),
 }));
 
 vi.mock("../services/feedback-share-client.js", () => ({
