@@ -6,6 +6,15 @@
 - Scope commit (worktree HEAD): `8fea5a31dc48d555b2bb653a7cc96674ec290d89`
 - Verdict: **PASS — zero Discord secrets found in the working tree or in committed history. Externalization confirmed.**
 
+> **Later change, recorded 2026-09-02 (does not alter the finding above).** The
+> `discord-staging` GitHub Actions pipeline referenced throughout this audit was
+> deleted at the hard fork; only `t3-ci`, `t3-nightly` and `t3-release` remain (see
+> `doc/ORIGIN.md`). The audited *repository* state is unchanged and the PASS verdict
+> stands — nothing was un-externalized. What changed is that the GitHub Environment
+> secrets that fed that workflow now have no consumer: review them and revoke any
+> Discord credentials that exist only to serve the deleted pipeline. Secrets stored
+> on the staging host under `deploy-staging/secrets/*` are untouched.
+
 ## Objective
 
 Confirm that no Discord bot token, client ID, client secret, or webhook

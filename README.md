@@ -7,7 +7,7 @@
 > [`paperclipai/paperclip`](https://github.com/paperclipai/paperclip), with an independent
 > roadmap ([`roadmap.md`](roadmap.md)). `main` is the development branch (the former
 > `integration/paperclip` branch is retired). Upstream changes land only as one-way selective
-> cherry-picks. See [`doc/UPSTREAM-SYNC.md`](doc/UPSTREAM-SYNC.md) and [`NOTICE`](NOTICE).
+> cherry-picks. See [`doc/ORIGIN.md`](doc/ORIGIN.md) and [`NOTICE`](NOTICE).
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;

@@ -90,4 +90,10 @@ The shim makes no assumptions about command structure; it is harness-agnostic. N
 
 ## Publishing
 
-`.github/workflows/agent-runtime-images.yml` builds and pushes the remaining runtime-image scope on `workflow_dispatch` (with an explicit version tag) or on pushes to `master` touching these paths, then signs each digest with cosign keyless OIDC.
+> **No publishing pipeline in this fork (2026-09-02).** `.github/workflows/agent-runtime-images.yml`
+> pushed to `ghcr.io/paperclipai` — upstream's registry — on `master`, a branch this fork does not
+> have. It was deleted at the hard fork (`doc/ORIGIN.md`). Runtime images are not built or published
+> by CI here; build them locally from this directory if you need one. The description below is
+> retained as a record of the upstream process.
+
+`.github/workflows/agent-runtime-images.yml` built and pushed the remaining runtime-image scope on `workflow_dispatch` (with an explicit version tag) or on pushes to `master` touching these paths, then signed each digest with cosign keyless OIDC.

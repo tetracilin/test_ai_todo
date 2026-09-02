@@ -94,10 +94,21 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Branch | Rules |
 |---|---|
-| `develop` | Require PR; required checks `t3-ci / build-image`, `t3-ci / unit`; no force push |
-| `main` | Require PR; required checks `t3-ci / build-image`, `t3-ci / unit`; require branch up to date; no force push; no direct push |
+| `develop` | Require PR; required checks `t3-ci / unit`, `t3-ci / build`, `t3-ci / build-image`; no force push |
+| `main` | Require PR; required checks `t3-ci / unit`, `t3-ci / build`, `t3-ci / build-image`; require branch up to date; no force push; no direct push |
+
+`t3-ci / build` is in the required set because it carries `pnpm scan:client-bundle` and
+`pnpm test:e2e:no-google-network` — security gates that must block a merge, not merely report.
 
 **Remove** `policy`, `verify`, `e2e` from `main`'s required checks. They no longer exist after Phase 1; leaving them makes every `develop → main` PR unmergeable.
+
+> **Verified 2026-09-02 via `gh api`, not inferred:** `main`'s required contexts are
+> currently exactly `["verify", "e2e"]` — both defined only in the now-deleted `pr.yml`.
+> `develop` returns HTTP 404 "Branch not protected": it has **no** protection at all, so
+> CLAUDE.md's "Never push directly to develop or main. Both are protected" is not yet true.
+> `main` also has `allow_force_pushes: true` (contradicts the CLAUDE.md force-push rule) and
+> `required_linear_history: true` (contradicts the release step's "merge commit, not squash").
+> These are repo-settings changes a human must make; no PR can make them.
 
 ### 2.2 Environments (already done — verify)
 
@@ -259,18 +270,23 @@ file and check.
 
 ### 9.2 Known non-bugs — don't re-diagnose these
 
-- **`review` / `commitperclip PR Review` / Dependency Review fails on every
-  single PR, unconditionally.** Cause: GitHub's Dependency Graph is disabled
-  in repo Settings → Security & analysis (not a required check; PR #31 made
-  the step `continue-on-error`, merged 2026-09-02). If you see this failing,
-  it is not your PR's fault — don't spend time on it.
-- **`.github/workflows/pr.yml` only triggers `on: pull_request: branches:
-  [main]`.** A PR opened against `develop` currently gets *only* `review`
-  (advisory) and `build-image` — none of the real unit/verify/e2e suite runs.
-  Don't read a green develop-targeted PR as "fully tested"; it isn't, yet.
-  Full coverage only happens once the branch flows into a `main`-targeted PR.
-  This gap closes when `t3-ci.yml` (triggers on both `develop` and `main`,
-  §Status table) replaces `pr.yml` in Phase 1.
+- **`review` / Dependency Review fails on every single PR, unconditionally.**
+  Cause: GitHub's Dependency Graph is disabled in repo Settings → Security &
+  analysis. The job reports `Dependency review is not supported on this
+  repository`. It is not a required check. If you see this failing, it is not
+  your PR's fault — don't spend time on it. *(The `commitperclip PR Review`
+  half of this note is obsolete: `commitperclip-review.yml` and all of
+  `.github/scripts/` were deleted in Phase 1 by owner decision, 2026-09-02.
+  Automated PR-rule enforcement — filled template, linked issue, coverage —
+  no longer exists; those AGENTS.md §§10–11 requirements are now reviewer-
+  enforced only.)*
+- ~~**`.github/workflows/pr.yml` only triggers on `main`.**~~ **Closed in
+  Phase 1.** `pr.yml` is deleted; `t3-ci.yml` triggers on PRs to *both*
+  `develop` and `main`, so a develop-targeted PR now gets the full fast gate
+  (`unit`, `build`, `build-image`). The slow suites (full vitest, e2e) moved
+  to `t3-nightly` and are **no longer merge-blocking** on any branch — that is
+  the deliberate trade in §1.2, not an oversight. A green PR means the fast
+  gate passed; it does not mean e2e passed.
 
 ### 9.3 Working-tree hygiene for agents fixing CI on this repo
 
