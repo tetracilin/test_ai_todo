@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,10 @@ const PAPERCLIP_DECISION_SIGNING_SECRET =
   process.env.PAPERCLIP_DECISION_SIGNING_SECRET ?? "playwright-e2e-decision-signing-secret";
 const PAPERCLIP_TOOL_ACTION_SIGNING_SECRET =
   process.env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET ?? "playwright-e2e-tool-action-signing-secret";
+const PAPERCLIP_E2E_HERMES_PORT = Number(process.env.PAPERCLIP_E2E_HERMES_PORT ?? 38643);
+const PAPERCLIP_E2E_HERMES_API_KEY = process.env.PAPERCLIP_E2E_HERMES_API_KEY ?? `e2e-hermes-${randomUUID()}`;
+const PAPERCLIP_E2E_HERMES_API_BASE_URL =
+  process.env.PAPERCLIP_E2E_HERMES_API_BASE_URL ?? `http://127.0.0.1:${PAPERCLIP_E2E_HERMES_PORT}/api`;
 const PLAYWRIGHT_CHANNEL = process.env.PAPERCLIP_PLAYWRIGHT_CHANNEL;
 
 process.env.PAPERCLIP_HOME = PAPERCLIP_HOME;
@@ -26,6 +31,9 @@ process.env.PAPERCLIP_INSTANCE_ID = PAPERCLIP_INSTANCE_ID;
 process.env.PAPERCLIP_AGENT_JWT_SECRET = PAPERCLIP_AGENT_JWT_SECRET;
 process.env.PAPERCLIP_DECISION_SIGNING_SECRET = PAPERCLIP_DECISION_SIGNING_SECRET;
 process.env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET = PAPERCLIP_TOOL_ACTION_SIGNING_SECRET;
+process.env.PAPERCLIP_E2E_HERMES_PORT = String(PAPERCLIP_E2E_HERMES_PORT);
+process.env.PAPERCLIP_E2E_HERMES_API_KEY = PAPERCLIP_E2E_HERMES_API_KEY;
+process.env.PAPERCLIP_E2E_HERMES_API_BASE_URL = PAPERCLIP_E2E_HERMES_API_BASE_URL;
 
 export default defineConfig({
   testDir: ".",
@@ -58,7 +66,7 @@ export default defineConfig({
   // The webServer directive bootstraps a throwaway instance and then starts it.
   // `onboard --yes --run` works in a non-interactive temp PAPERCLIP_HOME.
   webServer: {
-    command: `pnpm paperclipai onboard --yes --run`,
+    command: `node playwright-web-server.mjs`,
     url: `${BASE_URL}/api/health`,
     // Always boot a dedicated throwaway instance for e2e so browser tests
     // never attach to the developer's active Paperclip home/server.
@@ -76,6 +84,9 @@ export default defineConfig({
       PAPERCLIP_AGENT_JWT_SECRET,
       PAPERCLIP_DECISION_SIGNING_SECRET,
       PAPERCLIP_TOOL_ACTION_SIGNING_SECRET,
+      PAPERCLIP_E2E_HERMES_PORT: String(PAPERCLIP_E2E_HERMES_PORT),
+      PAPERCLIP_E2E_HERMES_API_KEY,
+      PAPERCLIP_E2E_HERMES_API_BASE_URL,
       PAPERCLIP_BIND: "loopback",
       PAPERCLIP_DEPLOYMENT_MODE: "local_trusted",
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private",

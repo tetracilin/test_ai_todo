@@ -2,7 +2,8 @@
 
 Status: K4 baseline, report-only
 
-Baseline: `integration/paperclip` at `b73d7a7319437860851c177c214c6e96fcaa76f7`
+Baseline: `b73d7a7319437860851c177c214c6e96fcaa76f7` (taken on the then-integration branch
+`integration/paperclip`, since retired — `main` is now the development branch)
 
 Checker: `scripts/check-no-google-runtime.mjs`
 

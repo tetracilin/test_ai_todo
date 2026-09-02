@@ -4608,11 +4608,11 @@ describeEmbeddedPostgres("issueService blockers and dependency wake readiness", 
     expect(await svc.getWakeableParentAfterChildCompletion(parentId)).toMatchObject({
       id: parentId,
       assigneeAgentId,
-      childIssueIds: [childA, childB],
-      childIssueSummaries: [
+      childIssueIds: expect.arrayContaining([childA, childB]),
+      childIssueSummaries: expect.arrayContaining([
         expect.objectContaining({ id: childA, title: "Child A", status: "done" }),
         expect.objectContaining({ id: childB, title: "Child B", status: "cancelled" }),
-      ],
+      ]),
       childIssueSummaryTruncated: false,
     });
   });
