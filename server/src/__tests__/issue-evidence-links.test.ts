@@ -23,7 +23,7 @@ import { errorHandler } from "../middleware/index.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 import { issueRoutes } from "../routes/issues.js";
 import { externalObjectService } from "../services/external-objects.js";
-import { issueEvidenceLinkService } from "../services/issue-evidence-links.js";
+import { countEvidenceForIssue, issueEvidenceLinkService } from "../services/issue-evidence-links.js";
 import { issueService } from "../services/issues.js";
 
 /**
@@ -306,6 +306,68 @@ describeEmbeddedPostgres("issue evidence links (PC-007)", () => {
     expect(await db.select().from(externalObjects)).toHaveLength(1);
     // Only the act that actually filed evidence is logged.
     expect(await readActivity(issueId, "issue.evidence_linked")).toHaveLength(1);
+  });
+
+  it("two concurrent filings of the same artifact produce ONE row and two successful responses", async () => {
+    // The regression test for the check-then-insert race. Single filing is now
+    // enforced by the unique index on (issue_id, external_object_id), not by
+    // an application-level read, so both racers may reach the insert: exactly
+    // one creates the row and the other reports the survivor. Neither may
+    // fail -- a retried chat message must not error at the caller -- and
+    // neither may produce a second row, which would inflate both the PC-001
+    // gate count and the PC-011 wedge ratio from one artifact.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    const externalObjectId = await seedExternalObject(companyId);
+
+    const [first, second] = await Promise.all([
+      evidenceSvc.link(issueId, { externalObjectId }, "bot", noAudit),
+      evidenceSvc.link(issueId, { externalObjectId }, "bot", noAudit),
+    ]);
+
+    expect(await db.select().from(issueEvidenceLinks)).toHaveLength(1);
+    expect(first.link.id).toBe(second.link.id);
+    // One filing act, so exactly one `created: true`.
+    expect([first.created, second.created].filter(Boolean)).toHaveLength(1);
+    expect(await evidenceSvc.countForIssue(issueId)).toBe(1);
+  });
+
+  it("two concurrent filings of the same descriptor create one object and one link", async () => {
+    // Same race, entered through the descriptor branch, which must also
+    // find-or-create the external_objects row exactly once.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    const target = { providerKey: "teable", objectType: "row", externalId: "tbl9x2/recQZ71" };
+
+    const results = await Promise.all([
+      evidenceSvc.link(issueId, target, "manual", noAudit),
+      evidenceSvc.link(issueId, target, "manual", noAudit),
+    ]);
+
+    expect(await db.select().from(externalObjects)).toHaveLength(1);
+    expect(await db.select().from(issueEvidenceLinks)).toHaveLength(1);
+    expect(new Set(results.map((result) => result.link.id)).size).toBe(1);
+    expect(results.filter((result) => result.created)).toHaveLength(1);
+  });
+
+  it("a duplicate filing returns the existing row and leaves its provenance alone", async () => {
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    const externalObjectId = await seedExternalObject(companyId);
+
+    const first = await evidenceSvc.link(issueId, { externalObjectId }, "manual", noAudit);
+    // The conflict does NOTHING to the surviving row: a second filing claiming
+    // `bot` must not rewrite the recorded provenance of the act that actually
+    // filed the evidence (PC-011 AC1 -- never over-count `bot`).
+    const second = await evidenceSvc.link(issueId, { externalObjectId }, "bot", noAudit);
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.link.id).toBe(first.link.id);
+    expect(second.link.source).toBe("manual");
+    const rows = await db.select().from(issueEvidenceLinks);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source).toBe("manual");
   });
 
   // -- PC-011 AC2 provenance, derived from the actor rather than the body.
@@ -772,6 +834,112 @@ describeEmbeddedPostgres("issue evidence links (PC-007)", () => {
     );
 
     expect(await evidenceSvc.countForIssue(issueId)).toBe(2);
+  });
+
+  // -- The shared evidence predicate. Five consumers read it (the gate, the
+  // wedge ratio, the re-brief verb, the PM digest, the WP-close export), so its
+  // numbers must be the gate's numbers, not merely close to them.
+
+  it("countEvidenceForIssue reports both filing tables separately and summed", async () => {
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+
+    expect(await countEvidenceForIssue(db, { companyId, issueId })).toEqual({
+      attachmentCount: 0,
+      evidenceLinkCount: 0,
+      total: 0,
+    });
+
+    await svc.createAttachment({
+      issueId,
+      provider: "local",
+      objectKey: "k-count-1",
+      contentType: "image/jpeg",
+      byteSize: 12,
+      sha256: "d".repeat(64),
+      source: "manual",
+    });
+    await evidenceSvc.link(
+      issueId,
+      { providerKey: "teable", objectType: "row", externalId: "tbl1/rec1" },
+      "manual",
+      noAudit,
+    );
+
+    expect(await countEvidenceForIssue(db, { companyId, issueId })).toEqual({
+      attachmentCount: 1,
+      evidenceLinkCount: 1,
+      total: 2,
+    });
+  });
+
+  it("countEvidenceForIssue is company-scoped", async () => {
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    const other = await seedCompany();
+    await evidenceSvc.link(
+      issueId,
+      { providerKey: "teable", objectType: "row", externalId: "tbl1/rec1" },
+      "manual",
+      noAudit,
+    );
+
+    // An issue id alone must never let one company's rows be counted under
+    // another company's scope -- the gate scopes both counts, and so does this.
+    expect(await countEvidenceForIssue(db, { companyId: other.companyId, issueId })).toEqual({
+      attachmentCount: 0,
+      evidenceLinkCount: 0,
+      total: 0,
+    });
+  });
+
+  it("countEvidenceForIssue returns the same total the PC-001 gate records", async () => {
+    const { companyId, prefix } = await seedCompany({ evidenceGateEnabled: true });
+    const issueId = await seedIssue(companyId, prefix);
+    await svc.createAttachment({
+      issueId,
+      provider: "local",
+      objectKey: "k-count-2",
+      contentType: "image/jpeg",
+      byteSize: 12,
+      sha256: "e".repeat(64),
+      source: "manual",
+    });
+    await evidenceSvc.link(
+      issueId,
+      { providerKey: "teable", objectType: "row", externalId: "tbl1/rec1" },
+      "manual",
+      noAudit,
+    );
+
+    const counts = await countEvidenceForIssue(db, { companyId, issueId });
+    // The gate stamps the count it computed onto its own receipt, so the two
+    // numbers can be compared directly rather than by re-deriving one of them.
+    await svc.update(issueId, { status: "done" });
+    const [log] = await readActivity(issueId, "issue.evidence_gate.closed");
+
+    expect(counts.total).toBe(2);
+    expect(log).toMatchObject({ details: { evidenceCount: counts.total } });
+  });
+
+  it("countEvidenceForIssue runs inside a caller's open transaction", async () => {
+    // The gate counts under the same FOR UPDATE lock as the status write, so
+    // the helper has to be usable on a caller's `tx`, not just the pool.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    await evidenceSvc.link(
+      issueId,
+      { providerKey: "teable", objectType: "row", externalId: "tbl1/rec1" },
+      "manual",
+      noAudit,
+    );
+
+    const inTransaction = await db.transaction(async (tx) => {
+      await tx.select().from(issues).where(eq(issues.id, issueId)).for("update");
+      return countEvidenceForIssue(tx, { companyId, issueId });
+    });
+
+    expect(inTransaction).toEqual({ attachmentCount: 0, evidenceLinkCount: 1, total: 1 });
   });
 
   it("evidence cannot be moved across a company boundary", async () => {

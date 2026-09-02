@@ -96,6 +96,54 @@ export interface IssueEvidenceLinkRow {
   isTerminal: boolean;
 }
 
+/** The two filing tables the PC-001 gate sums, reported separately and together. */
+export interface IssueEvidenceCounts {
+  attachmentCount: number;
+  evidenceLinkCount: number;
+  total: number;
+}
+
+/**
+ * Anything that can run a select: the module-level `Db`, or a caller's open
+ * transaction. The PC-001 gate counts under the same `FOR UPDATE` lock as the
+ * status write, so it must be able to hand its own `tx` in.
+ */
+type EvidenceCountReader = Pick<Db, "select">;
+
+/**
+ * THE evidence predicate. Five consumers ask "does this card have evidence, and
+ * how much": the PC-001 done-gate, the PC-011 AC3 wedge ratio, the re-brief
+ * verb's evidence gaps, the PM digest's blocked-card list, and the PC-006
+ * WP-close export's evidence index. Written five times it drifts, and a digest
+ * that disagrees with the export about the same card is worse than either being
+ * wrong on its own -- so it is written once, here.
+ *
+ * Evidence is BOTH filing tables: `issue_attachments` (an uploaded file) plus
+ * `issue_evidence_links` (a link to an external object). Counting only links
+ * would report 0 on a card whose sole evidence is an uploaded photo -- a card
+ * the gate closes happily. Both counts are company-scoped, exactly as the gate
+ * scopes them: an issue id alone must never let one company's rows be counted
+ * against another's card.
+ */
+export async function countEvidenceForIssue(
+  dbOrTx: EvidenceCountReader,
+  { companyId, issueId }: { companyId: string; issueId: string },
+): Promise<IssueEvidenceCounts> {
+  const [[attachments], [links]] = await Promise.all([
+    dbOrTx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(issueAttachments)
+      .where(and(eq(issueAttachments.companyId, companyId), eq(issueAttachments.issueId, issueId))),
+    dbOrTx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(issueEvidenceLinks)
+      .where(and(eq(issueEvidenceLinks.companyId, companyId), eq(issueEvidenceLinks.issueId, issueId))),
+  ]);
+  const attachmentCount = attachments?.count ?? 0;
+  const evidenceLinkCount = links?.count ?? 0;
+  return { attachmentCount, evidenceLinkCount, total: attachmentCount + evidenceLinkCount };
+}
+
 /**
  * Evidence-link write path (PC-007 AC7).
  *
@@ -182,10 +230,10 @@ export function issueEvidenceLinkService(db: Db) {
    * The PC-001 gate reads the evidence count under `FOR UPDATE` on the issue
    * row inside the same transaction as the status write. Taking the same lock
    * here means a link/unlink/move can never interleave with a `done`
-   * transition (PC-001 AC8 / PC-007 AC6), and it also serializes concurrent
-   * links so the check-then-insert below stays idempotent without a unique
-   * constraint on (issue_id, external_object_id). Sorting the ids keeps the
-   * two-issue `move` from deadlocking against a mirrored concurrent move.
+   * transition (PC-001 AC8 / PC-007 AC6). It is NOT what makes `link`
+   * single-filing -- the unique index on (issue_id, external_object_id) is;
+   * see the upsert below. Sorting the ids keeps the two-issue `move` from
+   * deadlocking against a mirrored concurrent move.
    */
   async function lockIssues(tx: any, issueIds: string[]): Promise<LockedIssue[]> {
     const ordered = Array.from(new Set(issueIds)).sort();
@@ -306,6 +354,38 @@ export function issueEvidenceLinkService(db: Db) {
 
         const object = await resolveEvidenceObject(tx, issue.companyId, target);
 
+        // Idempotent by CONSTRAINT, not by check-then-insert. The old read of
+        // the pair before inserting leaned on the issue row lock above to
+        // serialize concurrent links; a lock that is taken for a different
+        // reason (PC-001 AC8) is the wrong thing to hang single-filing on, and
+        // any writer that reaches this table down a path without that lock
+        // double-counts -- inflating both the gate count and the PC-011 wedge
+        // ratio with one artifact filed twice. Instead both racers reach the
+        // insert and the unique index on (issue_id, external_object_id) lets
+        // exactly one win; the loser gets no row back, re-reads the survivor
+        // and answers `created: false`. One row, two successful responses.
+        const [inserted] = await tx
+          .insert(issueEvidenceLinks)
+          .values({
+            companyId: issue.companyId,
+            issueId,
+            externalObjectId: object.id,
+            source,
+          })
+          .onConflictDoNothing({
+            target: [issueEvidenceLinks.issueId, issueEvidenceLinks.externalObjectId],
+          })
+          .returning({ id: issueEvidenceLinks.id });
+
+        if (inserted) {
+          const result = { link: await readLinkOrThrow(tx, inserted.id), created: true };
+          await writeAudit(tx as unknown as Db, result);
+          return result;
+        }
+
+        // DO NOTHING waits out an uncommitted conflicting insert, so by the
+        // time we get here the survivor is committed and visible to this
+        // statement's snapshot.
         const existing = await tx
           .select({ id: issueEvidenceLinks.id })
           .from(issueEvidenceLinks)
@@ -316,22 +396,8 @@ export function issueEvidenceLinkService(db: Db) {
             ),
           )
           .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-        if (existing) {
-          const result = { link: await readLinkOrThrow(tx, existing.id), created: false };
-          await writeAudit(tx as unknown as Db, result);
-          return result;
-        }
-
-        const [inserted] = await tx
-          .insert(issueEvidenceLinks)
-          .values({
-            companyId: issue.companyId,
-            issueId,
-            externalObjectId: object.id,
-            source,
-          })
-          .returning({ id: issueEvidenceLinks.id });
-        const result = { link: await readLinkOrThrow(tx, inserted.id), created: true };
+        if (!existing) throw notFound("Evidence link not found");
+        const result = { link: await readLinkOrThrow(tx, existing.id), created: false };
         await writeAudit(tx as unknown as Db, result);
         return result;
       });
@@ -466,28 +532,15 @@ export function issueEvidenceLinkService(db: Db) {
     },
 
     /**
-     * Evidence artifact count for an issue -- the same rows the PC-001 gate
-     * counts, which is BOTH filing tables: `issue_attachments` (an uploaded
-     * file) plus `issue_evidence_links` (a link to an external object). See the
-     * gate query in services/issues.ts, which sums exactly these two.
-     *
-     * Counting only links would report 0 on a card whose sole evidence is an
-     * uploaded photo -- a card the gate happily closes -- so a PC-011 AC4
-     * consumer (the PM digest, the PC-006 WP-close export) built on it would
-     * tell the engineer their evidence is missing.
+     * Total evidence artifact count for one issue, for callers that hold only
+     * an issue id. The company scope comes off the issue row, so this cannot
+     * disagree with `countEvidenceForIssue` -- it IS that function.
      */
     countForIssue: async (issueId: string) => {
-      const [[attachments], [links]] = await Promise.all([
-        db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(issueAttachments)
-          .where(eq(issueAttachments.issueId, issueId)),
-        db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(issueEvidenceLinks)
-          .where(eq(issueEvidenceLinks.issueId, issueId)),
-      ]);
-      return (attachments?.count ?? 0) + (links?.count ?? 0);
+      const issue = await getIssue(issueId);
+      if (!issue) return 0;
+      const { total } = await countEvidenceForIssue(db, { companyId: issue.companyId, issueId });
+      return total;
     },
   };
 }
