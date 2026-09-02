@@ -1,8 +1,15 @@
 # t3-ci — merge gate. Runs on every PR into develop or main, and on pushes to them.
 # GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
 #
-# Required status checks for branch protection:
-#   "t3-ci / unit", "t3-ci / build", "t3-ci / build-image"
+# Required status checks for branch protection — use these EXACT names:
+#   "unit", "build", "build-image"
+#
+# NOT "t3-ci / unit". For GitHub Actions the status-check context is the JOB name,
+# not "<workflow> / <job>". Verified against the API:
+#   gh api repos/tetracilin/test_ai_todo/commits/<sha>/check-runs --jq '.check_runs[].name'
+# returns bare `unit`, `build`, `build-image`. A prefixed name matches no check, and
+# branch protection then waits forever for a context that never reports — the same
+# deadlock the deleted pr.yml's `verify`/`e2e` left on main.
 #
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.

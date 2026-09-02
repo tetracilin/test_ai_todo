@@ -202,7 +202,7 @@ Never resolve a merge conflict by taking one side wholesale. Read both sides. If
 This is a hard fork of paperclipai/paperclip. Do not add an upstream remote, merge or rebase from upstream, or restore upstream's workflows (release.yml, pr.yml, refresh-lockfile.yml, canary/beta). Security fixes are cherry-picked by a human via a fix/* PR citing the upstream commit. See doc/ORIGIN.md.
 What a PR must have before merge
 Based on current develop (rebase before opening; rebase again if develop moves).
-t3-ci / unit, t3-ci / build and t3-ci / build-image green. A red CI is never "flaky, merge anyway" — fix it or ask.
+The t3-ci checks unit, build and build-image green. (Those are the literal status-check names — GitHub Actions reports the job name, not "t3-ci / unit".) A red CI is never "flaky, merge anyway" — fix it or ask.
 Title in imperative mood, ≤ 70 chars. Body says what changed and how it was verified.
 No changes to files outside the task's scope. Drive-by refactors go in a separate PR.
 If the change alters /api/health, the Dockerfile, build args, ports, or compose service names, say so explicitly in the PR body — those are pipeline contracts.
