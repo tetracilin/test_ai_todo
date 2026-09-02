@@ -3,11 +3,12 @@ import type { Db } from "@paperclipai/db";
 import { issueAttachments, issueEvidenceLinks, issues } from "@paperclipai/db";
 
 // PC-011 (design-record OV-5): the wedge metric `wp0_evidence_via_bot` is the
-// ratio of evidence filed by the chat bot over all evidence filed, read from
-// real columns rather than hand-tallied. Provenance is recorded per FILING ACT
-// (see `EvidenceSource` in packages/db/src/schema/issue_evidence_links.ts), so
-// the ratio counts rows across BOTH filing tables: `issue_evidence_links` (a
-// link to an external object) and `issue_attachments` (an uploaded file).
+// ratio of evidence filed by the chat bot over all evidence a PERSON was
+// involved in filing, read from real columns rather than hand-tallied.
+// Provenance is recorded per FILING ACT (see `EvidenceSource` in
+// packages/db/src/schema/issue_evidence_links.ts), so the ratio counts rows
+// across BOTH filing tables: `issue_evidence_links` (a link to an external
+// object) and `issue_attachments` (an uploaded file).
 
 // The union is declared once in the schema layer; derive it here so the service
 // and the DB column can never drift. Exported because provenance is decided by
@@ -18,6 +19,7 @@ export type EvidenceSource = (typeof issueEvidenceLinks.$inferSelect)["source"];
 
 const BOT_SOURCE: EvidenceSource = "bot";
 const MANUAL_SOURCE: EvidenceSource = "manual";
+const SYSTEM_SOURCE: EvidenceSource = "system";
 
 /**
  * PC-011 AC3 pilot bands, as a mechanical call — no judgment at read time.
@@ -37,11 +39,12 @@ export type EvidenceWedgeGroupBy = "company" | "engineer" | "work_package";
 
 export interface EvidenceWedgeBandCall {
   /**
-   * Denominator of the ratio: EVERY filing act in the window, including any
-   * whose `source` is outside the {bot, manual} union (see `otherCount`).
+   * Denominator of the ratio, and the n the minimum-sample rule is applied to:
+   * every filing act in the window EXCEPT `system` ones (see `systemCount`),
+   * including any whose `source` is outside the known union (see `otherCount`).
    */
   sampleSize: number;
-  /** bot / sampleSize, or null when nothing was filed in the window. */
+  /** bot / sampleSize, or null when nothing ratio-bearing was filed. */
   ratio: number | null;
   band: EvidenceWedgeBand;
 }
@@ -57,14 +60,31 @@ export interface EvidenceWedgeMetricRow extends EvidenceWedgeBandCall {
   botCount: number;
   manualCount: number;
   /**
-   * Filing acts whose `source` is neither 'bot' nor 'manual'. `source` is a
-   * plain `text` column -- `$type<EvidenceSource>()` is compile-time only and
-   * migration 0233 adds no CHECK constraint -- so a company-portability import
-   * or a future writer can put a third value in the column. Those rows stay in
-   * `sampleSize` (they really were filing acts) and are surfaced here rather
-   * than silently dropped: an unexpected non-zero value means a writer is out
-   * of contract, and the ratio it produces under-counts `bot`, which is the
-   * safe direction.
+   * Filing acts nobody authored: auto-linked git commits and other
+   * system-generated filings (gate decision UC-1, 2026-09-03). They are neither
+   * a bot capture nor a human re-entry, so they are excluded from BOTH sides of
+   * the ratio AND from `sampleSize`. The minimum-n rule asks "have enough
+   * bot-vs-manual filings happened to judge the bot yet?"; a system row answers
+   * that question neither way, so counting it toward n would call a band on a
+   * sample that never held 15 human-or-bot filings. The pilot's own card type
+   * files most of its evidence as auto-linked commits, and counting those as
+   * `manual` would suppress the ratio however well the bot performed.
+   *
+   * Counted and returned rather than filtered away in SQL: the exclusion has to
+   * be visible, so a reader can always see how much of the window was
+   * system-filed and why n is smaller than the row count.
+   */
+  systemCount: number;
+  /**
+   * Filing acts whose `source` is none of 'bot', 'manual' or 'system'. Both
+   * evidence tables now carry a CHECK constraint, so a writer going through
+   * Postgres cannot produce one -- but `source` is a plain `text` column, and
+   * rows written before the constraint, or restored from an older dump, still
+   * can. Those rows stay in `sampleSize` (they really were filing acts, and
+   * nothing says a human was not behind them) and are surfaced here rather than
+   * silently dropped: an unexpected non-zero value means a writer is out of
+   * contract, and the ratio it produces under-counts `bot`, which is the safe
+   * direction.
    */
   otherCount: number;
 }
@@ -87,12 +107,16 @@ export interface EvidenceWedgeMetricInput {
  * integer so a boundary (exactly 80%, exactly 50%) never depends on float
  * rounding.
  *
- * `otherCount` is filing acts whose `source` fell outside the {bot, manual}
- * union. They belong in the denominator: they are real filings, and dropping
- * them would shrink n (possibly under the minimum sample, silently withholding
- * a band that should have been called) while inflating the bot ratio. Counted
- * this way an out-of-contract writer can only drag the ratio DOWN, which is the
- * safe failure direction for a pilot gate.
+ * `system` filings are not a parameter here at all: the ratio is
+ * `bot / (bot + manual)`, the caller has already left them out, and with no
+ * argument to pass them through they cannot reach the arithmetic by mistake.
+ *
+ * `otherCount` is filing acts whose `source` fell outside the known union. They
+ * belong in the denominator: they are real filings that may well have been
+ * hand-entered, and dropping them would shrink n (possibly under the minimum
+ * sample, silently withholding a band that should have been called) while
+ * inflating the bot ratio. Counted this way an out-of-contract writer can only
+ * drag the ratio DOWN, which is the safe failure direction for a pilot gate.
  */
 export function callEvidenceWedgeBand(
   botCount: number,
@@ -113,6 +137,7 @@ interface RawWedgeRow {
   total_count: number | string;
   bot_count: number | string;
   manual_count: number | string;
+  system_count: number | string;
 }
 
 export function evidenceProvenanceService(db: Db) {
@@ -125,12 +150,16 @@ export function evidenceProvenanceService(db: Db) {
   return {
     /**
      * PC-011 AC3: the bot/(bot+manual) ratio over a date range, grouped per
-     * engineer or per work package, counting both evidence tables. Each row
-     * carries its own band call and the n behind it.
+     * engineer or per work package, counting both evidence tables. `system`
+     * filings are counted and returned but excluded from the ratio and from n
+     * (see `systemCount`). Each row carries its own band call and the n behind
+     * it.
      */
     async getWedgeMetric(input: EvidenceWedgeMetricInput): Promise<EvidenceWedgeMetricRow[]> {
       const groupBy: EvidenceWedgeGroupBy = input.groupBy ?? "company";
       const conditions: SQL[] = [];
+      // Both bounds are INCLUSIVE: a filing act stamped exactly at `from`, or
+      // exactly at `to`, is inside the window.
       if (input.from) conditions.push(sql`f.created_at >= ${input.from.toISOString()}::timestamptz`);
       if (input.to) conditions.push(sql`f.created_at <= ${input.to.toISOString()}::timestamptz`);
       if (input.engineerUserId) conditions.push(sql`i.assignee_user_id = ${input.engineerUserId}`);
@@ -151,11 +180,14 @@ export function evidenceProvenanceService(db: Db) {
         )
         SELECT
           ${groupKeyExpression(groupBy)} AS group_key,
-          -- The denominator is count(*), NOT bot+manual: a filing act whose
-          -- source falls outside the union must stay in n (see otherCount).
+          -- count(*) is EVERY filing act, 'system' and off-contract sources
+          -- included. It is NOT the ratio denominator; it is what lets the
+          -- reader derive otherCount without a second pass, so no row can be
+          -- present in the table and absent from the answer.
           count(*)::int AS total_count,
           count(*) FILTER (WHERE f.source = ${BOT_SOURCE})::int AS bot_count,
-          count(*) FILTER (WHERE f.source = ${MANUAL_SOURCE})::int AS manual_count
+          count(*) FILTER (WHERE f.source = ${MANUAL_SOURCE})::int AS manual_count,
+          count(*) FILTER (WHERE f.source = ${SYSTEM_SOURCE})::int AS system_count
         FROM filings f
         JOIN ${issues} AS i ON i.id = f.issue_id
         WHERE i.company_id = ${input.companyId}::uuid${filter}
@@ -166,12 +198,17 @@ export function evidenceProvenanceService(db: Db) {
       const grouped = Array.from(rows).map((row) => {
         const botCount = Number(row.bot_count ?? 0);
         const manualCount = Number(row.manual_count ?? 0);
-        const otherCount = Math.max(0, Number(row.total_count ?? 0) - botCount - manualCount);
+        const systemCount = Number(row.system_count ?? 0);
+        const otherCount = Math.max(
+          0,
+          Number(row.total_count ?? 0) - botCount - manualCount - systemCount,
+        );
         return {
           groupBy,
           groupKey: row.group_key ?? null,
           botCount,
           manualCount,
+          systemCount,
           otherCount,
           ...callEvidenceWedgeBand(botCount, manualCount, otherCount),
         };
@@ -188,6 +225,7 @@ export function evidenceProvenanceService(db: Db) {
             groupKey: input.companyId,
             botCount: 0,
             manualCount: 0,
+            systemCount: 0,
             otherCount: 0,
             ...callEvidenceWedgeBand(0, 0),
           },

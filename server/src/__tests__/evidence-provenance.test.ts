@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   assets,
@@ -71,6 +71,14 @@ describe("evidence wedge band call (PC-011 AC3)", () => {
     // And an unknown source can only drag the ratio down, never inflate it.
     expect(callEvidenceWedgeBand(12, 0, 12).band).toBe("iterate");
     expect(callEvidenceWedgeBand(12, 3, 0).band).toBe("pass");
+  });
+
+  it("has no parameter a `system` tally could be passed through (gate UC-1)", () => {
+    // The exclusion is structural rather than a filter a caller can forget:
+    // the arithmetic accepts bot, manual and out-of-union counts and nothing
+    // else, so the only way a system filing could reach the ratio is by being
+    // mis-counted as one of those three at the reader.
+    expect(callEvidenceWedgeBand.length).toBe(2); // (botCount, manualCount) + defaulted otherCount
   });
 });
 
@@ -231,6 +239,7 @@ describeEmbeddedPostgres("evidence provenance & wedge metric (PC-011)", () => {
         groupKey: companyId,
         botCount: 12,
         manualCount: 8,
+        systemCount: 0,
         otherCount: 0,
         sampleSize: 20,
         ratio: 0.6,
@@ -267,7 +276,82 @@ describeEmbeddedPostgres("evidence provenance & wedge metric (PC-011)", () => {
     await seedEvidenceLinks(companyId, issueId, 14, { source: "bot" });
 
     const rows = await svc.getWedgeMetric({ companyId });
+    // The n comes back with the answer: the query does not hide a short sample
+    // behind an empty result, so the caller can act on the minimum-n rule (file
+    // 15 - n more, or widen the window) instead of guessing at it.
     expect(rows[0]).toMatchObject({ botCount: 14, manualCount: 0, sampleSize: 14, ratio: 1, band: "extend_window" });
+  });
+
+  it("counts `system` filings but keeps them out of both sides of the ratio (gate UC-1)", async () => {
+    // Auto-linked commits and other system-generated filings are neither a bot
+    // capture nor a human re-entry. 13 bot + 3 manual is the real sample; the 10
+    // system rows are reported and excluded, so the ratio is 13/16, not 13/26.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    await seedEvidenceLinks(companyId, issueId, 13, { source: "bot" });
+    await seedEvidenceLinks(companyId, issueId, 3, { source: "manual" });
+    await seedEvidenceLinks(companyId, issueId, 6, { source: "system" });
+    await seedAttachments(companyId, issueId, 4, { source: "system" });
+
+    const [row] = await svc.getWedgeMetric({ companyId });
+    expect(row).toEqual({
+      groupBy: "company",
+      groupKey: companyId,
+      botCount: 13,
+      manualCount: 3,
+      systemCount: 10,
+      otherCount: 0,
+      sampleSize: 16,
+      ratio: 13 / 16,
+      band: "pass",
+    });
+    // Nothing vanished: every seeded filing is accounted for in the row.
+    expect(row.botCount + row.manualCount + row.systemCount + row.otherCount).toBe(26);
+  });
+
+  it("does not let system filings flip the band (gate UC-1)", async () => {
+    // The same 13 bot + 3 manual sample: `pass` at 81.25%. The pilot's own card
+    // type files most of its evidence as auto-linked commits, so if those 10
+    // system rows landed in the denominator the ratio would read 13/26 = 50%
+    // and the band would drop to `iterate` -- suppressing the metric however
+    // well the bot performed. That is the exact flip this asserts cannot happen.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    await seedEvidenceLinks(companyId, issueId, 13, { source: "bot" });
+    await seedEvidenceLinks(companyId, issueId, 3, { source: "manual" });
+
+    const withoutSystem = await svc.getWedgeMetric({ companyId });
+    expect(withoutSystem[0]).toMatchObject({ sampleSize: 16, band: "pass" });
+
+    await seedAttachments(companyId, issueId, 10, { source: "system" });
+    const withSystem = await svc.getWedgeMetric({ companyId });
+    // Band, ratio and n are all untouched; only systemCount moved.
+    expect(withSystem[0]).toMatchObject({ sampleSize: 16, ratio: 13 / 16, band: "pass", systemCount: 10 });
+    expect(callEvidenceWedgeBand(13, 3 + 10).band).toBe("iterate"); // what counting them would have said
+  });
+
+  it("keeps system filings out of the minimum-sample n as well (gate UC-1)", async () => {
+    // The minimum-n rule asks whether enough bot-vs-manual filings have
+    // happened to judge the bot yet, so it is applied to the ratio sample, not
+    // to the row count: 12 real filings plus 20 system ones is still a sample of
+    // 12, and the honest answer is still "extend the window" -- calling a band
+    // off n=32 would be calling it on 12 filings while claiming 32.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    await seedEvidenceLinks(companyId, issueId, 9, { source: "bot" });
+    await seedEvidenceLinks(companyId, issueId, 3, { source: "manual" });
+    await seedEvidenceLinks(companyId, issueId, 20, { source: "system" });
+
+    const [row] = await svc.getWedgeMetric({ companyId });
+    expect(row).toMatchObject({
+      botCount: 9,
+      manualCount: 3,
+      systemCount: 20,
+      sampleSize: 12,
+      ratio: 0.75,
+      band: "extend_window",
+    });
+    expect(row.sampleSize).toBeLessThan(EVIDENCE_WEDGE_MINIMUM_SAMPLE);
   });
 
   it("answers an empty window with n=0 rather than no row at all", async () => {
@@ -279,6 +363,7 @@ describeEmbeddedPostgres("evidence provenance & wedge metric (PC-011)", () => {
         groupKey: companyId,
         botCount: 0,
         manualCount: 0,
+        systemCount: 0,
         otherCount: 0,
         sampleSize: 0,
         ratio: null,
@@ -353,28 +438,85 @@ describeEmbeddedPostgres("evidence provenance & wedge metric (PC-011)", () => {
     expect(unbounded[0]).toMatchObject({ botCount: 7, manualCount: 7, sampleSize: 14 });
   });
 
+  it("treats BOTH date bounds as inclusive, to the millisecond (AC3)", async () => {
+    // The contract is [from, to] -- closed at both ends. A filing stamped
+    // exactly at either bound is inside the window; one a millisecond outside is
+    // not. Stated here because a half-open window would silently move a filing
+    // between two adjacent reporting windows, or drop it from both.
+    const { companyId, prefix } = await seedCompany();
+    const issueId = await seedIssue(companyId, prefix);
+    const from = new Date("2026-09-01T00:00:00.000Z");
+    const to = new Date("2026-09-30T23:59:59.999Z");
+    await seedEvidenceLinks(companyId, issueId, 1, { source: "bot", createdAt: new Date(from.getTime() - 1) });
+    await seedEvidenceLinks(companyId, issueId, 1, { source: "bot", createdAt: from });
+    await seedAttachments(companyId, issueId, 1, { source: "manual", createdAt: to });
+    await seedAttachments(companyId, issueId, 1, { source: "manual", createdAt: new Date(to.getTime() + 1) });
+
+    const rows = await svc.getWedgeMetric({ companyId, from, to });
+    // The two rows exactly on the bounds are in; the two a millisecond outside
+    // are out.
+    expect(rows[0]).toMatchObject({ botCount: 1, manualCount: 1, sampleSize: 2 });
+  });
+
+  /**
+   * Drop the `issue_evidence_links` source CHECK for the length of one test and
+   * hand back a restore function that re-adds it verbatim from its own catalog
+   * definition, so this file cannot drift from the migration that defines it.
+   * A no-op when the constraint is not present.
+   */
+  async function suspendEvidenceSourceCheck(): Promise<() => Promise<void>> {
+    const rows = (await db.execute(sql`
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conname = 'issue_evidence_links_source_check'
+    `)) as unknown as Iterable<{ definition: string }>;
+    const definition = Array.from(rows)[0]?.definition;
+    if (!definition) return async () => {};
+    await db.execute(
+      sql`ALTER TABLE issue_evidence_links DROP CONSTRAINT issue_evidence_links_source_check`,
+    );
+    return async () => {
+      await db.execute(
+        sql`ALTER TABLE issue_evidence_links ADD CONSTRAINT issue_evidence_links_source_check ${sql.raw(definition)}`,
+      );
+    };
+  }
+
   it("does not drop a filing whose source is outside the union (AC1/AC3)", async () => {
-    // `source` is a plain `text` column: `$type<EvidenceSource>()` is
-    // compile-time only and migration 0233 adds no CHECK, so a
-    // company-portability import or an out-of-contract writer really can land a
-    // third value. Deriving the denominator from bot+manual made those rows
-    // vanish from n AND from the ratio, which reported a smaller, cleaner
-    // sample than reality -- here it would have been n=12 at ratio 1.0 and
-    // band `extend_window` instead of n=15 at 0.8 and band `pass`.
+    // `source` is a plain `text` column and `$type<EvidenceSource>()` is only a
+    // compile-time cast. Both evidence tables carry a CHECK constraint as of
+    // migration 0234, so a writer going through Postgres can no longer produce
+    // a fourth value -- but rows written before it (an instance upgrading
+    // through 0233, a restored older dump) still can, and the reader must never
+    // make one vanish. The constraint is suspended here to put exactly such a
+    // legacy row in front of the reader.
     const { companyId, prefix } = await seedCompany();
     const issueId = await seedIssue(companyId, prefix);
     await seedEvidenceLinks(companyId, issueId, 12, { source: "bot" });
-    await seedEvidenceLinks(companyId, issueId, 3, { source: "ui" as never });
 
-    const [row] = await svc.getWedgeMetric({ companyId });
-    expect(row).toMatchObject({
-      botCount: 12,
-      manualCount: 0,
-      otherCount: 3,
-      sampleSize: 15,
-      ratio: 0.8,
-      band: "pass",
-    });
+    const restoreCheck = await suspendEvidenceSourceCheck();
+    try {
+      await seedEvidenceLinks(companyId, issueId, 3, { source: "ui" as never });
+
+      const [row] = await svc.getWedgeMetric({ companyId });
+      // Deriving the denominator from bot+manual made those rows vanish from n
+      // AND from the ratio, which reported a smaller, cleaner sample than
+      // reality -- here it would have been n=12 at ratio 1.0 and band
+      // `extend_window` instead of n=15 at 0.8 and band `pass`.
+      expect(row).toMatchObject({
+        botCount: 12,
+        manualCount: 0,
+        systemCount: 0,
+        otherCount: 3,
+        sampleSize: 15,
+        ratio: 0.8,
+        band: "pass",
+      });
+    } finally {
+      // The off-contract rows have to go before the constraint can come back.
+      await db.delete(issueEvidenceLinks);
+      await restoreCheck();
+    }
   });
 
   it("never counts another company's filings", async () => {
