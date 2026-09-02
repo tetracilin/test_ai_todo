@@ -1,12 +1,27 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+# usage: healthcheck.sh <url> <expected-commit-sha> [attempts=30] [sleep=5]
+# Polls an endpoint until the JSON response contains the expected commit SHA.
+# Returns 0 if healthy, 1 if timeout.
+set -euo pipefail
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DEPLOY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-COMPOSE_FILE=${COMPOSE_FILE:-$DEPLOY_DIR/compose.yaml}
-HERMES_API_BASE_URL=${HERMES_API_BASE_URL:-http://host.docker.internal:8642}
+url="$1"
+want="$2"
+n="${3:-30}"
+s="${4:-5}"
 
-cd "$DEPLOY_DIR"
-docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "${POSTGRES_USER:-paperclip}" -d "${POSTGRES_DB:-paperclip}"
-docker compose -f "$COMPOSE_FILE" exec -T paperclip curl --fail --silent --show-error http://127.0.0.1:3100/api/health
-docker compose -f "$COMPOSE_FILE" exec -T paperclip curl --fail --silent --show-error "$HERMES_API_BASE_URL/health"
+for i in $(seq 1 "$n"); do
+  if body=$(curl -fsS --max-time 5 "$url" 2>/dev/null); then
+    got=$(printf '%s' "$body" | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p')
+    if [[ "$got" == "$want"* ]] || [[ "$want" == "$got"* && -n "$got" ]]; then
+      echo "✓ healthy: $url reports commit $got"
+      exit 0
+    fi
+    echo "  attempt $i/$n: up but commit=$got (want $want)"
+  else
+    echo "  attempt $i/$n: not responding"
+  fi
+  sleep "$s"
+done
+
+echo "✗ FAILED: $url did not report commit $want after $n attempts" >&2
+exit 1

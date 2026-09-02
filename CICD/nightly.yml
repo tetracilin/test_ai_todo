@@ -1,0 +1,160 @@
+# Nightly — builds `develop` and deploys it to the t3-nightly stack on kmv8.
+# Replaces /root/.hermes/scripts/t3-nightly-build.sh + Hermes cron 8b51805f9dc5.
+#
+# Triggers: 22:00 UTC daily, or on demand (Run workflow). Optionally also on every
+# push to develop — uncomment the `push:` block if you want continuous staging.
+#
+# Runs on the self-hosted runner (label: kmv8). Only `develop` is ever deployed here.
+
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (default: develop)"
+        required: false
+        default: develop
+  # push:
+  #   branches: [develop]
+
+permissions:
+  contents: read
+
+# Never run two nightly deploys at once; never cancel one mid-deploy.
+concurrency:
+  group: deploy-nightly
+  cancel-in-progress: false
+
+env:
+  COMPOSE_PROJECT: t3-nightly
+  COMPOSE_FILE: deploy/compose.yaml
+  IMAGE_NAME: paperclip
+  HEALTH_URL: http://127.0.0.1:33130/api/health
+  # ASSUMPTION A2/A5 — verify paths on kmv8. Prefer /etc/t3/secrets/nightly (see PLAN.md §3).
+  SECRETS_DIR: /root/.hermes/secrets/t3-nightly
+
+jobs:
+  deploy:
+    name: build-and-deploy-nightly
+    runs-on: [self-hosted, kmv8]
+    environment:
+      name: staging
+      url: http://127.0.0.1:33130
+    timeout-minutes: 30
+    steps:
+      - name: Skip scheduled run if develop has no new commits
+        # Cheap guard: the last deployed sha is recorded in a marker file on the host.
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.ref || 'develop' }}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/.t3-deploy"
+          last=$(cat "$HOME/.t3-deploy/nightly.sha" 2>/dev/null || echo none)
+          head=$(git ls-remote --quiet "https://github.com/${{ github.repository }}.git" "refs/heads/$ref" | cut -f1)
+          [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "schedule" && "$last" == "$head" ]]; then
+            echo "no changes on $ref since last deploy ($last) — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          ref: ${{ steps.guard.outputs.ref }}
+          fetch-depth: 1
+          clean: true   # runner workspace is disposable; never a shared checkout
+
+      - name: Verify secrets present (fail early)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in postgres_password better_auth_secret; do
+            [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
+          done
+
+      - name: Compute image tag
+        if: steps.guard.outputs.skip == 'false'
+        id: tag
+        shell: bash
+        run: |
+          short=$(git rev-parse --short=8 HEAD)
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "full=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE_NAME:nightly-$short" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${{ steps.tag.outputs.image }}" \
+            -f Dockerfile \
+            --build-arg PAPERCLIP_BUILD_COMMIT="${{ steps.tag.outputs.full }}" \
+            --build-arg PAPERCLIP_BUILD_VERSION="nightly-${{ steps.tag.outputs.short }}" \
+            .
+
+      - name: Deploy (compose up)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        env:
+          # ASSUMPTION A1 — these must match what deploy/compose.yaml reads.
+          PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
+          NIGHTLY_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
+        run: |
+          set -euo pipefail
+          docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+
+      - name: Health check (verifies deployed commit, not just HTTP 200)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: deploy/scripts/healthcheck.sh "$HEALTH_URL" "${{ steps.tag.outputs.full }}" 30 5
+
+      - name: Record deployed sha
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: echo "${{ steps.tag.outputs.full }}" > "$HOME/.t3-deploy/nightly.sha"
+
+      - name: Image retention (keep current + 1 rollback)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: deploy/scripts/image-retention.sh "$IMAGE_NAME" nightly 2
+
+      - name: Version drift report
+        if: steps.guard.outputs.skip == 'false'
+        id: drift
+        shell: bash
+        run: |
+          out=$(deploy/scripts/version-drift.sh 2>&1 || true)
+          { echo "report<<EOF"; echo "$out"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Discord report
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
+          status="${{ job.status }}"
+          if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
+            emoji="⏭️"; line="nightly: no changes on develop, skipped"
+          elif [[ "$status" == "success" ]]; then
+            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to :33130"
+          else
+            emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
+          fi
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          drift="${{ steps.drift.outputs.report }}"
+          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${drift:-(no drift report)}")
+          jq -n --arg c "$content" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null

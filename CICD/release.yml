@@ -118,8 +118,7 @@ jobs:
         env:
           # ASSUMPTION A1 — must match deploy/compose.yaml.
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
-          PAPERCLIP_PORT: ${{ vars.PROD_PORT || '33100' }}
-          PAPERCLIP_BIND_ADDRESS: 100.103.41.112
+          PROD_PORT: ${{ vars.PROD_PORT || '33100' }}
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
