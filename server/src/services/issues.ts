@@ -28,7 +28,6 @@ import {
   issueRelations,
   issueComments,
   issueDocuments,
-  issueEvidenceLinks,
   issueReadStates,
   issueThreadInteractions,
   issues,
@@ -97,6 +96,9 @@ import { resolveIssueGoalId, resolveNextIssueGoalId } from "./issue-goal-fallbac
 // PC-011 AC1 provenance union, declared once in the schema layer and given its
 // meaning by the wedge-metric reader.
 import type { EvidenceSource } from "./evidence-provenance.js";
+// The engineer-facing half of the PC-001 gate rejection. Type-only: the gate
+// names a phrase key, the chat bridge renders it.
+import type { Wp0MessageId } from "@paperclipai/shared/wp0-phrases";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
@@ -125,6 +127,7 @@ import {
   type IssueGraphLivenessInput,
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
+import { countEvidenceForIssue } from "./issue-evidence-links.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -168,6 +171,33 @@ const ISSUE_CREATE_IDEMPOTENCY_KEY_RETENTION_MS = ISSUE_CREATE_IDEMPOTENCY_KEY_R
 const ISSUE_CREATE_IDEMPOTENCY_KEY_CLEANUP_BATCH_SIZE = 500;
 const DELETED_ISSUE_COMMENT_BODY = "";
 const ISSUE_WAKE_DIAGNOSTICS_ACTIVITY_ACTIONS = ["issue.tree_hold_wakeup_deferred"] as const;
+
+/**
+ * The PC-001 evidence-gate rejection as an API caller reads it. The prose is
+ * unchanged and stays English: it tells a developer holding a 422 body what to
+ * do. The engineer-facing line is a separate, additive thing -- see
+ * `EVIDENCE_GATE_CHAT_PHRASE_KEY`.
+ */
+export const EVIDENCE_GATE_REJECTION_MESSAGE =
+  "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
+  "attached to this issue, or an evidence link to an external object. Attach a " +
+  "file to this issue or link evidence via the API before marking it done.";
+
+/** Stable discriminator, so no consumer has to string-match the prose above. */
+export const EVIDENCE_GATE_REJECTION_CODE = "evidence_gate_missing_evidence";
+
+/** The two filing tables `countEvidenceForIssue` sums, named for the caller. */
+export const EVIDENCE_GATE_ACCEPTED_EVIDENCE_TYPES = ["issue_attachment", "issue_evidence_link"] as const;
+
+/**
+ * The WP-0 message the chat bridge renders for a field engineer, who has no
+ * API to "link evidence via" (PC-001 AC2). Typed as `Wp0MessageId` so the key
+ * is checked against the checked-in phrase table at compile time -- WP-0 op
+ * AC10: a rejection can never name a phrase the bot does not answer to. The
+ * `gate_rejection` template takes a `card` var, which is why the rejection
+ * details carry `issueIdentifier` alongside this key.
+ */
+export const EVIDENCE_GATE_CHAT_PHRASE_KEY: Wp0MessageId = "gate_rejection";
 
 function wakeRequestTargetsIssue(issueId: string) {
   return sql`(
@@ -7856,24 +7886,14 @@ export function issueService(db: Db) {
         const isTransitionIntoDone = patch.status === "done" && receiptExisting.status !== "done";
         let evidenceCountForTransition: number | null = null;
         if (isTransitionIntoDone) {
-          const [[{ attachmentCount }], [{ evidenceLinkCount }]] = await Promise.all([
-            tx
-              .select({ attachmentCount: sql<number>`count(*)::int` })
-              .from(issueAttachments)
-              .where(
-                and(eq(issueAttachments.companyId, receiptExisting.companyId), eq(issueAttachments.issueId, id)),
-              ),
-            tx
-              .select({ evidenceLinkCount: sql<number>`count(*)::int` })
-              .from(issueEvidenceLinks)
-              .where(
-                and(
-                  eq(issueEvidenceLinks.companyId, receiptExisting.companyId),
-                  eq(issueEvidenceLinks.issueId, id),
-                ),
-              ),
-          ]);
-          evidenceCountForTransition = attachmentCount + evidenceLinkCount;
+          // Counted through the one shared predicate rather than inline, so the
+          // gate, the digest, and the WP-close export can never disagree about
+          // the same card. `tx` keeps the count under the row lock taken above.
+          const { total } = await countEvidenceForIssue(tx, {
+            companyId: receiptExisting.companyId,
+            issueId: id,
+          });
+          evidenceCountForTransition = total;
 
           const [company] = await tx
             .select({ evidenceGateEnabled: companies.evidenceGateEnabled })
@@ -7881,12 +7901,16 @@ export function issueService(db: Db) {
             .where(eq(companies.id, receiptExisting.companyId))
             .limit(1);
           if (company?.evidenceGateEnabled && evidenceCountForTransition === 0) {
-            throw unprocessable(
-              "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
-                "attached to this issue, or an evidence link to an external object. Attach a " +
-                "file to this issue or link evidence via the API before marking it done.",
-              { evidenceCount: evidenceCountForTransition },
-            );
+            // The message stays English for API callers; the structured details
+            // are additive, and are what the chat bridge renders the engineer's
+            // one Vietnamese line from (card + filing phrase).
+            throw unprocessable(EVIDENCE_GATE_REJECTION_MESSAGE, {
+              evidenceCount: evidenceCountForTransition,
+              code: EVIDENCE_GATE_REJECTION_CODE,
+              acceptedEvidenceTypes: [...EVIDENCE_GATE_ACCEPTED_EVIDENCE_TYPES],
+              chatPhraseKey: EVIDENCE_GATE_CHAT_PHRASE_KEY,
+              issueIdentifier: receiptExisting.identifier ?? null,
+            });
           }
         }
 
