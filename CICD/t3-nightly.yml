@@ -1,4 +1,5 @@
-# Nightly — builds `develop` and deploys it to the t3-nightly stack on kmv8.
+# t3-nightly — builds `develop`, deploys it to the t3-nightly stack on kmv8, then runs
+# the slow test suite (salvaged from upstream pr.yml) against the deployed stack.
 # Replaces /root/.hermes/scripts/t3-nightly-build.sh + Hermes cron 8b51805f9dc5.
 #
 # Triggers: 22:00 UTC daily, or on demand (Run workflow). Optionally also on every
@@ -6,7 +7,7 @@
 #
 # Runs on the self-hosted runner (label: kmv8). Only `develop` is ever deployed here.
 
-name: nightly
+name: t3-nightly
 
 on:
   schedule:
@@ -25,7 +26,7 @@ permissions:
 
 # Never run two nightly deploys at once; never cancel one mid-deploy.
 concurrency:
-  group: deploy-nightly
+  group: t3-deploy-nightly
   cancel-in-progress: false
 
 env:
@@ -33,13 +34,16 @@ env:
   COMPOSE_FILE: deploy/compose.yaml
   IMAGE_NAME: paperclip
   HEALTH_URL: http://127.0.0.1:33130/api/health
-  # ASSUMPTION A2/A5 — verify paths on kmv8. Prefer /etc/t3/secrets/nightly (see PLAN.md §3).
-  SECRETS_DIR: /root/.hermes/secrets/t3-nightly
+  # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-nightly.
+  SECRETS_DIR: /etc/t3/secrets/nightly
 
 jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
+    outputs:
+      skipped: ${{ steps.guard.outputs.skip }}
+      sha: ${{ steps.out.outputs.sha }}
     environment:
       name: staging
       url: http://127.0.0.1:33130
@@ -137,6 +141,12 @@ jobs:
           out=$(deploy/scripts/version-drift.sh 2>&1 || true)
           { echo "report<<EOF"; echo "$out"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
+      - name: Expose outputs for the e2e job
+        id: out
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: echo "sha=${{ steps.tag.outputs.full }}" >> "$GITHUB_OUTPUT"
+
       - name: Discord report
         if: always()
         shell: bash
@@ -157,4 +167,45 @@ jobs:
           drift="${{ steps.drift.outputs.report }}"
           content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${drift:-(no drift report)}")
           jq -n --arg c "$content" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  # Slow tests salvaged from upstream pr.yml (sharded vitest, e2e, browser).
+  # Runs on kmv8 so it can reach the localhost-only nightly stack.
+  # ASSUMPTION A6 — the e2e suite must accept a base URL via env. If it spins up its own
+  # stack instead, move this job BEFORE deploy and drop the E2E_BASE_URL env.
+  e2e:
+    name: e2e-against-nightly
+    needs: [deploy]
+    if: needs.deploy.outputs.skipped == 'false'
+    runs-on: [self-hosted, kmv8]
+    timeout-minutes: 45
+    env:
+      E2E_BASE_URL: http://127.0.0.1:33130
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.deploy.outputs.sha }}
+          fetch-depth: 1
+          clean: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # ASSUMPTION A4/A6 — replace with the exact commands from upstream pr.yml's slow jobs.
+      - name: Full test suite
+        run: pnpm test
+      - name: E2E
+        run: pnpm test:e2e
+      - name: Discord report (e2e)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          jq -n --arg c "$(printf '⚠️ nightly e2e FAILED on develop @ %s\n<%s>' "${{ needs.deploy.outputs.sha }}" "$run_url")" '{content: $c}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null

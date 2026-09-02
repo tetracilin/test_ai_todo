@@ -1,0 +1,116 @@
+# t3-ci — merge gate. Runs on every PR into develop or main, and on pushes to them.
+# GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
+#
+# Required status checks for branch protection:
+#   "t3-ci / unit", "t3-ci / build", "t3-ci / build-image"
+#
+# Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
+# jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
+# See PLAN_CICD.md §1.2 and doc/ORIGIN.md.
+
+name: t3-ci
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Salvaged from pr.yml `policy` (fork guards only — the release-manifest and
+  # lockfile-bot steps were deleted) plus the typecheck half of
+  # pr.yml `typecheck_release_registry`.
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Enforce SSoT guards
+        run: node ./scripts/check-ssot-guards.mjs
+      - name: Validate Dockerfile deps stage
+        run: node ./scripts/check-docker-deps-stage.mjs
+      - name: Reject git push in adapter/runtime code
+        run: node ./scripts/check-no-git-push.mjs
+      - name: Test no-git-push check
+        run: node --test ./scripts/check-no-git-push.test.mjs
+      - name: Enforce forbidden runtime gate
+        run: pnpm check:no-google-runtime
+      - name: Test forbidden runtime inventory
+        run: pnpm test:check-no-google-runtime
+      - name: Test client bundle scanner
+        run: pnpm test:scan-client-bundle
+      - name: Test general-server shard partition
+        run: node --test ./scripts/__tests__/run-vitest-stable-shard.test.mjs
+      - name: Test e2e shard partition
+        run: node --test ./scripts/__tests__/e2e-shard.test.mjs
+      - name: Test standalone package build concurrency
+        run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Typecheck workspaces whose build scripts skip TypeScript
+        run: pnpm run typecheck:build-gaps
+
+  # Salvaged wholesale from pr.yml `build`. The client-bundle scan and the
+  # no-google network guard are security gates and must block a merge, so this
+  # is a required check rather than nightly-only.
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Scan client bundle
+        run: pnpm scan:client-bundle
+      - name: Install Chromium for client network guard
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify client network guard
+        run: pnpm test:e2e:no-google-network
+
+  # The image build is the gate that actually matters for deploys.
+  # Same build-args as the deploy workflows so CI exercises the same Dockerfile path.
+  build-image:
+    name: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: false
+          build-args: |
+            PAPERCLIP_BUILD_COMMIT=${{ github.sha }}
+            PAPERCLIP_BUILD_VERSION=ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

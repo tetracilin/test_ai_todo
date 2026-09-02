@@ -1,0 +1,151 @@
+# t3-release — deploys a tagged commit to the t3-prod stack on kmv8.
+# (Upstream's release.yml = npm publish is deleted in the hard fork; this is unrelated.)
+#
+# Trigger: push a tag matching v* (e.g. v0.3.1) that points at a commit on `main`.
+# The `production` environment requires a reviewer to approve before the deploy job runs.
+# Rollback: re-run this workflow for an older tag (Actions → t3-release → older run → Re-run).
+#
+# Runs on the self-hosted runner (label: kmv8).
+
+name: t3-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)deploy, e.g. v0.3.1"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-deploy-production
+  cancel-in-progress: false
+
+env:
+  COMPOSE_PROJECT: t3-prod
+  COMPOSE_FILE: deploy/compose.yaml
+  IMAGE_NAME: paperclip
+  # ASSUMPTION A3 — prod binds to the tailnet IP, so health check from the host uses that IP.
+  HEALTH_URL: http://100.103.41.112:33100/api/health
+  # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-prod.
+  SECRETS_DIR: /etc/t3/secrets/prod
+
+jobs:
+  # Cheap validation on a GitHub-hosted runner BEFORE anyone is asked to approve:
+  # the tag must be reachable from main. Prevents deploying a tag cut from a feature branch.
+  verify-tag:
+    name: verify-tag-on-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      sha: ${{ steps.t.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: t
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          sha=$(git rev-parse "$tag^{commit}")
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::tag $tag ($sha) is not on main — refusing to release"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag $tag -> $sha is on main"
+
+  deploy:
+    name: deploy-production
+    needs: [verify-tag]
+    runs-on: [self-hosted, kmv8]
+    environment:
+      name: production            # <-- required-reviewer gate lives here
+      url: http://100.103.41.112:33100
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-tag.outputs.sha }}
+          fetch-depth: 1
+          clean: true
+
+      - name: Verify secrets present (fail early)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in postgres_password better_auth_secret; do
+            [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
+          done
+
+      - name: Compute image tag
+        id: tag
+        shell: bash
+        run: |
+          echo "image=$IMAGE_NAME:${{ needs.verify-tag.outputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Record currently running image (for the Discord report / manual rollback)
+        id: prev
+        shell: bash
+        run: |
+          prev=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" images --format json 2>/dev/null \
+                 | jq -r '.[0] | "\(.Repository):\(.Tag)"' 2>/dev/null || echo unknown)
+          echo "image=${prev:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${{ steps.tag.outputs.image }}" \
+            -f Dockerfile \
+            --build-arg PAPERCLIP_BUILD_COMMIT="${{ needs.verify-tag.outputs.sha }}" \
+            --build-arg PAPERCLIP_BUILD_VERSION="${{ needs.verify-tag.outputs.tag }}" \
+            .
+
+      - name: Deploy (compose up)
+        shell: bash
+        env:
+          # ASSUMPTION A1 — must match deploy/compose.yaml.
+          PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
+          PAPERCLIP_PORT: ${{ vars.PROD_PORT || '33100' }}
+          PAPERCLIP_BIND_ADDRESS: 100.103.41.112
+        run: |
+          set -euo pipefail
+          docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+
+      - name: Health check (verifies deployed commit)
+        shell: bash
+        run: deploy/scripts/healthcheck.sh "$HEALTH_URL" "${{ needs.verify-tag.outputs.sha }}" 30 5
+
+      - name: Image retention (keep current + 1 rollback)
+        shell: bash
+        run: deploy/scripts/image-retention.sh "$IMAGE_NAME" v 2
+
+      - name: Discord report
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [[ "${{ job.status }}" == "success" ]]; then
+            msg="🚀 **PROD** deployed ${{ needs.verify-tag.outputs.tag }} (${{ needs.verify-tag.outputs.sha }}) to :33100 — previous: ${{ steps.prev.outputs.image }} by ${{ github.actor }}"
+          else
+            msg="🔥 **PROD deploy ${{ job.status }}** for ${{ needs.verify-tag.outputs.tag }} — still running: ${{ steps.prev.outputs.image }}"
+          fi
+          jq -n --arg c "$(printf '%s\n<%s>' "$msg" "$run_url")" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null

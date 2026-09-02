@@ -1,12 +1,13 @@
-# Release — deploys a tagged commit to the t3-prod stack on kmv8.
+# t3-release — deploys a tagged commit to the t3-prod stack on kmv8.
+# (Upstream's release.yml = npm publish is deleted in the hard fork; this is unrelated.)
 #
 # Trigger: push a tag matching v* (e.g. v0.3.1) that points at a commit on `main`.
 # The `production` environment requires a reviewer to approve before the deploy job runs.
-# Rollback: re-run this workflow for an older tag (Actions → Release → older run → Re-run).
+# Rollback: re-run this workflow for an older tag (Actions → t3-release → older run → Re-run).
 #
 # Runs on the self-hosted runner (label: kmv8).
 
-name: release
+name: t3-release
 
 on:
   push:
@@ -21,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-production
+  group: t3-deploy-production
   cancel-in-progress: false
 
 env:
@@ -30,8 +31,8 @@ env:
   IMAGE_NAME: paperclip
   # ASSUMPTION A3 — prod binds to the tailnet IP, so health check from the host uses that IP.
   HEALTH_URL: http://100.103.41.112:33100/api/health
-  # ASSUMPTION A2 — verify. Prefer /etc/t3/secrets/prod (see PLAN.md §3).
-  SECRETS_DIR: /root/.hermes/secrets/t3-prod
+  # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-prod.
+  SECRETS_DIR: /etc/t3/secrets/prod
 
 jobs:
   # Cheap validation on a GitHub-hosted runner BEFORE anyone is asked to approve:
