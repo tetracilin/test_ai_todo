@@ -94,10 +94,20 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Branch | Rules |
 |---|---|
-| `develop` | Require PR; required checks `t3-ci / unit`, `t3-ci / build`, `t3-ci / build-image`; no force push |
-| `main` | Require PR; required checks `t3-ci / unit`, `t3-ci / build`, `t3-ci / build-image`; require branch up to date; no force push; no direct push |
+| `develop` | Require PR; required checks `unit`, `build`, `build-image`; no force push |
+| `main` | Require PR; required checks `unit`, `build`, `build-image`; require branch up to date; no force push; no direct push |
 
-`t3-ci / build` is in the required set because it carries `pnpm scan:client-bundle` and
+> **Use the bare job names — `unit`, `build`, `build-image` — not `t3-ci / unit`.**
+> For GitHub Actions the status-check context is the **job** name, not
+> `<workflow> / <job>`. Confirmed against the API rather than assumed:
+> `gh api repos/tetracilin/test_ai_todo/commits/<sha>/check-runs --jq '.check_runs[].name'`
+> returns `unit`, `build`, `build-image`. (The stale `verify` and `e2e` contexts still on
+> `main` are bare job names from `pr.yml` too — same rule.) A prefixed name matches no
+> check, so branch protection waits forever for a context that never reports and the
+> branch becomes unmergeable. In the settings UI, pick from the search suggestions —
+> it only lists contexts GitHub has actually observed, which sidesteps this entirely.
+
+`build` is in the required set because it carries `pnpm scan:client-bundle` and
 `pnpm test:e2e:no-google-network` — security gates that must block a merge, not merely report.
 
 **Remove** `policy`, `verify`, `e2e` from `main`'s required checks. They no longer exist after Phase 1; leaving them makes every `develop → main` PR unmergeable.

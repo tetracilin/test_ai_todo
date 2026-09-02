@@ -29,7 +29,7 @@ feature/<topic>  →  PR  →  develop  →  nightly deploy to staging (:33130)
 ## What a PR must have before merge
 
 - Based on current `develop` (rebase before opening; rebase again if `develop` moves).
-- `t3-ci / build-image` and `t3-ci / unit` green. A red CI is never "flaky, merge anyway" — fix it or ask.
+- The t3-ci checks `unit`, `build` and `build-image` green. (Those are the literal status-check names — GitHub Actions reports the job name, not `t3-ci / unit`.) A red CI is never "flaky, merge anyway" — fix it or ask.
 - Title in imperative mood, ≤ 70 chars. Body says *what changed* and *how it was verified*.
 - No changes to files outside the task's scope. Drive-by refactors go in a separate PR.
 - If the change alters `/api/health`, the Dockerfile, build args, ports, or compose service names, say so explicitly in the PR body — those are pipeline contracts.
