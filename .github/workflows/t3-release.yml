@@ -48,6 +48,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # actions/checkout passes --no-tags unless told otherwise. On the
+          # workflow_dispatch rollback path (the documented rollback procedure,
+          # PLAN_CICD.md §6) the checkout is not of the tag itself, so without
+          # this `git rev-parse "$tag^{commit}"` below cannot resolve and every
+          # rollback fails before it starts.
+          fetch-tags: true
       - id: t
         shell: bash
         run: |
@@ -57,6 +63,9 @@ jobs:
           else
             tag="${GITHUB_REF#refs/tags/}"
           fi
+          # origin/main must exist locally for the ancestry check below; a
+          # tag-triggered checkout does not necessarily create it.
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           sha=$(git rev-parse "$tag^{commit}")
           if ! git merge-base --is-ancestor "$sha" origin/main; then
             echo "::error::tag $tag ($sha) is not on main — refusing to release"
@@ -121,6 +130,16 @@ jobs:
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.PROD_PORT || '33100' }}
           PAPERCLIP_BIND_ADDRESS: 100.103.41.112
+          # deploy/compose.yaml runs exposure=private + mode=authenticated, which
+          # enables the private-hostname guard. Its allow set is the configured
+          # hostnames plus localhost/127.0.0.1/::1 — the container's bind host is
+          # 0.0.0.0 and is explicitly excluded. Without the tailnet IP listed here
+          # the guard 403s the Host: 100.103.41.112 request, and it runs BEFORE
+          # the health route, so HEALTH_URL fails for 30 attempts while the stack
+          # is actually live and healthy. Nightly is unaffected: it health-checks
+          # 127.0.0.1, which is always in the allow set.
+          PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,localhost,127.0.0.1
+          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33100
           # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
           # not SECRETS_DIR directly — without them it falls back to a
           # relative ./secrets/... path that doesn't exist on the runner.

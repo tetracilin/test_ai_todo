@@ -63,6 +63,14 @@ jobs:
         run: node --test ./scripts/__tests__/e2e-shard.test.mjs
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Test plugin-SDK dev symlinker
+        # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
+        # otherwise release-only and is deleted with the rest of upstream's
+        # release engineering. This one file is not a release test: it covers
+        # scripts/link-plugin-dev-sdk.mjs, the root `postinstall` that every
+        # build and test run depends on. vitest.config.ts declares no `scripts`
+        # project, so nothing else in CI executes it.
+        run: node --test ./scripts/link-plugin-dev-sdk.test.js
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
 
