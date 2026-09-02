@@ -259,11 +259,13 @@ describe("resolveEnvironmentExecutionTarget", () => {
   });
 
   it("resolves sandbox targets for every remote-managed adapter, including grok_local and kimi_local", async () => {
+    // gemini_local is intentionally absent: the Gemini local adapter was removed
+    // from the product (07557fc6e), so it is no longer in REMOTE_MANAGED_ADAPTERS.
     for (const adapterType of [
       "claude_local",
       "codex_local",
       "cursor",
-      "gemini_local",
+
       "grok_local",
       "kimi_local",
       "opencode_local",
