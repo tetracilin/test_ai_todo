@@ -809,6 +809,41 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       emit("");
     }
 
+    // Check constraints. Emitted before the data below, so a restore fails
+    // loudly on rows the constraint rejects rather than quietly producing a
+    // database that accepts values the schema forbids. `pg_get_constraintdef`
+    // renders the predicate rather than reconstructing it, so an expression
+    // this dumper does not understand still round-trips.
+    const allCheckConstraints = await sql<{
+      constraint_name: string;
+      schema_name: string;
+      tablename: string;
+      definition: string;
+    }[]>`
+      SELECT c.conname AS constraint_name,
+             n.nspname AS schema_name,
+             t.relname AS tablename,
+             pg_get_constraintdef(c.oid) AS definition
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE c.contype = 'c'
+        AND c.conislocal
+        AND ${sql.unsafe(nonSystemSchemaPredicate("n.nspname"))}
+      ORDER BY n.nspname, t.relname, c.conname
+    `;
+    const checks = allCheckConstraints.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
+
+    if (checks.length > 0) {
+      emit("-- Check constraints");
+      for (const check of checks) {
+        emitStatement(
+          `ALTER TABLE ${quoteQualifiedName(check.schema_name, check.tablename)} ADD CONSTRAINT "${check.constraint_name}" ${check.definition};`,
+        );
+      }
+      emit("");
+    }
+
     // Indexes (non-primary, non-unique-constraint). Emitted before foreign
     // keys: PostgreSQL requires referenced columns to be backed by a UNIQUE
     // constraint or index when a FOREIGN KEY is added, and standalone unique
