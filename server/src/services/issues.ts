@@ -94,6 +94,9 @@ import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { redactSensitiveText } from "../redaction.js";
 import { resolveIssueGoalId, resolveNextIssueGoalId } from "./issue-goal-fallback.js";
+// PC-011 AC1 provenance union, declared once in the schema layer and given its
+// meaning by the wedge-metric reader.
+import type { EvidenceSource } from "./evidence-provenance.js";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
@@ -9002,9 +9005,20 @@ export function issueService(db: Db) {
       return redactIssueComment(comment, currentUserRedactionOptions.enabled);
     },
 
+    /**
+     * PC-011 AC1: an attachment IS a filing act, so the row carries its own
+     * `source` provenance and the wedge metric unions this table with
+     * `issue_evidence_links`. `source` is a required input rather than a
+     * defaulted one: it used to be omitted entirely, which left the DB default
+     * 'manual' on every attachment and made `bot` unwritable on this table --
+     * a structural bias in `wp0_evidence_via_bot`'s denominator that no amount
+     * of real bot adoption could correct. Callers must state the provenance of
+     * the filing act they are performing.
+     */
     createAttachment: async (input: {
       issueId: string;
       issueCommentId?: string | null;
+      source: EvidenceSource;
       provider: string;
       objectKey: string;
       contentType: string;
@@ -9056,6 +9070,7 @@ export function issueService(db: Db) {
             issueId: issue.id,
             assetId: asset.id,
             issueCommentId: input.issueCommentId ?? null,
+            source: input.source,
           })
           .returning();
 
@@ -9065,6 +9080,7 @@ export function issueService(db: Db) {
           issueId: attachment.issueId,
           issueCommentId: attachment.issueCommentId,
           assetId: attachment.assetId,
+          source: attachment.source,
           provider: asset.provider,
           objectKey: asset.objectKey,
           contentType: asset.contentType,
@@ -9087,6 +9103,10 @@ export function issueService(db: Db) {
           issueId: issueAttachments.issueId,
           issueCommentId: issueAttachments.issueCommentId,
           assetId: issueAttachments.assetId,
+          // PC-011 AC2 provenance of the filing act. Selected here as well as on
+          // createAttachment's return so a consumer reading `source` off a POST
+          // response finds the same field when it re-reads the attachment.
+          source: issueAttachments.source,
           provider: assets.provider,
           objectKey: assets.objectKey,
           contentType: assets.contentType,
@@ -9111,6 +9131,7 @@ export function issueService(db: Db) {
           issueId: issueAttachments.issueId,
           issueCommentId: issueAttachments.issueCommentId,
           assetId: issueAttachments.assetId,
+          source: issueAttachments.source,
           provider: assets.provider,
           objectKey: assets.objectKey,
           contentType: assets.contentType,

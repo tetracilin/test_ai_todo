@@ -53,6 +53,8 @@ import {
   upsertIssueFeedbackVoteSchema,
   upsertIssueWatchdogSchema,
   linkIssueApprovalSchema,
+  externalObjectProviderKeySchema,
+  externalObjectTypeSchema,
   issueDocumentKeySchema,
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
   ISSUE_WATCHDOG_DISCOVERY_KINDS,
@@ -234,6 +236,7 @@ import {
   type TrustPresetResolution,
 } from "../services/trust-preset-resolver.js";
 import { externalObjectService } from "../services/external-objects.js";
+import { issueEvidenceLinkService, type EvidenceSource } from "../services/issue-evidence-links.js";
 import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
 import {
   assertIssueReviewVerdictActorAllowed,
@@ -274,6 +277,69 @@ const inboxArchiveBodySchema = z.object({
 const externalObjectSummariesSchema = z.object({
   issueIds: z.array(z.string().guid()).max(1000),
 }).strict();
+
+// Evidence-link write path (PC-007 AC7). Either link an external object that
+// already exists, or describe a static evidence row to file -- provider
+// `teable` (a row URL) and provider `nas` (a PATH REFERENCE ONLY, no bytes,
+// PC-007 AC3 / AD-021 / C16) both go through the descriptor branch, since
+// neither has a URL detector that would ever have created the object.
+// `source` is deliberately NOT accepted here, so a caller cannot inflate the
+// `wp0_evidence_via_bot` metric. It is not derived from the actor either --
+// every HTTP filing act records the constant `HTTP_EVIDENCE_SOURCE`; see that
+// docblock for why the actor class is the wrong discriminator.
+const linkIssueEvidenceSchema = z.union([
+  z.object({ externalObjectId: z.string().guid() }).strict(),
+  z.object({
+    providerKey: externalObjectProviderKeySchema,
+    objectType: externalObjectTypeSchema,
+    externalId: z.string().trim().min(1).max(1_024),
+    displayTitle: z.string().trim().min(1).max(200).optional(),
+    url: z.string().trim().url().max(2_048).optional(),
+  }).strict(),
+]);
+const moveIssueEvidenceSchema = z.object({
+  toIssueId: z.string().guid(),
+}).strict();
+
+/**
+ * PC-011 AC2 provenance for a filing act that arrives over HTTP.
+ *
+ * AC2 reads: "Bot-filed evidence (PC-007 via chat) writes `source=bot`;
+ * UI/API-filed evidence defaults to `manual`." `bot` therefore means one
+ * specific producer -- the WP-0 chat bot -- not automation in general, because
+ * `wp0_evidence_via_bot` is the wedge metric for the CHAT surface.
+ *
+ * This constant used to be `actor.actorType === "agent" ? "bot" : "manual"`.
+ * That is the wrong discriminator in both directions:
+ *   - Too wide: `getActorInfo` (routes/authz.ts) returns actorType 'agent' for
+ *     every agent API key and agent JWT. PC-007 AC2's commit auto-linker runs
+ *     under a coding agent's key, so an engineer who never sent a single chat
+ *     message could still read as 90% bot adoption. An INFLATED ratio falsely
+ *     passes the pilot band, which is the worse of the two errors.
+ *   - Too narrow: the shipped Discord bridge does not authenticate as an agent
+ *     at all -- it holds `PAPERCLIP_DISCORD_BRIDGE_TOKEN` and never reaches
+ *     `getActorInfo` (see routes/discord-integrations.ts). So the one producer
+ *     closest to being "the bot" would not have matched anyway.
+ * Nothing on the request can distinguish the WP-0 chat bot today: agent key
+ * scopes are {standard, task_bridge, skill_test} (packages/shared
+ * validators/agent.ts) with no chat kind, and `discord_guild_integrations`
+ * maps guilds to companies, never to an agent identity. Widening
+ * `EVIDENCE_SOURCES` to give non-chat automation its own value is the other
+ * honest option, but that union lives in packages/db and is out of this
+ * change's scope.
+ *
+ * So every HTTP filing act records `manual` -- the AC's own default for the
+ * UI/API surface -- and `bot` is written only by a producer that states its
+ * intent explicitly at the service call
+ * (`issueEvidenceLinkService(db).link(..., "bot", ...)` /
+ * `createAttachment({ source: "bot" })`). The WP-0 chat path (PC-007 AC1/AC2)
+ * does not exist yet; when it lands it must pass "bot" itself rather than
+ * inherit it from authentication. Until then the metric UNDER-counts `bot`,
+ * which reads as 'abort' rather than a false 'pass' -- a pilot that looks
+ * worse than it is can be investigated; one that looks better than it is
+ * cannot.
+ */
+const HTTP_EVIDENCE_SOURCE: EvidenceSource = "manual";
 
 const promoteLowTrustOutputSchema = z.object({
   sourceArtifactKind: z.enum(["comment", "document", "work_product", "issue"]),
@@ -2832,6 +2898,7 @@ export function issueRoutes(
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const issueEvidenceLinksSvc = issueEvidenceLinkService(db);
   const recoveryActionsSvc = issueRecoveryActionService(db);
   const executionWorkspacesSvc = executionWorkspaceServiceDirect(db);
   const workProductsSvc = workProductService(db);
@@ -8472,6 +8539,192 @@ export function issueRoutes(
     res.json({ ok: true });
   });
 
+  // -- Evidence links (PC-007 AC6/AC7). These are the first-class issue <->
+  // external_object linkage the PC-001 gate counts; mention rows are never
+  // evidence. Writes take the same guards as the attachment path, since an
+  // evidence link is a deliverable artifact: a cheap status-only recovery run
+  // must not be able to manufacture the evidence that lets it close a card.
+
+  router.get("/issues/:id/evidence-links", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, getIssueById(req, id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    const links = await issueEvidenceLinksSvc.listForIssue(id);
+    res.json(links);
+  });
+
+  router.post("/issues/:id/evidence-links", validate(linkIssueEvidenceSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+    const actor = getActorInfo(req);
+    // PC-011 AC2 provenance is never taken from the body (the schema is
+    // `.strict()`, so sending `source` is a 400) and never inferred from the
+    // actor class -- see HTTP_EVIDENCE_SOURCE for why.
+    const source = HTTP_EVIDENCE_SOURCE;
+    // The audit entry is written INSIDE the service transaction, so the link
+    // row and its `issue.evidence_linked` entry commit or roll back together.
+    // That also closes the retry hole: a `created: false` reply can only come
+    // from a first attempt that committed its entry.
+    //
+    // The ROW is transactional; the ANNOUNCEMENT is not. `publishActivity` fans
+    // out to SSE subscribers and out-of-process plugin handlers, neither of
+    // which can be rolled back, so publishing from inside the transaction would
+    // let a link that never commits still be seen by the UI and acted on by a
+    // plugin. Collect the publications and drain them only once the transaction
+    // has returned -- the same `postCommitActivityPublications` discipline
+    // issueService().update uses.
+    const evidencePublications: ActivityPublication[] = [];
+    const { link, created } = await issueEvidenceLinksSvc.link(id, req.body, source, async (tx, result) => {
+      if (!result.created) return;
+      await logActivity(tx, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.evidence_linked",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          evidenceLinkId: result.link.id,
+          externalObjectId: result.link.externalObjectId,
+          providerKey: result.link.providerKey,
+          objectType: result.link.objectType,
+          source,
+        },
+      }, evidencePublications);
+    });
+    for (const publication of evidencePublications) publishActivity(publication);
+
+    res.status(created ? 201 : 200).json(link);
+  });
+
+  // AC6 correction path: mis-filed evidence is unlinked through a route that
+  // always writes an activity_log entry -- never a silent deletion.
+  router.delete("/issues/:id/evidence-links/:linkId", async (req, res) => {
+    const id = req.params.id as string;
+    const linkId = req.params.linkId as string;
+    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+    const actor = getActorInfo(req);
+    // Deleted and logged in one transaction: if the audit write fails the
+    // delete rolls back, so AC6's "never a silent deletion" holds structurally
+    // rather than by ordering luck. The live/plugin announcement stays OUTSIDE
+    // the transaction (see the link route) -- it cannot be rolled back.
+    const evidencePublications: ActivityPublication[] = [];
+    await issueEvidenceLinksSvc.unlink(id, linkId, async (tx, removed) => {
+      await logActivity(tx, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.evidence_unlinked",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          evidenceLinkId: linkId,
+          externalObjectId: removed.externalObjectId,
+          providerKey: removed.providerKey,
+          objectType: removed.objectType,
+          source: removed.source,
+        },
+      }, evidencePublications);
+    });
+    for (const publication of evidencePublications) publishActivity(publication);
+
+    res.json({ ok: true });
+  });
+
+  // AC6 "a moved link records where it went": two activity_log entries, one on
+  // each card, so neither issue's record has an unexplained gap.
+  router.post(
+    "/issues/:id/evidence-links/:linkId/move",
+    validate(moveIssueEvidenceSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const linkId = req.params.linkId as string;
+      const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+      if (!issue) return;
+      if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+      if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+      const toIssueId = req.body.toIssueId as string;
+      const target = await getAccessibleResource(req, res, svc.getById(toIssueId), "Target issue not found");
+      if (!target) return;
+      if (!(await assertAgentIssueMutationAllowed(req, res, target))) return;
+
+      const actor = getActorInfo(req);
+      const actorFields = {
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+      };
+      // Both entries are written inside the move transaction: a re-parent that
+      // logged on only one of the two cards would leave the other card's
+      // record with an unexplained gap, which is what AC6 forbids. Their
+      // announcements are held back until the transaction commits (see the link
+      // route): the second entry can fail after the first is written, and a
+      // rolled-back move must never have been broadcast as done.
+      const evidencePublications: ActivityPublication[] = [];
+      const moved = await issueEvidenceLinksSvc.move(id, linkId, toIssueId, async (tx, result) => {
+        const evidenceFields = {
+          externalObjectId: result.link.externalObjectId,
+          providerKey: result.link.providerKey,
+          objectType: result.link.objectType,
+          // `source` is the surviving row's provenance; `movedSource` is the
+          // filing act that actually moved. On a merge they differ, and
+          // reporting only the survivor's would state the wrong provenance on
+          // the correction line PC-002 renders from these entries.
+          source: result.link.source,
+          movedSource: result.movedSource,
+          merged: result.merged,
+        };
+        await logActivity(tx, {
+          companyId: issue.companyId,
+          ...actorFields,
+          action: "issue.evidence_moved",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            ...evidenceFields,
+            evidenceLinkId: linkId,
+            toIssueId: result.toIssue.id,
+            toIssueIdentifier: result.toIssue.identifier,
+          },
+        }, evidencePublications);
+        await logActivity(tx, {
+          companyId: issue.companyId,
+          ...actorFields,
+          action: "issue.evidence_linked",
+          entityType: "issue",
+          entityId: result.toIssue.id,
+          details: {
+            ...evidenceFields,
+            evidenceLinkId: result.link.id,
+            fromIssueId: result.fromIssue.id,
+            fromIssueIdentifier: result.fromIssue.identifier,
+          },
+        }, evidencePublications);
+      });
+      for (const publication of evidencePublications) publishActivity(publication);
+
+      res.json(moved.link);
+    },
+  );
+
   router.post("/companies/:companyId/issues", applyCreateIssueStatusDefault, validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -13081,6 +13334,11 @@ export function issueRoutes(
     const attachment = await svc.createAttachment({
       issueId,
       issueCommentId: parsedMeta.data.issueCommentId ?? null,
+      // PC-011 AC1: an uploaded file is a filing act and carries its own
+      // provenance, counted in the same wedge metric as an evidence link. This
+      // is the UI/API upload surface, so AC2's default applies -- see
+      // HTTP_EVIDENCE_SOURCE.
+      source: HTTP_EVIDENCE_SOURCE,
       provider: stored.provider,
       objectKey: stored.objectKey,
       contentType: stored.contentType,
