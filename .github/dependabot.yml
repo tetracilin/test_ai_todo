@@ -2,23 +2,35 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: "/"
+    # Fork flow: everything lands on develop first (CLAUDE.md, "Branch flow").
+    # Dependabot defaults to the repo default branch, which would aim these at main.
+    target-branch: develop
     schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-    # Each dependency update gets its own pull request, including major
-    # version bumps. A grouped major PR cannot merge when one member has
-    # a blocked upgrade, so it hides the other ready majors. Separate PRs
-    # let each major land on its own. The limit holds the initial burst
-    # of pending majors plus the regular minor and patch updates.
-    open-pull-requests-limit: 20
+      interval: monthly
+    # Minors and patches are grouped so the queue stays reviewable — there were 20+
+    # unreviewed single-dependency PRs open before the fork cleanup.
+    #
+    # Majors stay ungrouped deliberately: a grouped major PR cannot merge when one
+    # member has a blocked upgrade, and that hides the other ready majors.
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
 
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: develop
     schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
+      interval: monthly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
