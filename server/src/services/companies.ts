@@ -141,6 +141,7 @@ export function companyService(db: Db) {
     attachmentMaxBytes: companies.attachmentMaxBytes,
     defaultResponsibleUserId: companies.defaultResponsibleUserId,
     requireBoardApprovalForNewAgents: companies.requireBoardApprovalForNewAgents,
+    evidenceGateEnabled: companies.evidenceGateEnabled,
     interactionResolverGovernance: companies.interactionResolverGovernance,
     feedbackDataSharingEnabled: companies.feedbackDataSharingEnabled,
     feedbackDataSharingConsentAt: companies.feedbackDataSharingConsentAt,
