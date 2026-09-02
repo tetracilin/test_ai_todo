@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, pgTable, uuid, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { issues } from "./issues.js";
 import { assets } from "./assets.js";
@@ -23,5 +24,8 @@ export const issueAttachments = pgTable(
     companyIssueIdx: index("issue_attachments_company_issue_idx").on(table.companyId, table.issueId),
     issueCommentIdx: index("issue_attachments_issue_comment_idx").on(table.issueCommentId),
     assetUq: uniqueIndex("issue_attachments_asset_uq").on(table.assetId),
+    // F-011-1: the union is enforced in the database on both evidence tables,
+    // not only in TypeScript. See `issue_evidence_links_source_check`.
+    sourceCheck: check("issue_attachments_source_check", sql`${table.source} in ('bot', 'manual', 'system')`),
   }),
 );
