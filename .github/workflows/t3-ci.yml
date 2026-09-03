@@ -1,0 +1,154 @@
+# t3-ci — merge gate. Runs on every PR into develop or main, and on pushes to them.
+# GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
+#
+# Required status checks for branch protection — use these EXACT names:
+#   "unit", "build", "build-image"
+#
+# NOT "t3-ci / unit". For GitHub Actions the status-check context is the JOB name,
+# not "<workflow> / <job>". Verified against the API:
+#   gh api repos/tetracilin/test_ai_todo/commits/<sha>/check-runs --jq '.check_runs[].name'
+# returns bare `unit`, `build`, `build-image`. A prefixed name matches no check, and
+# branch protection then waits forever for a context that never reports — the same
+# deadlock the deleted pr.yml's `verify`/`e2e` left on main.
+#
+# Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
+# jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
+# See PLAN_CICD.md §1.2 and doc/ORIGIN.md.
+
+name: t3-ci
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Salvaged from pr.yml `policy` (fork guards only — the release-manifest and
+  # lockfile-bot steps were deleted) plus the typecheck half of
+  # pr.yml `typecheck_release_registry`.
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Enforce SSoT guards
+        run: node ./scripts/check-ssot-guards.mjs
+      - name: Validate Dockerfile deps stage
+        run: node ./scripts/check-docker-deps-stage.mjs
+      - name: Reject git push in adapter/runtime code
+        run: node ./scripts/check-no-git-push.mjs
+      - name: Test no-git-push check
+        run: node --test ./scripts/check-no-git-push.test.mjs
+      - name: Enforce forbidden runtime gate
+        run: pnpm check:no-google-runtime
+      - name: Test forbidden runtime inventory
+        run: pnpm test:check-no-google-runtime
+      - name: Test client bundle scanner
+        run: pnpm test:scan-client-bundle
+      - name: Test general-server shard partition
+        run: node --test ./scripts/__tests__/run-vitest-stable-shard.test.mjs
+      - name: Test e2e shard partition
+        run: node --test ./scripts/__tests__/e2e-shard.test.mjs
+      - name: Test standalone package build concurrency
+        run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Test plugin-SDK dev symlinker
+        # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
+        # otherwise release-only and is deleted with the rest of upstream's
+        # release engineering. This one file is not a release test: it covers
+        # scripts/link-plugin-dev-sdk.mjs, the root `postinstall` that every
+        # build and test run depends on. vitest.config.ts declares no `scripts`
+        # project, so nothing else in CI executes it.
+        run: node --test ./scripts/link-plugin-dev-sdk.test.js
+      - name: Typecheck workspaces whose build scripts skip TypeScript
+        run: pnpm run typecheck:build-gaps
+
+      # PLAN_CICD.md section 1.2 classifies code-behaviour tests as fast
+      # (< 5 min -> this job) or slow (sharded server vitest, e2e ->
+      # t3-nightly.yml). The fast half was never wired up: before this step the
+      # job ran guard scripts and four `node --test` script tests, and no
+      # vitest at all, so a pull request went green with every unit test in it
+      # failing.
+      #
+      # These two groups are the non-server vitest projects. They need no
+      # embedded Postgres, which is what makes the server suites slow and
+      # contention-prone. `general-server` and the serialized suites stay in
+      # t3-nightly.yml, exactly as section 1.2 specifies.
+      - name: Unit tests (shared, db, adapters, plugin SDK)
+        run: pnpm run test:run:general --group general-workspaces-b
+      - name: Unit tests (ui, cli)
+        run: pnpm run test:run:general --group general-workspaces-a
+
+      # discord-bridge is not a pnpm workspace member (see pnpm-workspace.yaml)
+      # and carries its own package-lock.json, so the vitest projects above
+      # never reach it. It needs its own npm invocation.
+      - name: Unit tests (discord-bridge)
+        working-directory: discord-bridge
+        run: npm ci && npm test
+
+  # Salvaged wholesale from pr.yml `build`. The client-bundle scan and the
+  # no-google network guard are security gates and must block a merge, so this
+  # is a required check rather than nightly-only.
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Scan client bundle
+        run: pnpm scan:client-bundle
+      - name: Install Chromium for client network guard
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify client network guard
+        run: pnpm test:e2e:no-google-network
+
+  # The image build is the gate that actually matters for deploys.
+  # Same build-args as the deploy workflows so CI exercises the same Dockerfile path.
+  build-image:
+    name: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: false
+          build-args: |
+            PAPERCLIP_BUILD_COMMIT=${{ github.sha }}
+            PAPERCLIP_BUILD_VERSION=ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

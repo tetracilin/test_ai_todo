@@ -694,9 +694,34 @@ export function listServerAdapters(): ServerAdapterModule[] {
   return Array.from(adaptersByType.values());
 }
 
+/**
+ * Adapters an operator may pick when creating an agent.
+ *
+ * The default stays hermes_gateway only, as commit c1ffeec6 ("enforce Hermes
+ * Gateway AI flow") established. PAPERCLIP_SELECTABLE_ADAPTER_TYPES widens it
+ * for one instance without changing that default anywhere else.
+ *
+ * The local adapters need their CLI on the host: claude_local needs Claude
+ * Code. Registration does not check for it, so an instance that has it must
+ * say so. A comma-separated list replaces the default. Unknown or
+ * unregistered types are skipped, so a stale entry degrades the list instead
+ * of failing the instance.
+ */
 export function listSelectableServerAdapters(): ServerAdapterModule[] {
-  const hermesGateway = findActiveServerAdapter("hermes_gateway");
-  return hermesGateway ? [hermesGateway] : [];
+  const declared = (process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const types = declared.length > 0 ? declared : ["hermes_gateway"];
+  const seen = new Set<string>();
+  const selectable: ServerAdapterModule[] = [];
+  for (const type of types) {
+    if (seen.has(type)) continue;
+    seen.add(type);
+    const adapter = findActiveServerAdapter(type);
+    if (adapter) selectable.push(adapter);
+  }
+  return selectable;
 }
 
 /**

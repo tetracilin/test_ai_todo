@@ -5,10 +5,19 @@ previous known-good commit. Applies to the K16 staging project (`t3-staging`),
 never to the live host-network Paperclip (port 3100) or the production `deploy/`
 project. Target time to execute the full revert is under 15 minutes.
 
+> **Superseded (hard fork, 2026-09-02):** `.github/workflows/discord-staging.yml`
+> was deleted with the rest of the non-`t3-*` workflows (see `doc/ORIGIN.md`).
+> This fork now ships only `t3-ci`, `t3-nightly` and `t3-release`, so the automated
+> `Discord staging deploy` path described below **no longer exists**. The compose
+> project, secrets layout, healthcheck probe and the manual recovery commands in
+> §§3–5 are still accurate and remain the supported way to operate the staging
+> bridge by hand on the host. Re-read every "run the workflow" instruction as
+> "run the equivalent command on the staging host".
+
 Scope and sources:
 
-- Deployment pipeline: `.github/workflows/discord-staging.yml` (manual
-  `Discord staging deploy` workflow).
+- Deployment pipeline: none — previously `.github/workflows/discord-staging.yml`
+  (manual `Discord staging deploy` workflow), removed at the hard fork.
 - Service definition: `deploy-staging/compose.yaml` (project `t3-staging`).
 - Verification probe: `deploy-staging/scripts/healthcheck.sh`.
 - Integration contract: `docs/discord-integration.md`.

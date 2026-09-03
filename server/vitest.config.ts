@@ -13,6 +13,14 @@ export default defineConfig({
     // mirrors it for the same reason.
     hookTimeout: 30000,
     teardownTimeout: 30000,
+    // Some route tests (e.g. document-annotation-routes.test.ts) call
+    // vi.importActual on multi-thousand-line route modules from inside the
+    // first test body rather than a hook. The one-time transform/JIT warm-up
+    // for that import can cross vitest's default 5s testTimeout under a
+    // loaded CI runner, timing out whichever test happens to run first in
+    // the file even though the request itself resolves in milliseconds.
+    // 20s is far above the observed worst-case cold start.
+    testTimeout: 20000,
     isolate: true,
     maxConcurrency: 1,
     maxWorkers: 1,

@@ -1,0 +1,253 @@
+# t3-nightly — builds `develop`, deploys it to the t3-nightly stack on kmv8, then runs
+# the slow test suite (salvaged from upstream pr.yml) against the deployed stack.
+# Replaces /root/.hermes/scripts/t3-nightly-build.sh + Hermes cron 8b51805f9dc5.
+#
+# Triggers: 22:00 UTC daily, or on demand (Run workflow). Optionally also on every
+# push to develop — uncomment the `push:` block if you want continuous staging.
+#
+# Runs on the self-hosted runner (label: kmv8). Only `develop` is ever deployed here.
+
+name: t3-nightly
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (default: develop)"
+        required: false
+        default: develop
+  # push:
+  #   branches: [develop]
+
+permissions:
+  contents: read
+
+# Never run two nightly deploys at once; never cancel one mid-deploy.
+concurrency:
+  group: t3-deploy-nightly
+  cancel-in-progress: false
+
+env:
+  COMPOSE_PROJECT: t3-nightly
+  COMPOSE_FILE: deploy/compose.yaml
+  IMAGE_NAME: paperclip
+  HEALTH_URL: http://127.0.0.1:33130/api/health
+  # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-nightly.
+  SECRETS_DIR: /etc/t3/secrets/nightly
+
+jobs:
+  deploy:
+    name: build-and-deploy-nightly
+    runs-on: [self-hosted, kmv8]
+    # No `outputs:` here on purpose. slow-tests deliberately does NOT `needs:`
+    # this job (ASSUMPTION A6): Playwright bootstraps its own instance, so the
+    # suite runs on a GitHub-hosted runner even when the deploy guard skips.
+    # Coupling them would make a skipped deploy silently skip the tests too.
+    environment:
+      name: staging
+      url: http://127.0.0.1:33130
+    timeout-minutes: 30
+    steps:
+      - name: Skip scheduled run if develop has no new commits
+        # Cheap guard: the last deployed sha is recorded in a marker file on the host.
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.ref || 'develop' }}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/.t3-deploy"
+          last=$(cat "$HOME/.t3-deploy/nightly.sha" 2>/dev/null || echo none)
+          head=$(git ls-remote --quiet "https://github.com/${{ github.repository }}.git" "refs/heads/$ref" | cut -f1)
+          [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "schedule" && "$last" == "$head" ]]; then
+            echo "no changes on $ref since last deploy ($last) — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          ref: ${{ steps.guard.outputs.ref }}
+          fetch-depth: 1
+          clean: true   # runner workspace is disposable; never a shared checkout
+
+      - name: Verify secrets present (fail early)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in postgres_password better_auth_secret; do
+            [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
+          done
+
+      - name: Compute image tag
+        if: steps.guard.outputs.skip == 'false'
+        id: tag
+        shell: bash
+        run: |
+          short=$(git rev-parse --short=8 HEAD)
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "full=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE_NAME:nightly-$short" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${{ steps.tag.outputs.image }}" \
+            -f Dockerfile \
+            --build-arg PAPERCLIP_BUILD_COMMIT="${{ steps.tag.outputs.full }}" \
+            --build-arg PAPERCLIP_BUILD_VERSION="nightly-${{ steps.tag.outputs.short }}" \
+            .
+
+      - name: Deploy (compose up)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        env:
+          # ASSUMPTION A1 — these must match what deploy/compose.yaml reads.
+          PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
+          PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
+          PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
+          # not SECRETS_DIR directly — without them it falls back to a
+          # relative ./secrets/... path that doesn't exist on the runner.
+          POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
+          BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
+        run: |
+          set -euo pipefail
+          docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+
+      - name: Health check (verifies deployed commit, not just HTTP 200)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: deploy/scripts/healthcheck.sh "$HEALTH_URL" "${{ steps.tag.outputs.full }}" 30 5
+
+      - name: Record deployed sha
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: echo "${{ steps.tag.outputs.full }}" > "$HOME/.t3-deploy/nightly.sha"
+
+      - name: Image retention (keep current + 1 rollback)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        run: deploy/scripts/image-retention.sh "$IMAGE_NAME" nightly 2
+
+      - name: Version drift report
+        if: steps.guard.outputs.skip == 'false'
+        id: drift
+        shell: bash
+        run: |
+          out=$(deploy/scripts/version-drift.sh 2>&1 || true)
+          { echo "report<<EOF"; echo "$out"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Discord report
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Host-derived, multi-line, and not ours to trust: version-drift.sh
+          # output must reach bash as data, never be interpolated into the
+          # script source where a quote or $( ) span would be evaluated.
+          DRIFT: ${{ steps.drift.outputs.report }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
+          status="${{ job.status }}"
+          if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
+            emoji="⏭️"; line="nightly: no changes on develop, skipped"
+          elif [[ "$status" == "success" ]]; then
+            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to :33130"
+          else
+            emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
+          fi
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${DRIFT:-(no drift report)}")
+          jq -n --arg c "$content" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  # Slow suites salvaged from upstream pr.yml (general_tests, verify_serialized_server,
+  # e2e_shards). See PLAN_CICD.md §1.2.
+  #
+  # ASSUMPTION A6 CORRECTED (2026-09-02): the e2e suite does NOT accept an external base
+  # URL. tests/e2e/playwright.config.ts declares a `webServer:` block that bootstraps a
+  # throwaway instance on 127.0.0.1:$PORT and waits on its own /api/health. Pointing it at
+  # the deployed :33130 stack is impossible, so per the plan's own fallback this job runs
+  # independently of `deploy` — and therefore on a GitHub-hosted runner, which keeps the
+  # suite off kmv8 and lets it run even when the deploy guard skips.
+  #
+  # pr.yml sharded these across a matrix purely for PR latency. Nightly has no latency
+  # budget, so it uses the repo's own stable runner (scripts/run-vitest-stable.mjs), which
+  # already serializes the suites that contend over embedded Postgres.
+  slow-tests:
+    name: slow-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Full vitest suite (general + serialized)
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+
+      - name: Install Chromium
+        # Deliberately Playwright's bundled Chromium, NOT the runner's stable
+        # Google Chrome. pr.yml and e2e.yml both pinned
+        # PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome; this fork drops that on purpose
+        # (docs/migration/test-ai-todo-inventory.md: replace Google Chrome
+        # invocation with vendor-neutral browser tooling; see also the
+        # check:no-google-runtime gate in t3-ci). Bundled Chromium is also
+        # version-pinned by the Playwright dependency, so nightly results do
+        # not move when the runner image bumps Chrome.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E (Playwright bootstraps its own instance)
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-nightly
+          # test-results/ carries the failure screenshots and first-retry
+          # traces (playwright.config.ts). Without it an unattended 22:00 UTC
+          # failure arrives with nothing to triage from the next morning.
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Discord report (slow tests)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          jq -n --arg c "$(printf '⚠️ nightly slow-tests FAILED on develop\n<%s>' "$run_url")" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null

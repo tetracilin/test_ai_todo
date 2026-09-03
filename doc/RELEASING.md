@@ -1,5 +1,13 @@
 # Releasing Paperclip
 
+> **OBSOLETE for this fork (2026-09-02).** This is upstream's npm release runbook. Every
+> workflow it references (`release.yml`, `release-smoke.yml`, `docker.yml`,
+> `release-verify.yml`) was deleted at the hard fork, and this fork does not publish to npm
+> — see `doc/ORIGIN.md`. **The live release procedure is `CLAUDE.md` → "Releasing to
+> production"**: PR `develop` → `main`, tag `vX.Y.Z` on `main`, then approve the
+> `t3-release` production gate. Do not follow the instructions below; they are retained only
+> as a record of the upstream process pending a full rewrite of this file.
+
 Maintainer runbook for shipping Paperclip across npm, GitHub, and the website-facing changelog surface.
 
 The release model is now commit-driven:
