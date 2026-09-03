@@ -444,11 +444,39 @@ async function constraintExists(
   return rows[0]?.exists ?? false;
 }
 
+/**
+ * Drop SQL comments that sit above a statement, so the matchers below still
+ * recognise it. Every matcher is anchored at the start of the statement, and a
+ * migration that documents itself ("-- why this index is safe to add") would
+ * otherwise read as an unrecognisable statement -- which sends the reconciler
+ * down the "re-run it" path and fails on a database that already has the
+ * object. Comments must go before whitespace is collapsed, because a line
+ * comment ends at a newline.
+ */
+function stripLeadingSqlComments(statement: string): string {
+  let rest = statement.replace(/^\s+/, "");
+  for (;;) {
+    if (rest.startsWith("--")) {
+      const newline = rest.indexOf("\n");
+      if (newline === -1) return "";
+      rest = rest.slice(newline + 1).replace(/^\s+/, "");
+      continue;
+    }
+    if (rest.startsWith("/*")) {
+      const end = rest.indexOf("*/");
+      if (end === -1) return "";
+      rest = rest.slice(end + 2).replace(/^\s+/, "");
+      continue;
+    }
+    return rest;
+  }
+}
+
 async function migrationStatementAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   statement: string,
 ): Promise<boolean> {
-  const normalized = statement.replace(/\s+/g, " ").trim();
+  const normalized = stripLeadingSqlComments(statement).replace(/\s+/g, " ").trim();
 
   const createTableMatch = normalized.match(/^CREATE TABLE(?: IF NOT EXISTS)? "([^"]+)"/i);
   if (createTableMatch) {

@@ -38,6 +38,15 @@ export interface CompanyPortabilityCompanyManifestEntry {
   logoPath: string | null;
   attachmentMaxBytes: number | null;
   requireBoardApprovalForNewAgents: boolean;
+  /**
+   * PC-011 evidence gate. It is the pilot's on-switch and its documented
+   * rollback path, and it is operator-writable through
+   * `PATCH /api/companies/:companyId` -- so losing it across a round trip
+   * would silently re-open a gate the operator had closed. Absent in bundles
+   * written before schemaVersion 8, which normalize to the column default
+   * (false).
+   */
+  evidenceGateEnabled: boolean;
   feedbackDataSharingEnabled: boolean;
   feedbackDataSharingConsentAt: string | null;
   feedbackDataSharingConsentByUserId: string | null;
@@ -173,6 +182,50 @@ export interface CompanyPortabilityIssueAttachmentManifestEntry {
   originalFilename: string | null;
   byteSize: number;
   commentIndex: number | null;
+  /**
+   * PC-011 provenance of the filing act ("bot" | "manual" | "system"). Typed as
+   * a plain string because the legal values are declared in the db package
+   * (`EVIDENCE_SOURCES`), which `shared` sits below and cannot import; the
+   * server normalizer rejects anything outside the union. Bundles written
+   * before schemaVersion 8 carry no value and normalize to the column default.
+   */
+  source: string;
+}
+
+/**
+ * An external artifact that evidence links point at (`external_objects`).
+ *
+ * Registered ahead of `issue_evidence_links` because every link row is a
+ * NOT NULL FK onto this table -- carrying links without their objects would
+ * import as a foreign-key violation, not as restored evidence.
+ *
+ * Identity is (providerKey, objectType, externalId), the tuple the
+ * `external_objects_company_external_id_uq` index dedupes on, so importing a
+ * bundle into a company that already holds the artifact attaches to the
+ * existing row instead of duplicating it.
+ *
+ * Deliberately carries NO `data` payload and no bytes. Evidence filed against
+ * provider `nas` travels as a PATH REFERENCE ONLY (`sanitizedCanonicalUrl`):
+ * NAS file contents must never cross the export boundary (PC-007 AC3), and a
+ * regression there is a disclosure rather than a lost field.
+ */
+export interface CompanyPortabilityExternalObjectManifestEntry {
+  /** Bundle-local reference key, `<providerKey>:<objectType>:<externalId>`. */
+  ref: string;
+  providerKey: string;
+  objectType: string;
+  externalId: string;
+  sanitizedCanonicalUrl: string | null;
+  displayTitle: string | null;
+}
+
+/** One evidence filing act on a task: which artifact, and who filed it. */
+export interface CompanyPortabilityIssueEvidenceLinkManifestEntry {
+  /** `ref` of an entry in the manifest's top-level `externalObjects` list. */
+  objectRef: string;
+  /** PC-011 provenance of the filing act; see the attachment entry's `source`. */
+  source: string;
+  createdAt: string | null;
 }
 
 export interface CompanyPortabilityIssueManifestEntry {
@@ -200,6 +253,8 @@ export interface CompanyPortabilityIssueManifestEntry {
   workProducts?: CompanyPortabilityIssueWorkProductManifestEntry[];
   monitor?: CompanyPortabilityIssueMonitorManifestEntry | null;
   attachments?: CompanyPortabilityIssueAttachmentManifestEntry[];
+  /** Evidence links filed against this task (schemaVersion >= 8). */
+  evidenceLinks?: CompanyPortabilityIssueEvidenceLinkManifestEntry[];
   /** Slug of the parent task when it is part of the same bundle (schemaVersion >= 7). */
   parentSlug?: string | null;
   /** Preserved source timestamps as ISO strings (schemaVersion >= 7); absent in older bundles. */
@@ -266,6 +321,12 @@ export interface CompanyPortabilityManifest {
   labels?: CompanyPortabilityLabelManifestEntry[];
   blobs?: CompanyPortabilityBlobManifestEntry[];
   embeddedAssets?: CompanyPortabilityEmbeddedAssetManifestEntry[];
+  /**
+   * Company-scoped external artifacts referenced by task evidence links
+   * (schemaVersion >= 8). Bundle-level rather than per-task because one
+   * artifact can be filed as evidence on several cards.
+   */
+  externalObjects?: CompanyPortabilityExternalObjectManifestEntry[];
   agents: CompanyPortabilityAgentManifestEntry[];
   skills: CompanyPortabilitySkillManifestEntry[];
   projects: CompanyPortabilityProjectManifestEntry[];

@@ -12,6 +12,8 @@ const zeroCounts: ExportFidelityCounts = {
   issueDocuments: 0,
   issueWorkProducts: 0,
   issueAttachments: 0,
+  issueEvidenceLinks: 0,
+  externalObjects: 0,
   approvals: 0,
   costEvents: 0,
   activityLogEntries: 0,
@@ -32,6 +34,8 @@ describe("buildExportFidelityWarnings", () => {
       issueDocuments: 1,
       issueWorkProducts: 3,
       issueAttachments: 4,
+      issueEvidenceLinks: 5,
+      externalObjects: 3,
       issueMonitors: 8,
     })).toEqual([]);
   });

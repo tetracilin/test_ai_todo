@@ -158,6 +158,8 @@ function buildFidelityReport(warnings: ExportFidelityReport["warnings"]): Export
       issueDocuments: 0,
       issueWorkProducts: 0,
       issueAttachments: 0,
+      issueEvidenceLinks: 0,
+      externalObjects: 0,
       approvals: 0,
       costEvents: 0,
       activityLogEntries: 0,
