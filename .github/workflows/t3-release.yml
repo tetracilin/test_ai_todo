@@ -94,7 +94,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in postgres_password better_auth_secret; do
+          # The artifact keys are required by deploy/compose.yaml. Checking them
+          # here turns a missing file into a named error instead of a bind-mount
+          # failure several steps later.
+          for f in postgres_password better_auth_secret \
+                   paperclip_artifacts_access_key paperclip_artifacts_secret_key; do
             [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
           done
 
@@ -147,6 +151,8 @@ jobs:
           # would have hit this exact failure on the first real release.
           POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
           BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
+          PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_access_key
+          PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_secret_key
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
