@@ -65,6 +65,7 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  WORK_PACKAGE_LABEL_NAME,
 } from "@paperclipai/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
@@ -129,6 +130,11 @@ import {
 } from "./recovery/issue-graph-liveness.js";
 import { countEvidenceForIssue } from "./issue-evidence-links.js";
 import { issueDossierService } from "./issue-dossier.js";
+import {
+  incompleteWorkPackageChildren,
+  listWorkPackageChildren,
+  wpCloseExportService,
+} from "./wp-close-export.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -199,6 +205,14 @@ export const EVIDENCE_GATE_ACCEPTED_EVIDENCE_TYPES = ["issue_attachment", "issue
  * details carry `issueIdentifier` alongside this key.
  */
 export const EVIDENCE_GATE_CHAT_PHRASE_KEY: Wp0MessageId = "gate_rejection";
+
+/** PC-006 AC1: a WP (parent issue labelled "WP") cannot close with an incomplete child. */
+export const WP_CLOSE_GATE_REJECTION_MESSAGE =
+  "Issue cannot be marked done: it is a work package (label \"WP\") with a child card that is " +
+  "neither done nor cancelled. Close or cancel every child card before closing the work package.";
+
+/** Stable discriminator, so no consumer has to string-match the prose above. */
+export const WP_CLOSE_GATE_REJECTION_CODE = "wp_close_incomplete_children";
 
 function wakeRequestTargetsIssue(issueId: string) {
   return sql`(
@@ -7935,6 +7949,39 @@ export function issueService(db: Db) {
               issueIdentifier: receiptExisting.identifier ?? null,
             });
           }
+
+          // PC-006 AC1: closing a WP (a parent issue carrying the "WP" label,
+          // K6 domain map -- no work_packages table) refuses while any direct
+          // child card is neither done nor cancelled. Same commit-point choke
+          // as the evidence gate above, for the same reason (review finding
+          // 1.4): a separate hook here would re-fragment the one place every
+          // done-producing path already funnels through.
+          const [wpLabel] = await tx
+            .select({ id: labels.id })
+            .from(labels)
+            .where(and(eq(labels.companyId, receiptExisting.companyId), eq(labels.name, WORK_PACKAGE_LABEL_NAME)))
+            .limit(1);
+          if (wpLabel) {
+            // A request that both attaches the WP label and closes in the same
+            // PATCH must be gated on the label it is ABOUT to have, not the one
+            // it had before this call -- otherwise "add WP label + close" in one
+            // request would skip the gate entirely.
+            const isWorkPackage =
+              nextLabelIds !== undefined
+                ? nextLabelIds.includes(wpLabel.id)
+                : ((await labelMapForIssues(tx, [id])).get(id) ?? []).some((label) => label.id === wpLabel.id);
+            if (isWorkPackage) {
+              const children = await listWorkPackageChildren(tx, receiptExisting.companyId, id);
+              const incompleteChildren = incompleteWorkPackageChildren(children);
+              if (incompleteChildren.length > 0) {
+                throw unprocessable(WP_CLOSE_GATE_REJECTION_MESSAGE, {
+                  code: WP_CLOSE_GATE_REJECTION_CODE,
+                  incompleteChildIssueIds: incompleteChildren.map((child) => child.id),
+                  issueIdentifier: receiptExisting.identifier ?? null,
+                });
+              }
+            }
+          }
         }
 
         const [previousLabelsByIssueId, previousRelationSummaries] = await Promise.all([
@@ -8196,6 +8243,30 @@ export function issueService(db: Db) {
       const result = await (dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx));
       if (dbOrTx === db && !postCommitActivityPublications) {
         for (const publication of ownedActivityPublications) publishActivity(publication);
+      }
+      // PC-006 AC1: once a WP (a parent issue labelled "WP") successfully closes --
+      // the gate above already refused this transaction while a child card was
+      // incomplete -- render and persist the close-export bundle. Best-effort and
+      // post-commit, same pattern as the dossier intake seed above (`create()`): a
+      // bundle-generation failure must never undo or block the close itself, and
+      // the underlying data (dossier, evidence, wedge ratio) stays separately
+      // queryable/regenerable if this fails.
+      if (
+        dbOrTx === db &&
+        result &&
+        existing.status !== "done" &&
+        result.status === "done" &&
+        result.labels?.some((label: { name: string }) => label.name === WORK_PACKAGE_LABEL_NAME)
+      ) {
+        await wpCloseExportService(db)
+          .generateAndPersist(existing.companyId, id, {
+            agentId: actorAgentId ?? null,
+            userId: actorUserId ?? null,
+            runId: null,
+          })
+          .catch((err) => {
+            logger.warn({ err, issueId: id }, "failed to generate WP-close export bundle");
+          });
       }
       return result;
     },

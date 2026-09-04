@@ -437,6 +437,15 @@ export type IssueTreeHoldStatus = (typeof ISSUE_TREE_HOLD_STATUSES)[number];
 export const ISSUE_TREE_HOLD_RELEASE_POLICY_STRATEGIES = ["manual", "after_active_runs_finish"] as const;
 export type IssueTreeHoldReleasePolicyStrategy = (typeof ISSUE_TREE_HOLD_RELEASE_POLICY_STRATEGIES)[number];
 
+/**
+ * Company-scoped label name (`labels.name`) that marks a parent issue as a
+ * Slice 1 "work package" (K6 domain map: WPs are parent issues via
+ * `issues.parent_id`, no `work_packages` table — backlog.md PC-006/AC1). The
+ * PC-006 close gate and WP-close export bundle both key off this label plus
+ * `parent_id`, never a schema-level "kind" column.
+ */
+export const WORK_PACKAGE_LABEL_NAME = "WP" as const;
+
 export const ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY = "continuation-summary" as const;
 export const PIPELINE_CASE_BODY_DOCUMENT_KEY = "pipeline-case-body" as const;
 export const PIPELINE_AUTOMATION_DEFAULT_TITLE_TEMPLATE = "{{pipeline_name}} / {{stage_name}}: {{case_title}}" as const;
