@@ -41,6 +41,10 @@ services:
       PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
       PAPERCLIP_MIGRATION_PROMPT: never
       PAPERCLIP_SECRETS_STRICT_MODE: "true"
+      # Where the entrypoint materializes storage secrets that the
+      # unprivileged app user must read. Docker mounts /run/secrets root-owned,
+      # so the artifact keys are copied here and chowned before privileges drop.
+      PAPERCLIP_SECRETS_DIR: /run/paperclip-storage-secrets
       PAPERCLIP_TELEMETRY_DISABLED: "1"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
@@ -52,6 +56,8 @@ services:
     secrets:
       - postgres_password
       - better_auth_secret
+      - paperclip_artifacts_access_key
+      - paperclip_artifacts_secret_key
     volumes:
       - paperclip-data:/paperclip
       - ./paperclip-config.json:/etc/paperclip/config.json:ro
@@ -80,6 +86,14 @@ secrets:
     file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
   better_auth_secret:
     file: ${BETTER_AUTH_SECRET_FILE:-./secrets/better_auth_secret}
+  # Artifact storage (MinIO/S3) credentials. Production has always mounted
+  # these; they were missing here, so a deploy through this compose file would
+  # have dropped them. Each environment supplies its own values — staging must
+  # never carry production bucket credentials.
+  paperclip_artifacts_access_key:
+    file: ${PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE:-./secrets/paperclip_artifacts_access_key}
+  paperclip_artifacts_secret_key:
+    file: ${PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE:-./secrets/paperclip_artifacts_secret_key}
 
 volumes:
   postgres-data:
