@@ -48,8 +48,9 @@ table as provisional until you have grepped for it yourself; this table drifts.
 | `source=bot` **producer** | **still does not exist — deliberately** | `HTTP_EVIDENCE_SOURCE = "manual"` in `server/src/routes/issues.ts` — every HTTP filing act records `manual`. The chat bridge (F-DM-2/PC-004) is the only intended `bot` writer and is still unbuilt. See ENG-8. |
 | **Company export carries evidence links** | **not re-verified since the 2026-09-01 review** — treat the original finding (export silently drops `issue_evidence_links`) as still open until someone re-checks `company-portability.ts` against the shipped table | See review finding 1.2 in the review-findings section below |
 | Dossier persistence + hooks | **SHIPPED** — PR #81 | `issueDossierService(db)` in `server/src/services/issue-dossier.ts`, built on `documentService` (the same generic keyed-`issue_documents` mechanism `issue-continuation-summary.ts` uses). Create-on-intake (best-effort hook on `issueService(db).create()`), evidence-log hook (covers **both** `issue_evidence_links` and `issue_attachments` — product decision, wider than AC5's literal wording), clarification-answer hook, and a new agent-facing `POST /issues/:id/dossier/scope-changes` route (not best-effort) that mirrors as an issue comment. |
-| Scope-change timestamp query | **SHIPPED** — PR #81 | `queryScopeChangeTimestamps` in `issue-dossier.ts`. Function + tests only, no route (F-006-1, the eventual timeline consumer, is a later unit). |
-| Dossier renders in card UI (F-002-5) | **NOT SHIPPED** | The only remaining Lane A unit. The generic `GET /issues/:id/documents/:key` route already serves the dossier's raw content; this is the UI page/panel work. |
+| Scope-change timestamp query | **SHIPPED** — PR #81 | `queryScopeChangeTimestamps` in `issue-dossier.ts`. Function + tests only, no route; superseded as a timeline consumer by the WP-close export bundle below. |
+| WP-close export bundle (F-006-1, partial F-006-3) | **SHIPPED** — PR #84 | `server/src/services/wp-close-export.ts` — a parent issue carrying a company-scoped label named `WP` (`WORK_PACKAGE_LABEL_NAME`, K6 rule: no `work_packages` table) refuses to close while a child is neither `done` nor `cancelled` (same commit-point choke as the PC-001 gate, inside `issueService.update()`), and on success renders/persists a markdown bundle (dossier, evidence index, scope-change timeline, wedge ratio) as the WP's own `wp-close-export` document, best-effort and post-commit. One checked-in example fixture (`server/src/__tests__/fixtures/wp-close-export-example.md`) satisfies F-006-3's fixture half; **F-006-2 (commit to `Tecotec-JSc/T3-wiki` + CTO chat notification) is still unbuilt.** |
+| Dossier renders in card UI (F-002-5) | **NOT SHIPPED** | The only remaining Lane A/D read-surface unit. The generic `GET /issues/:id/documents/:key` route already serves both the dossier's and the WP-close export's raw content; this is the UI page/panel work. |
 | Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
 | Teable client | **still does not exist** | No module under `server/src/services/`. Lane B (F-010-*, F-005-1) is entirely unstarted. |
 | `doc/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
@@ -692,19 +693,30 @@ digest is exactly the failure mode that recreates the PM's manual summary.
 
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
-| F-006-1 | WP-close export bundle generator | F-002-3, F-011-3 | human: 3d / CC: 2h |
+| ~~F-006-1~~ | ~~WP-close export bundle generator~~ **SHIPPED — PR #84** | F-002-3, F-011-3 | human: 3d / CC: 2h |
 | F-006-2 | Commit to T3-wiki + CTO notification | F-006-1 | human: 1d / CC: 1h |
-| F-006-3 | Example bundle fixture | F-006-1 | human: 4h / CC: 30m |
+| ~~F-006-3~~ | ~~Example bundle fixture~~ **SHIPPED (fixture half) — PR #84** | F-006-1 | human: 4h / CC: 30m |
 | F-402-1 | Brief required before `in_progress` | — | human: 1d / CC: 1h |
 | F-402-2 | Commit auto-link from `PC-xxx` branches | F-007-3 | human: 1d / CC: 1h |
 | F-402-3 | Close requires commit + demo + test report | F-007-1 | human: 1d / CC: 1h |
 
-**F-006-1** — closing a parent issue labelled `WP` generates a markdown bundle: per-card
-dossier, activity summary, evidence index (links, hashes, counts), scope-change timeline, and
-the bot/manual ratio. Refuses while any child is neither `done` nor `cancelled`.
-**F-006-2** — bundle committed to `Tecotec-JSc/T3-wiki`; confidential content is NAS path
-references only, never bytes (AD-026); CTO notified in chat with the commit link within 24h.
-**F-006-3** — one example bundle checked in; the CTO retrieval test runs against this shape.
+**F-006-1 — SHIPPED (PR #84).** Closing a parent issue labelled `WP` (a company-scoped label
+named `WP`, per K6 — no `work_packages` table) generates a markdown bundle: per-card dossier,
+evidence index (links, counts; hashes for attachments via `assets.sha256`), scope-change
+timeline, and the bot/manual ratio. Refuses while any child is neither `done` nor `cancelled`,
+at the same commit-point choke as the PC-001 evidence gate inside `issueService.update()`'s
+row-locked transaction. Bundle generation itself is best-effort and post-commit (mirrors the
+dossier intake-seed hook): a rendering failure logs a warning but never blocks or undoes the
+close, and the bundle is regenerable via `wpCloseExportService(db).generateAndPersist()`.
+Persisted as the WP issue's own `wp-close-export` `issue_documents` row — same generic
+keyed-document mechanism the dossier uses, no new schema.
+**F-006-2 — still unbuilt.** Bundle committed to `Tecotec-JSc/T3-wiki`; confidential content is
+NAS path references only, never bytes (AD-026); CTO notified in chat with the commit link
+within 24h.
+**F-006-3 — fixture half shipped (PR #84).** One example bundle is checked in
+(`server/src/__tests__/fixtures/wp-close-export-example.md`, reusing the `dossier-example.md`
+pump-card story plus a second, cancelled card) and pinned by tests. PC-502's CTO retrieval test
+itself is not run yet — that is F-PILOT-2.
 **F-402-1/2/3** — the pilot card type. `in_progress` blocked without a linked brief
 (flowchart / REQ spec / PUC reference); commits on `PC-xxx` branches auto-link as evidence;
 close requires ≥1 commit + demo + test report.
