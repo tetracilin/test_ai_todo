@@ -128,6 +128,7 @@ import {
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
 import { countEvidenceForIssue } from "./issue-evidence-links.js";
+import { issueDossierService } from "./issue-dossier.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -7129,7 +7130,8 @@ export function issueService(db: Db) {
       if (data.status === "in_progress" && !data.assigneeAgentId && !data.assigneeUserId) {
         throw unprocessable("in_progress issues require an assignee");
       }
-      return db.transaction(async (tx) => {
+      let wasDeduplicated = false;
+      const created = await db.transaction(async (tx) => {
         const idempotencyKey = rawIdempotencyKey?.trim() || null;
         const normalizedTitle = normalizeCreateIssueTitle(issueData.title);
         if (allowDuplicate === false) {
@@ -7194,6 +7196,7 @@ export function issueService(db: Db) {
               .onConflictDoNothing();
           }
           if (deduplicationReason) onDeduplicated?.(deduplicationReason);
+          wasDeduplicated = true;
           const [enriched] = await withIssueLabels(tx, [existingIssue]);
           const [withRelations] = await withIssueRelationSummaries(companyId, [enriched], tx);
           return withRelations;
@@ -7421,6 +7424,26 @@ export function issueService(db: Db) {
         const [withRelations] = await withIssueRelationSummaries(companyId, [enriched], tx);
         return withRelations;
       });
+
+      // PC-002 AC1: every intake-created card gets a dossier -- but a dedup hit returns an
+      // EXISTING issue (which may already have one), and this must never fail or delay issue
+      // creation itself. Best-effort, after the transaction has committed.
+      if (!wasDeduplicated) {
+        await issueDossierService(db)
+          .seed(
+            created.id,
+            { title: created.title, jobOrder: created.description ?? created.title },
+            {
+              agentId: issueData.createdByAgentId ?? null,
+              userId: issueData.createdByUserId ?? null,
+              runId: actorRunId ?? null,
+            },
+          )
+          .catch((err) => {
+            logger.warn({ err, issueId: created.id }, "failed to seed dossier at intake");
+          });
+      }
+      return created;
     },
 
     /**
