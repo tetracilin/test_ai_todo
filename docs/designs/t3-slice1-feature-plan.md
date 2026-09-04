@@ -802,11 +802,12 @@ Working protocol for an implementing agent, per feature unit:
    git fetch origin
    git worktree add "$(git rev-parse --show-toplevel)/../t3-PC-xxx-<slug>"        -b feature/PC-xxx-<slug> origin/develop
    cd "$(git rev-parse --show-toplevel)/../t3-PC-xxx-<slug>" && pnpm install
-   pnpm paperclipai worktree init --from-config    # REQUIRED
+   npx paperclipai worktree init --from-config ~/.paperclip/instances/default/config.json   # REQUIRED
    pnpm paperclipai worktree env                   # confirm it came up
    ```
    Three corrections over the obvious version, each verified: **`paperclipai` is not on PATH**
-   (`command -v paperclipai` → nothing) — always `pnpm paperclipai`. **Manual worktrees must
+   (`command -v paperclipai` → nothing) — use `npx paperclipai` for the content-bearing
+   `--from-config <path>` argument (`doc/CLI.md`), not `pnpm paperclipai`. **Manual worktrees must
    pass `--from-config`** (`doc/DEVELOPING.md:489`). And the path is anchored to the repo root,
    because a bare `../t3-…` resolves against the current directory and lands in the wrong place
    when you are already inside a worktree.
