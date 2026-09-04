@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { externalObjects } from "@paperclipai/db";
-import { unprocessable } from "../errors.js";
+import { unprocessable, conflict } from "../errors.js";
 import { isAllowedContentType } from "../attachment-types.js";
 import type { StorageService } from "../storage/types.js";
-import { createOrReuseEvidenceObject } from "./issue-evidence-links.js";
 
 export const MINIO_PROVIDER_KEY = "minio";
 export const MINIO_OBJECT_TYPE = "file";
@@ -128,19 +127,86 @@ export interface MinioEvidenceUploadResult {
   sha256: string;
 }
 
+const objectIdentityColumns = [
+  externalObjects.companyId,
+  externalObjects.providerKey,
+  externalObjects.objectType,
+  externalObjects.externalId,
+] as const;
+
+/**
+ * Atomically claims the `(company_id, sha256)` identity for a minio evidence
+ * object, telling the caller whether IT is the one that must now store the
+ * bytes.
+ *
+ * Two concurrent uploads of the same bytes racing a plain "SELECT, then
+ * putFile if missing" both miss the SELECT before either commits, so both
+ * would store a blob -- and the loser's blob is referenced by nothing at all
+ * (not even an unlinked row the GC reaper could find), a permanent leak. An
+ * `INSERT ... ON CONFLICT DO NOTHING` on the same unique index the row
+ * already carries has exactly one winner under concurrency, deterministically,
+ * with no manual locking: the winner gets a row back and must store the
+ * bytes; every loser gets nothing back, reads the winner's row, and never
+ * touches storage. The row is created "thin" (`data: {}`) and the winner
+ * backfills `data` once the bytes are actually stored -- see
+ * `uploadMinioEvidenceFile`.
+ */
+async function claimEvidenceObjectIdentity(
+  db: Db,
+  companyId: string,
+  sha256: string,
+): Promise<{ id: string; won: boolean }> {
+  const claimed = await db
+    .insert(externalObjects)
+    .values({
+      companyId,
+      providerKey: MINIO_PROVIDER_KEY,
+      objectType: MINIO_OBJECT_TYPE,
+      externalId: sha256,
+      displayTitle: sha256,
+      data: {},
+      nextRefreshAt: null,
+    })
+    .onConflictDoNothing({ target: [...objectIdentityColumns] })
+    .returning({ id: externalObjects.id });
+  if (claimed[0]) return { id: claimed[0].id, won: true };
+
+  const existing = await db
+    .select({ id: externalObjects.id })
+    .from(externalObjects)
+    .where(
+      and(
+        eq(externalObjects.companyId, companyId),
+        eq(externalObjects.providerKey, MINIO_PROVIDER_KEY),
+        eq(externalObjects.objectType, MINIO_OBJECT_TYPE),
+        eq(externalObjects.externalId, sha256),
+      ),
+    )
+    .then((rows) => rows[0] ?? null);
+  if (!existing) {
+    // The row that won the conflict was deleted between our INSERT and this
+    // SELECT -- only `uploadMinioEvidenceFile`'s own storage-failure cleanup
+    // deletes a thin row, so this is a narrow, self-resolving race. The
+    // identity is free again; ask the caller to retry rather than loop here
+    // indefinitely.
+    throw conflict("Evidence upload identity is being claimed concurrently -- retry");
+  }
+  return { id: existing.id, won: false };
+}
+
 /**
  * PC-007 AC1: chat/UI file to the NAS MinIO evidence bucket, SHA-256
  * recorded, deduped per `(company_id, sha256)` -- never the bare hash, which
  * would let one company confirm another company holds a given file (review
- * 3.2). Dedup reuses `externalId = sha256`'s own unique index inside
- * `createOrReuseEvidenceObject`; the SELECT below is purely an optimization
- * that skips a redundant storage write on a byte-for-byte repeat upload.
+ * 3.2).
  *
- * Storage write happens BEFORE the `external_objects` row is created (ordering:
- * store first, object second) -- see `createOrReuseEvidenceObject`'s docblock
- * for why this row is its own step rather than folded into `link()`'s
- * transaction. If `putFile` throws, nothing below it ever runs: no dangling
- * DB row, no dangling link.
+ * Only the caller that WINS `claimEvidenceObjectIdentity`'s race stores
+ * anything; every other concurrent upload of the same bytes reuses the
+ * winner's row and never touches storage, so no losing blob can ever be
+ * orphaned. If the winner's own storage write then fails, its thin claim row
+ * is deleted so the identity is not left permanently unclaimable -- a retry
+ * (by this caller or a concurrent one that lost the original race) gets a
+ * fresh chance to win it.
  */
 export async function uploadMinioEvidenceFile(
   db: Db,
@@ -156,44 +222,41 @@ export async function uploadMinioEvidenceFile(
   const contentType = sniffAndValidateContentType(input.body, input.declaredContentType);
   const sha256 = createHash("sha256").update(input.body).digest("hex");
 
-  const existing = await db
-    .select({ id: externalObjects.id })
-    .from(externalObjects)
-    .where(
-      and(
-        eq(externalObjects.companyId, input.companyId),
-        eq(externalObjects.providerKey, MINIO_PROVIDER_KEY),
-        eq(externalObjects.objectType, MINIO_OBJECT_TYPE),
-        eq(externalObjects.externalId, sha256),
-      ),
-    )
-    .then((rows) => rows[0] ?? null);
-  if (existing) {
-    return { externalObjectId: existing.id, created: false, sha256 };
+  const claim = await claimEvidenceObjectIdentity(db, input.companyId, sha256);
+  if (!claim.won) {
+    return { externalObjectId: claim.id, created: false, sha256 };
   }
 
-  const stored = await storage.putFile({
-    companyId: input.companyId,
-    namespace: "evidence",
-    originalFilename: input.originalFilename,
-    contentType,
-    body: input.body,
-  });
+  try {
+    const stored = await storage.putFile({
+      companyId: input.companyId,
+      namespace: "evidence",
+      originalFilename: input.originalFilename,
+      contentType,
+      body: input.body,
+    });
 
-  const object = await createOrReuseEvidenceObject(db, input.companyId, {
-    providerKey: MINIO_PROVIDER_KEY,
-    objectType: MINIO_OBJECT_TYPE,
-    externalId: sha256,
-    displayTitle: stored.originalFilename ?? sha256,
-    url: null,
-    data: {
-      objectKey: stored.objectKey,
-      contentType: stored.contentType,
-      byteSize: stored.byteSize,
-      sha256: stored.sha256,
-      storageProvider: stored.provider,
-    },
-  });
+    await db
+      .update(externalObjects)
+      .set({
+        displayTitle: stored.originalFilename ?? sha256,
+        data: {
+          objectKey: stored.objectKey,
+          contentType: stored.contentType,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+          storageProvider: stored.provider,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(externalObjects.id, claim.id));
 
-  return { externalObjectId: object.id, created: true, sha256 };
+    return { externalObjectId: claim.id, created: true, sha256 };
+  } catch (err) {
+    // The claim row never gained real content -- remove it rather than leave
+    // a permanent, data-less row squatting on this (company, sha256) identity
+    // that no future upload of the same bytes could ever claim again.
+    await db.delete(externalObjects).where(eq(externalObjects.id, claim.id)).catch(() => {});
+    throw err;
+  }
 }

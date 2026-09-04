@@ -297,10 +297,20 @@ export function issueEvidenceLinkService(db: Db) {
 
   async function resolveEvidenceObject(tx: any, companyId: string, target: EvidenceLinkTarget) {
     if ("externalObjectId" in target) {
+      // `FOR UPDATE`: F-007-2's GC reaper (evidence-storage-reaper.ts) can
+      // delete an unlinked `minio` object concurrently with a link() call that
+      // is about to reference it (e.g. an upload's dedupe hit on an old,
+      // still-unlinked object). Both sides take this row lock before acting,
+      // so they serialize instead of racing -- if the reaper wins, this SELECT
+      // sees nothing and correctly 404s instead of linking a row whose blob
+      // may already be gone; if this transaction wins, the reaper's own
+      // re-check (inside its own row-locked transaction) sees the fresh link
+      // and skips deleting.
       const existing = await tx
         .select()
         .from(externalObjects)
         .where(eq(externalObjects.id, target.externalObjectId))
+        .for("update")
         .then((rows: Array<typeof externalObjects.$inferSelect>) => rows[0] ?? null);
       // Same 404 for missing and cross-tenant -- an evidence link must never
       // confirm that another company's object exists.
