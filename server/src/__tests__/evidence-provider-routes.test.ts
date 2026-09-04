@@ -25,6 +25,8 @@ import {
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 import { createEvidenceStorageReaper } from "../services/evidence-storage-reaper.js";
+import { uploadMinioEvidenceFile } from "../services/evidence-provider-minio.js";
+import { issueEvidenceLinkService } from "../services/issue-evidence-links.js";
 import type { StorageProvider, PutObjectInput, GetObjectInput, GetObjectResult, HeadObjectResult, ListObjectsInput, ListObjectsResult } from "../storage/types.js";
 import { createStorageService } from "../storage/service.js";
 
@@ -361,6 +363,40 @@ describeEmbeddedPostgres("evidence providers routes (F-007-2/3/4)", () => {
     expect(provider.puts).toBe(2);
   });
 
+  it("concurrent uploads of identical bytes never leak a second stored blob", async () => {
+    // A plain "SELECT for dedupe, then putFile if missing" both misses under
+    // concurrency, so both would store a blob and the loser's would be
+    // referenced by nothing at all -- not even an unlinked row the reaper
+    // could find. The atomic claim in `claimEvidenceObjectIdentity` gives
+    // exactly one winner, so only one blob is ever stored.
+    const { companyId } = await seedCompany();
+    const provider = createFakeStorageProvider();
+    const storage = createStorageService(provider);
+
+    const [a, b] = await Promise.all([
+      uploadMinioEvidenceFile(db, storage, {
+        companyId,
+        originalFilename: "a.png",
+        declaredContentType: "image/png",
+        body: PNG_BYTES,
+        maxBytes: 10_000_000,
+      }),
+      uploadMinioEvidenceFile(db, storage, {
+        companyId,
+        originalFilename: "a-copy.png",
+        declaredContentType: "image/png",
+        body: PNG_BYTES,
+        maxBytes: 10_000_000,
+      }),
+    ]);
+
+    expect(a.externalObjectId).toBe(b.externalObjectId);
+    expect([a.created, b.created].filter(Boolean)).toHaveLength(1);
+    expect(provider.puts).toBe(1);
+    expect(provider.objects.size).toBe(1);
+    expect(await db.select().from(externalObjects).where(eq(externalObjects.companyId, companyId))).toHaveLength(1);
+  });
+
   // -- F-007-2's GC backstop.
 
   describe("evidence storage reaper", () => {
@@ -451,6 +487,66 @@ describeEmbeddedPostgres("evidence providers routes (F-007-2/3/4)", () => {
       const reaper = createEvidenceStorageReaper({ db, storage });
 
       expect(await reaper.sweep()).toEqual({ reclaimed: 0, failed: 0 });
+    });
+
+    it("never leaves a link pointing at a reclaimed row, or reclaims a row a concurrent link just claimed", async () => {
+      // A row old enough to be reclaimed, with no link yet -- the exact state a
+      // dedupe hit on an old, still-unlinked upload would find and try to link
+      // at the same moment the reaper decides to sweep it. Both sides take the
+      // same row lock (`resolveEvidenceObject`'s FOR UPDATE / this reaper's
+      // `reclaimOne`), so whichever transaction commits first determines the
+      // outcome -- and the two must never disagree.
+      const { companyId, prefix } = await seedCompany();
+      const provider = createFakeStorageProvider();
+      const storage = createStorageService(provider);
+      const stored = await storage.putFile({
+        companyId,
+        namespace: "evidence",
+        originalFilename: "race.bin",
+        contentType: "application/octet-stream",
+        body: Buffer.from("race"),
+      });
+      const [row] = await db
+        .insert(externalObjects)
+        .values({
+          companyId,
+          providerKey: "minio",
+          objectType: "file",
+          externalId: stored.sha256,
+          data: { objectKey: stored.objectKey },
+          nextRefreshAt: null,
+          createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
+        })
+        .returning();
+      const issueId = await seedIssue(companyId, prefix);
+      const evidenceSvc = issueEvidenceLinkService(db);
+      const reaper = createEvidenceStorageReaper({ db, storage, thresholdMs: 24 * 60 * 60 * 1000 });
+
+      const [linkResult] = await Promise.allSettled([
+        evidenceSvc.link(issueId, { externalObjectId: row!.id }, "manual", async () => {}),
+        reaper.sweep(),
+      ]);
+
+      const remaining = await db.select().from(externalObjects).where(eq(externalObjects.id, row!.id));
+      const links = await db
+        .select()
+        .from(issueEvidenceLinks)
+        .where(eq(issueEvidenceLinks.externalObjectId, row!.id));
+
+      if (linkResult.status === "fulfilled") {
+        // The link won the race: the row and its blob must both survive, still
+        // referenced -- the reaper must not have touched it.
+        expect(remaining).toHaveLength(1);
+        expect(links).toHaveLength(1);
+        expect(provider.objects.has(stored.objectKey)).toBe(true);
+      } else {
+        // The reaper won: the row and its blob are both gone, and the link
+        // attempt failed loudly (404) rather than "succeeding" against an
+        // object that no longer exists.
+        expect(remaining).toHaveLength(0);
+        expect(links).toHaveLength(0);
+        expect(provider.objects.has(stored.objectKey)).toBe(false);
+      }
     });
   });
 });
