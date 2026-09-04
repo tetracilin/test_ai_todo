@@ -1,4 +1,9 @@
-import { unprocessable } from "../errors.js";
+import { and, eq } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { documents, issueDocuments, issues } from "@paperclipai/db";
+import { HttpError, notFound, unprocessable } from "../errors.js";
+import { isUniqueViolation } from "../db-errors.js";
+import { documentService } from "./documents.js";
 
 /**
  * Dossier document contract (PC-002, AD-034).
@@ -380,6 +385,45 @@ export function parseScopeChanges(document: DossierDocument): DossierScopeChange
   return parseSectionEntries(document.sections["Scope changes"], parseScopeChangeLine, "scope-change");
 }
 
+/**
+ * Clarification line (PC-004 AC2: "Agent replies... asks clarifying questions; answers land in
+ * dossier Clarifications"). One line per answered question.
+ * `- <ISO 8601 UTC> · Q: <question> — A: <answer>`
+ *
+ * Lenient on read like Evidence log, not strict like Scope changes: an engineer or an earlier
+ * agent may write free-form notes into Clarifications alongside the structured Q/A lines, and
+ * nothing downstream counts entries here the way AC3 counts scope changes, so there is no metric
+ * a malformed bullet could silently understate.
+ */
+export type DossierClarificationLine = {
+  at: string;
+  question: string;
+  answer: string;
+};
+
+const CLARIFICATION_LINE_RE = /^- (\S+) · Q: (.+) — A: (.+)$/;
+
+export function formatClarificationLine(line: DossierClarificationLine): string {
+  assertIsoUtc(line.at, "clarification");
+  const question = line.question.trim();
+  assertSingleLine(question, "clarification question");
+  if (!question) throw unprocessable("Clarification question is required");
+  const answer = line.answer.trim();
+  assertSingleLine(answer, "clarification answer");
+  if (!answer) throw unprocessable("Clarification answer is required");
+  return `- ${line.at} · Q: ${question} — A: ${answer}`;
+}
+
+export function parseClarificationLine(line: string): DossierClarificationLine | null {
+  const match = CLARIFICATION_LINE_RE.exec(line.trim());
+  if (!match || !ISO_UTC_RE.test(match[1]!)) return null;
+  return { at: match[1]!, question: match[2]!.trim(), answer: match[3]!.trim() };
+}
+
+export function parseClarifications(document: DossierDocument): DossierClarificationLine[] {
+  return parseSectionEntries(document.sections["Clarifications"], parseClarificationLine, null);
+}
+
 export function formatChatCorrelationLine(correlation: DossierChatCorrelation): string {
   const { chatOriginId, issueIdentifier, originKind } = correlation;
   if (!chatOriginId.trim() || !issueIdentifier.trim() || !originKind.trim()) {
@@ -409,4 +453,207 @@ export function parseChatCorrelationLine(line: string): DossierChatCorrelation |
 export function parseChatCorrelation(document: DossierDocument): DossierChatCorrelation | null {
   const [first] = document.sections["Job order"].split("\n");
   return first ? parseChatCorrelationLine(first) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence (F-002-1/2). Everything above this line is pure shape/grammar;
+// everything below reads and writes the actual `issue_documents` row.
+// ---------------------------------------------------------------------------
+
+export interface DossierActor {
+  agentId?: string | null;
+  userId?: string | null;
+  runId?: string | null;
+}
+
+const MAX_APPEND_ATTEMPTS = 3;
+
+/**
+ * `issueDossierService(db)` — create-on-intake, read, and append-section (F-002-1), and the four
+ * append hooks that write to it (F-002-2). Built directly on `documentService(db)`
+ * (`server/src/services/documents.ts`), the same generic keyed-`issue_documents` CRUD
+ * `issue-continuation-summary.ts` already uses for its own document key — no new schema, no new
+ * persistence layer.
+ */
+export function issueDossierService(db: Db) {
+  const documentsSvc = documentService(db);
+
+  async function readCurrent(
+    issueId: string,
+  ): Promise<{ document: DossierDocument; latestRevisionId: string | null } | null> {
+    const row = await documentsSvc.getIssueDocumentByKey(issueId, ISSUE_DOSSIER_DOCUMENT_KEY);
+    if (!row) return null;
+    // `getIssueDocumentByKey` always calls `mapIssueDocumentRow(row, true)`, so `body` is always
+    // present; the type is optional only because that helper's signature doesn't statically
+    // encode which call sites pass `includeBody: true`.
+    return { document: parseDossierMarkdown(row.body!), latestRevisionId: row.latestRevisionId };
+  }
+
+  async function write(
+    issueId: string,
+    document: DossierDocument,
+    baseRevisionId: string | null,
+    actor: DossierActor,
+    changeSummary: string,
+  ) {
+    return documentsSvc.upsertIssueDocument({
+      issueId,
+      key: ISSUE_DOSSIER_DOCUMENT_KEY,
+      title: ISSUE_DOSSIER_TITLE,
+      format: "markdown",
+      body: renderDossierMarkdown(document),
+      baseRevisionId,
+      changeSummary,
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.userId ?? null,
+      createdByRunId: actor.runId ?? null,
+    });
+  }
+
+  /** PC-002 AC1 seed content for a card with no dossier yet: its own title/description. */
+  async function seedDocumentFor(issueId: string): Promise<DossierDocument> {
+    const issue = await db
+      .select({ title: issues.title, description: issues.description })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows) => rows[0] ?? null);
+    if (!issue) throw notFound("Issue not found");
+    return createSeededDossier({ title: issue.title, jobOrder: issue.description ?? issue.title });
+  }
+
+  /**
+   * Read -> parse -> append `buildLines`'s lines to `section` -> render -> write. Two callers
+   * appending to the SAME card's dossier at once race in one of two ways, and this retries on
+   * both by RE-READING fresh state each attempt (never resubmitting the same `baseRevisionId`),
+   * so two evidence links landing back to back both survive as two lines rather than the second
+   * one failing outright:
+   *   - The card already has a dossier: `upsertIssueDocument`'s optimistic concurrency throws
+   *     `conflict()` (409 `HttpError`) on a stale `baseRevisionId`.
+   *   - The card has NO dossier yet and two appends both lazily seed one at once (via
+   *     `seedDocumentFor`): `upsertIssueDocument`'s create path has no `ON CONFLICT` of its own,
+   *     so the loser hits the raw Postgres unique violation on
+   *     `issue_documents_company_issue_key_uq` instead of a `conflict()` HttpError -- caught here
+   *     via `isUniqueViolation` rather than left to surface as a 500.
+   */
+  async function appendLines(
+    issueId: string,
+    section: DossierSectionHeading,
+    buildLines: (document: DossierDocument) => string[],
+    actor: DossierActor,
+    changeSummary: string,
+  ): Promise<DossierDocument> {
+    let lastConflict: unknown;
+    for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt += 1) {
+      const current = await readCurrent(issueId);
+      const document = current?.document ?? (await seedDocumentFor(issueId));
+      const newLines = buildLines(document);
+      if (newLines.length === 0) return document;
+      const existingBody = document.sections[section];
+      document.sections[section] = existingBody ? `${existingBody}\n${newLines.join("\n")}` : newLines.join("\n");
+      try {
+        const result = await write(issueId, document, current?.latestRevisionId ?? null, actor, changeSummary);
+        return parseDossierMarkdown(result.document.body);
+      } catch (err) {
+        const isConflict = (err instanceof HttpError && err.status === 409) || isUniqueViolation(err);
+        if (!isConflict) throw err;
+        lastConflict = err;
+      }
+    }
+    throw lastConflict;
+  }
+
+  return {
+    get: readCurrent,
+
+    /** PC-002 AC1: every intake-created card gets all five headings and a Job order. */
+    seed: async (issueId: string, input: { title: string; jobOrder: string }, actor: DossierActor) => {
+      const document = createSeededDossier(input);
+      const result = await write(issueId, document, null, actor, "Seed dossier at intake");
+      return parseDossierMarkdown(result.document.body);
+    },
+
+    /**
+     * PC-007 AC5: one Evidence-log line per filing act — an `issue_evidence_links` row or an
+     * `issue_attachments` row, `link` structurally satisfying `DossierEvidenceLinkRow` either way.
+     */
+    appendEvidenceLine: (issueId: string, link: DossierEvidenceLinkRow, caption: string, actor: DossierActor) =>
+      appendLines(
+        issueId,
+        "Evidence log",
+        () => [formatEvidenceLine(evidenceLineFromLink(link, caption))],
+        actor,
+        "Evidence linked",
+      ),
+
+    /** PC-004 AC2: one Clarifications line per answered question, in one write. */
+    appendClarificationAnswers: (issueId: string, entries: DossierClarificationLine[], actor: DossierActor) =>
+      appendLines(issueId, "Clarifications", () => entries.map(formatClarificationLine), actor, "Clarification answered"),
+
+    /**
+     * PC-002 AC2: one Scope-changes line, timestamped by the agent. The caller
+     * (`POST /issues/:id/dossier/scope-changes`) does NOT treat this as best-effort like the
+     * other three hooks — recording the change is the request's entire purpose.
+     */
+    appendScopeChange: (issueId: string, line: DossierScopeChangeLine, actor: DossierActor) =>
+      appendLines(issueId, "Scope changes", () => [formatScopeChangeLine(line)], actor, "Scope change recorded"),
+  };
+}
+
+export interface ScopeChangeTimestampQuery {
+  companyId: string;
+  issueId?: string;
+  /** Inclusive lower bound on a scope-change entry's own `at` timestamp. */
+  from?: Date;
+  /** Inclusive upper bound. */
+  to?: Date;
+}
+
+export interface ScopeChangeTimestampRow {
+  issueId: string;
+  /** The earliest scope-change entry's timestamp within the queried window. */
+  firstScopeChangeAt: string;
+  count: number;
+}
+
+/**
+ * PC-002 AC3: scope-change timestamps, queryable. Reads every matching card's dossier, parses its
+ * Scope changes section with `parseScopeChanges`, and reports the first-signal timestamp per
+ * card within `[from, to]` — the earliest scope-change entry, which is the CTO's
+ * replanning-latency signal (time from intake to first scope change). Cards with no dossier, or
+ * no scope-change entry in the window, are simply absent from the result.
+ *
+ * No HTTP route: F-011-3's evidence-provenance query (`evidence-provenance.ts`) shipped the same
+ * way, function + tests only, because nothing consumes it until the feature that reads it
+ * (here, F-006-1's timeline) lands.
+ */
+export async function queryScopeChangeTimestamps(
+  db: Db,
+  input: ScopeChangeTimestampQuery,
+): Promise<ScopeChangeTimestampRow[]> {
+  const conditions = [
+    eq(issueDocuments.companyId, input.companyId),
+    eq(issueDocuments.key, ISSUE_DOSSIER_DOCUMENT_KEY),
+  ];
+  if (input.issueId) conditions.push(eq(issueDocuments.issueId, input.issueId));
+  const from = input.from ? toDossierTimestamp(input.from) : null;
+  const to = input.to ? toDossierTimestamp(input.to) : null;
+
+  const rows = await db
+    .select({ issueId: issueDocuments.issueId, body: documents.latestBody })
+    .from(issueDocuments)
+    .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
+    .where(and(...conditions));
+
+  const results: ScopeChangeTimestampRow[] = [];
+  for (const row of rows) {
+    // Fixed-width, zero-padded ISO 8601 UTC strings sort correctly lexicographically, so the
+    // window filter and the "earliest" reduction below never need to parse into Date objects.
+    const entries = parseScopeChanges(parseDossierMarkdown(row.body)).filter(
+      (entry) => (!from || entry.at >= from) && (!to || entry.at <= to),
+    );
+    if (entries.length === 0) continue;
+    const firstScopeChangeAt = entries.reduce((earliest, entry) => (entry.at < earliest ? entry.at : earliest), entries[0]!.at);
+    results.push({ issueId: row.issueId, firstScopeChangeAt, count: entries.length });
+  }
+  return results;
 }

@@ -244,6 +244,15 @@ import {
 import { verifyGitCommitEvidence } from "../services/evidence-provider-git.js";
 import { buildNasEvidenceTarget } from "../services/evidence-provider-nas.js";
 import { uploadMinioEvidenceFile } from "../services/evidence-provider-minio.js";
+import {
+  issueDossierService,
+  toDossierTimestamp,
+  type DossierActor,
+  type DossierClarificationLine,
+  type DossierEvidenceLinkRow,
+  type DossierScopeChangeLine,
+} from "../services/issue-dossier.js";
+import { recordIssueScopeChangeSchema } from "@paperclipai/shared";
 import { createStorageService } from "../storage/service.js";
 import type { StorageProvider } from "../storage/types.js";
 import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
@@ -2911,6 +2920,7 @@ export function issueRoutes(
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const issueEvidenceLinksSvc = issueEvidenceLinkService(db);
+  const dossierSvc = issueDossierService(db);
   const recoveryActionsSvc = issueRecoveryActionService(db);
   const executionWorkspacesSvc = executionWorkspaceServiceDirect(db);
   const workProductsSvc = workProductService(db);
@@ -3810,6 +3820,22 @@ export function issueRoutes(
       .innerJoin(projectWorkspaces, eq(issueRows.projectWorkspaceId, projectWorkspaces.id))
       .where(and(eq(issueRows.id, issueId), eq(projectWorkspaces.companyId, companyId)))
       .then((rows) => rows[0] ?? null);
+  }
+
+  /**
+   * PC-007 AC5: one Evidence-log line per filing act (issue_evidence_links OR issue_attachments).
+   * Best-effort -- called AFTER the filing act's own write has committed, never inside its
+   * transaction: a dossier hiccup must not block evidence filing or an attachment upload.
+   */
+  function appendEvidenceDossierLineBestEffort(
+    issueId: string,
+    link: DossierEvidenceLinkRow,
+    caption: string,
+    actor: DossierActor,
+  ) {
+    return dossierSvc.appendEvidenceLine(issueId, link, caption, actor).catch((err) => {
+      logger.warn({ err, issueId }, "failed to append dossier evidence-log line");
+    });
   }
 
   async function assertCanManageIssueApprovalLinks(req: Request, res: Response, companyId: string) {
@@ -8655,6 +8681,10 @@ export function issueRoutes(
       }, evidencePublications);
     });
     for (const publication of evidencePublications) publishActivity(publication);
+    if (created) {
+      const actorFields: DossierActor = { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null, runId: actor.runId };
+      await appendEvidenceDossierLineBestEffort(id, link, link.displayTitle ?? link.externalId, actorFields);
+    }
 
     res.status(created ? 201 : 200).json(link);
   });
@@ -8865,9 +8895,54 @@ export function issueRoutes(
       },
     );
     for (const publication of evidencePublications) publishActivity(publication);
+    if (created) {
+      const actorFields: DossierActor = { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null, runId: actor.runId };
+      await appendEvidenceDossierLineBestEffort(issueId, link, link.displayTitle ?? link.externalId, actorFields);
+    }
 
     res.status(created ? 201 : 200).json(link);
   });
+
+  // PC-002 AC2: scope-change entries are timestamped by the AGENT and mirrored as issue
+  // comments. Unlike the three evidence/attachment/clarification hooks above, recording the
+  // change is this request's entire purpose -- a dossier-write failure here fails the request
+  // (never a 201 that silently recorded nothing). The comment mirror, in contrast, IS best-effort:
+  // the dossier entry is the source of truth PC-002 AC3's query reads, the comment is a
+  // visibility nicety AC2 asks for separately.
+  router.post(
+    "/issues/:id/dossier/scope-changes",
+    validate(recordIssueScopeChangeSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+      if (!issue) return;
+      if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+      if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+      const actor = getActorInfo(req);
+      const note = (req.body as { note: string }).note;
+      const at = toDossierTimestamp(new Date());
+      const actorFields: DossierActor = {
+        agentId: actor.agentId,
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        runId: actor.runId,
+      };
+      const scopeChangeLine: DossierScopeChangeLine = { at, note };
+      const document = await dossierSvc.appendScopeChange(id, scopeChangeLine, actorFields);
+
+      await svc
+        .addComment(id, `Scope change recorded: ${note}`, {
+          agentId: actor.agentId ?? undefined,
+          userId: actor.actorType === "user" ? actor.actorId : undefined,
+          runId: actor.runId,
+        })
+        .catch((err) => {
+          logger.warn({ err, issueId: id }, "failed to mirror scope change as an issue comment");
+        });
+
+      res.status(201).json({ issueId: id, at, note, dossierScopeChanges: document.sections["Scope changes"] });
+    },
+  );
 
   router.post("/companies/:companyId/issues", applyCreateIssueStatusDefault, validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -12108,6 +12183,32 @@ export function issueRoutes(
         },
       });
 
+      // PC-004 AC2: answers to a clarifying question land in dossier Clarifications. Only
+      // ask_user_questions is a "clarification" -- the other four interaction kinds (approvals,
+      // confirmations, verdicts) resolve a decision, not a question. Best-effort, same as the
+      // other three hooks.
+      if (interaction.kind === "ask_user_questions") {
+        const at = toDossierTimestamp(interaction.resolvedAt ?? new Date());
+        const entries: DossierClarificationLine[] = (interaction.result?.answers ?? [])
+          .map((answer): DossierClarificationLine | null => {
+            const question = interaction.payload.questions.find((q) => q.id === answer.questionId);
+            if (!question) return null;
+            const optionLabels = answer.optionIds
+              .map((optionId) => question.options.find((option) => option.id === optionId)?.label)
+              .filter((label): label is string => Boolean(label));
+            const answerText = [...optionLabels, ...(answer.otherText ? [answer.otherText] : [])].join(", ");
+            if (!answerText) return null;
+            return { at, question: question.prompt, answer: answerText };
+          })
+          .filter((entry): entry is DossierClarificationLine => entry !== null);
+        if (entries.length > 0) {
+          const actorFields: DossierActor = { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null, runId: actor.runId };
+          await dossierSvc.appendClarificationAnswers(id, entries, actorFields).catch((err) => {
+            logger.warn({ err, issueId: id }, "failed to append dossier clarification lines");
+          });
+        }
+      }
+
       await queueResolvedInteractionContinuationWakeup({
         db,
         heartbeat,
@@ -13510,6 +13611,19 @@ export function issueRoutes(
         byteSize: attachment.byteSize,
       },
     });
+
+    // PC-007 AC5: an uploaded attachment is a filing act too (user-confirmed scope: the
+    // Evidence-log hook covers both issue_evidence_links and issue_attachments, not just the
+    // literal "linkage" wording). No external_objects row exists for an attachment, so it uses
+    // its own synthetic providerKey rather than borrowing the storage provider id (`s3`/
+    // `local_disk`), which means something different (where the bytes live, not what kind of
+    // evidence this is).
+    await appendEvidenceDossierLineBestEffort(
+      issueId,
+      { providerKey: "attachment", externalId: attachment.objectKey, createdAt: attachment.createdAt },
+      attachment.originalFilename ?? "attachment",
+      { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null, runId: actor.runId },
+    );
 
     res.status(201).json(withContentPath(attachment));
   });
