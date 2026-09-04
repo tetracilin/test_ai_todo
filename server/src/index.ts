@@ -83,6 +83,8 @@ import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runt
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig, createExternalStorageProviderFromConfig } from "./storage/index.js";
+import { createStorageService } from "./storage/service.js";
+import { createEvidenceStorageReaper, type EvidenceStorageReapResult } from "./services/evidence-storage-reaper.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -1195,6 +1197,33 @@ export async function startServer(): Promise<StartedServer> {
         }));
     };
 
+    // F-007-2's GC backstop: reclaims a `minio` evidence object that was
+    // stored but never linked (see evidence-storage-reaper.ts's docblock for
+    // why that state is possible). Only runs when an external/NAS storage
+    // bucket is actually configured -- with none, no minio evidence object
+    // can exist to reclaim.
+    const evidenceStorageReaper = externalStorage
+      ? createEvidenceStorageReaper({
+        db: db as any,
+        storage: createStorageService(externalStorage),
+        log: (line) => logger.info(line),
+      })
+      : null;
+    const logEvidenceStorageReaperResult = (result: EvidenceStorageReapResult) => {
+      if (result.reclaimed > 0 || result.failed > 0) {
+        logger.info(result, "evidence storage reaper reclaimed unlinked evidence objects");
+      }
+    };
+    const scheduleEvidenceStorageReaperSweep = () => {
+      if (heartbeatSchedulerStopped || !evidenceStorageReaper) return;
+      trackHeartbeatSchedulerWork(evidenceStorageReaper
+        .sweep()
+        .then(logEvidenceStorageReaperResult)
+        .catch((err) => {
+          logger.error({ err }, "evidence storage reaper sweep failed");
+        }));
+    };
+
     const tools = toolAccessService(db as any, {
       deploymentMode: config.deploymentMode,
       deploymentExposure: config.deploymentExposure,
@@ -1341,6 +1370,15 @@ export async function startServer(): Promise<StartedServer> {
         logger.error({ err }, "startup setup-token login reaper sweep failed");
       });
 
+    if (evidenceStorageReaper) {
+      await evidenceStorageReaper
+        .sweep()
+        .then(logEvidenceStorageReaperResult)
+        .catch((err) => {
+          logger.error({ err }, "startup evidence storage reaper sweep failed");
+        });
+    }
+
     // Retry any orphan sandbox teardown left by a failed acquire before a server
     // restart, so a leaked sandbox does not stay allocated across the restart.
     await runEnvironmentLeaseCleanupSweep(0);
@@ -1405,6 +1443,7 @@ export async function startServer(): Promise<StartedServer> {
         scheduleTerminalWorkspaceSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
+        scheduleEvidenceStorageReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
 
         if (heartbeatSchedulerStopped) return;

@@ -13,7 +13,7 @@ interface ExistingObjectTarget {
   externalObjectId: string;
 }
 
-interface NewObjectTarget {
+export interface NewObjectTarget {
   providerKey: string;
   objectType: string;
   externalId: string;
@@ -25,10 +25,96 @@ interface NewObjectTarget {
    * touches the storage plane for either.
    */
   url?: string | null;
+  /**
+   * Provider-specific metadata (F-007-2/3/4): sha256/objectKey/byteSize for
+   * `minio`, verified host/repo for `git`. Stored as-is in `external_objects.data`.
+   * Left unset for providers with nothing to record.
+   */
+  data?: Record<string, unknown> | null;
 }
 
 /** Either an external object that already exists, or the descriptor of a static evidence row. */
 export type EvidenceLinkTarget = ExistingObjectTarget | NewObjectTarget;
+
+/**
+ * PC-007 AC7 "static evidence rows must sit cleanly in the external_objects
+ * refresh machinery (liveness=unknown, no resolver-error spam)".
+ *
+ * Evidence objects are records of something that already happened (a Teable
+ * row, a NAS path, a commit) -- there is no resolver for them and nothing to
+ * poll. Each field below is load-bearing:
+ *   - `nextRefreshAt: null`   -- `refreshDueObjectsUnchecked` selects on
+ *     `next_refresh_at <= now`, so a NULL is never due. This alone keeps the
+ *     sweeper away, and is the only exclusion this insert may claim.
+ *   - `liveness` left at its 'unknown' default -- `visibleLiveness` only
+ *     rewrites 'fresh' -> 'stale', so 'unknown' is stable and renders as a
+ *     neutral pill with no error state.
+ * The row is NOT created via `upsertObjectFromDetection`, which
+ * unconditionally sets `nextRefreshAt: now` and would re-arm the sweeper.
+ *
+ * `isTerminal` is deliberately LEFT AT ITS DEFAULT (false). It used to be set
+ * true here, which was a company-wide correctness bug: the descriptor branch
+ * can claim a (company, provider, objectType, externalId) identity that a
+ * real detector also produces -- GitHub external ids are human-readable and
+ * reproducible ("acme/app#pull/42", `externalIdFor` in
+ * github-external-object-provider.ts), and the route validates providerKey
+ * only against a lowercase-slug regex. Filing such a PR as evidence created a
+ * terminal row; a later paste of the same URL took the
+ * `upsertObjectFromDetection` ON CONFLICT branch, which re-arms
+ * `nextRefreshAt` but never clears `isTerminal`, and nothing else in the repo
+ * clears it either -- so `refreshDueObjectsUnchecked`'s
+ * `is_terminal = false` filter excluded that object from status refresh
+ * forever, on every card in the company, with no error to notice it by.
+ * `nextRefreshAt: null` gives the same "never polled" behaviour for evidence
+ * that stays evidence, while letting a resolver legitimately take ownership
+ * of the row if the same artifact later shows up through detection.
+ */
+const STATIC_EVIDENCE_OBJECT_DEFAULTS = {
+  nextRefreshAt: null,
+} as const;
+
+/**
+ * Create-or-reuse the static `external_objects` row a `NewObjectTarget`
+ * describes, WITHOUT touching `issue_evidence_links`. Exported so a provider
+ * that must write to external storage before it can call `link()` can create
+ * the row as its own step, ahead of and separate from the link write --
+ * F-007-2's MinIO upload does this deliberately, so a failure between the
+ * storage write and the link insert leaves a row the GC sweep
+ * (`evidence-storage-reaper.ts`) can find and reclaim, rather than leaving no
+ * record of the stored blob at all. `link()`'s own NewObjectTarget path below
+ * calls this same function inside its transaction for every other provider,
+ * where that failure mode does not apply.
+ */
+export async function createOrReuseEvidenceObject(
+  dbOrTx: Pick<Db, "insert">,
+  companyId: string,
+  target: NewObjectTarget,
+): Promise<typeof externalObjects.$inferSelect> {
+  const now = new Date();
+  const [object] = await dbOrTx
+    .insert(externalObjects)
+    .values({
+      companyId,
+      providerKey: target.providerKey,
+      objectType: target.objectType,
+      externalId: target.externalId,
+      displayTitle: target.displayTitle ?? target.url ?? target.externalId,
+      sanitizedCanonicalUrl: target.url ?? null,
+      data: target.data ?? {},
+      ...STATIC_EVIDENCE_OBJECT_DEFAULTS,
+    })
+    .onConflictDoUpdate({
+      target: [
+        externalObjects.companyId,
+        externalObjects.providerKey,
+        externalObjects.objectType,
+        externalObjects.externalId,
+      ],
+      set: { updatedAt: now },
+    })
+    .returning();
+  return object as typeof externalObjects.$inferSelect;
+}
 
 /**
  * The audit write for one evidence mutation, run INSIDE the service's own
@@ -161,43 +247,6 @@ export async function countEvidenceForIssue(
  * would be both disabled and invisible on a stock instance.
  */
 export function issueEvidenceLinkService(db: Db) {
-  /**
-   * PC-007 AC7 "static evidence rows must sit cleanly in the external_objects
-   * refresh machinery (liveness=unknown, no resolver-error spam)".
-   *
-   * Evidence objects are records of something that already happened (a Teable
-   * row, a NAS path, a commit) -- there is no resolver for them and nothing to
-   * poll. Each field below is load-bearing:
-   *   - `nextRefreshAt: null`   -- `refreshDueObjectsUnchecked` selects on
-   *     `next_refresh_at <= now`, so a NULL is never due. This alone keeps the
-   *     sweeper away, and is the only exclusion this insert may claim.
-   *   - `liveness` left at its 'unknown' default -- `visibleLiveness` only
-   *     rewrites 'fresh' -> 'stale', so 'unknown' is stable and renders as a
-   *     neutral pill with no error state.
-   * The row is NOT created via `upsertObjectFromDetection`, which
-   * unconditionally sets `nextRefreshAt: now` and would re-arm the sweeper.
-   *
-   * `isTerminal` is deliberately LEFT AT ITS DEFAULT (false). It used to be set
-   * true here, which was a company-wide correctness bug: the descriptor branch
-   * can claim a (company, provider, objectType, externalId) identity that a
-   * real detector also produces -- GitHub external ids are human-readable and
-   * reproducible ("acme/app#pull/42", `externalIdFor` in
-   * github-external-object-provider.ts), and the route validates providerKey
-   * only against a lowercase-slug regex. Filing such a PR as evidence created a
-   * terminal row; a later paste of the same URL took the
-   * `upsertObjectFromDetection` ON CONFLICT branch, which re-arms
-   * `nextRefreshAt` but never clears `isTerminal`, and nothing else in the repo
-   * clears it either -- so `refreshDueObjectsUnchecked`'s
-   * `is_terminal = false` filter excluded that object from status refresh
-   * forever, on every card in the company, with no error to notice it by.
-   * `nextRefreshAt: null` gives the same "never polled" behaviour for evidence
-   * that stays evidence, while letting a resolver legitimately take ownership
-   * of the row if the same artifact later shows up through detection.
-   */
-  const STATIC_EVIDENCE_OBJECT_DEFAULTS = {
-    nextRefreshAt: null,
-  } as const;
-
   const evidenceLinkColumns = {
     id: issueEvidenceLinks.id,
     companyId: issueEvidenceLinks.companyId,
@@ -259,35 +308,13 @@ export function issueEvidenceLinkService(db: Db) {
       return existing;
     }
 
-    const now = new Date();
     // Find-or-create in one statement against the
     // (company_id, provider_key, object_type, external_id) unique index, so a
     // concurrent link of the same evidence cannot produce a duplicate object.
     // On conflict only `updatedAt` is touched: re-filing evidence that happens
     // to already exist as a live, resolver-owned object (a detected GitHub
     // URL, say) must not turn that object static.
-    const [object] = await tx
-      .insert(externalObjects)
-      .values({
-        companyId,
-        providerKey: target.providerKey,
-        objectType: target.objectType,
-        externalId: target.externalId,
-        displayTitle: target.displayTitle ?? target.url ?? target.externalId,
-        sanitizedCanonicalUrl: target.url ?? null,
-        ...STATIC_EVIDENCE_OBJECT_DEFAULTS,
-      })
-      .onConflictDoUpdate({
-        target: [
-          externalObjects.companyId,
-          externalObjects.providerKey,
-          externalObjects.objectType,
-          externalObjects.externalId,
-        ],
-        set: { updatedAt: now },
-      })
-      .returning();
-    return object as typeof externalObjects.$inferSelect;
+    return createOrReuseEvidenceObject(tx, companyId, target);
   }
 
   async function readLink(dbOrTx: any, linkId: string): Promise<IssueEvidenceLinkRow | null> {

@@ -236,7 +236,16 @@ import {
   type TrustPresetResolution,
 } from "../services/trust-preset-resolver.js";
 import { externalObjectService } from "../services/external-objects.js";
-import { issueEvidenceLinkService, type EvidenceSource } from "../services/issue-evidence-links.js";
+import {
+  issueEvidenceLinkService,
+  type EvidenceLinkTarget,
+  type EvidenceSource,
+} from "../services/issue-evidence-links.js";
+import { verifyGitCommitEvidence } from "../services/evidence-provider-git.js";
+import { buildNasEvidenceTarget } from "../services/evidence-provider-nas.js";
+import { uploadMinioEvidenceFile } from "../services/evidence-provider-minio.js";
+import { createStorageService } from "../storage/service.js";
+import type { StorageProvider } from "../storage/types.js";
 import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
 import {
   assertIssueReviewVerdictActorAllowed,
@@ -2873,10 +2882,13 @@ export function issueRoutes(
       proposalId: string;
       actor: { agentId?: string | null; userId?: string | null };
     }) => Promise<unknown>;
+    /** The NAS MinIO bucket (F-007-2). Null when this instance has none configured. */
+    externalStorage?: StorageProvider | null;
   } = {},
 ) {
   const router = Router();
   const svc = issueService(db);
+  const externalStorageService = opts.externalStorage ? createStorageService(opts.externalStorage) : null;
   const runRedactions = createRunSecretRedactionRegistry(db);
   const access = accessService(db);
   const secretProposals = createSecretProposalsService(db);
@@ -3779,6 +3791,25 @@ export function issueRoutes(
         else resolve();
       });
     });
+  }
+
+  /**
+   * PC-007 AC2: "the fork's own remote" for a git evidence submission is the
+   * issue's OWN configured repository, not the Paperclip meta-repo -- read
+   * off `project_workspaces.repoUrl`/`.cwd` via `issues.projectWorkspaceId`.
+   * Company-scoped explicitly rather than trusted off the issue row alone.
+   * Returns null when the issue has no workspace configured.
+   */
+  async function getIssueGitWorkspaceContext(
+    companyId: string,
+    issueId: string,
+  ): Promise<{ repoUrl: string | null; cwd: string | null } | null> {
+    return db
+      .select({ repoUrl: projectWorkspaces.repoUrl, cwd: projectWorkspaces.cwd })
+      .from(issueRows)
+      .innerJoin(projectWorkspaces, eq(issueRows.projectWorkspaceId, projectWorkspaces.id))
+      .where(and(eq(issueRows.id, issueId), eq(projectWorkspaces.companyId, companyId)))
+      .then((rows) => rows[0] ?? null);
   }
 
   async function assertCanManageIssueApprovalLinks(req: Request, res: Response, companyId: string) {
@@ -8566,6 +8597,29 @@ export function issueRoutes(
     // `.strict()`, so sending `source` is a 400) and never inferred from the
     // actor class -- see HTTP_EVIDENCE_SOURCE for why.
     const source = HTTP_EVIDENCE_SOURCE;
+
+    // PC-007 AC1/AC2/AC3: `providerKey` "minio"/"git"/"nas" are reserved and
+    // provider-verified -- a caller does not get to file evidence under one
+    // of these on its say-so alone (that hole is exactly what F-007-2/3/4
+    // close; see evidence-provider-*.ts). Any other providerKey, or the
+    // `{externalObjectId}` form, is unchanged.
+    let target: EvidenceLinkTarget = req.body;
+    if ("providerKey" in req.body) {
+      if (req.body.providerKey === "minio") {
+        res.status(422).json({
+          error:
+            "MinIO evidence must be uploaded via POST /companies/:companyId/issues/:issueId/evidence-links/upload",
+        });
+        return;
+      }
+      if (req.body.providerKey === "git") {
+        const workspace = await getIssueGitWorkspaceContext(issue.companyId, id);
+        target = await verifyGitCommitEvidence({ descriptor: req.body, workspace });
+      } else if (req.body.providerKey === "nas") {
+        target = buildNasEvidenceTarget(req.body);
+      }
+    }
+
     // The audit entry is written INSIDE the service transaction, so the link
     // row and its `issue.evidence_linked` entry commit or roll back together.
     // That also closes the retry hole: a `created: false` reply can only come
@@ -8579,7 +8633,7 @@ export function issueRoutes(
     // has returned -- the same `postCommitActivityPublications` discipline
     // issueService().update uses.
     const evidencePublications: ActivityPublication[] = [];
-    const { link, created } = await issueEvidenceLinksSvc.link(id, req.body, source, async (tx, result) => {
+    const { link, created } = await issueEvidenceLinksSvc.link(id, target, source, async (tx, result) => {
       if (!result.created) return;
       await logActivity(tx, {
         companyId: issue.companyId,
@@ -8724,6 +8778,96 @@ export function issueRoutes(
       res.json(moved.link);
     },
   );
+
+  // PC-007 AC1: the only path a `minio` evidence object can be created on --
+  // the generic descriptor route above refuses `providerKey: "minio"`
+  // outright, because that path never touches the storage plane and has no
+  // bytes to hash. Mirrors the attachment upload route's shape.
+  router.post("/companies/:companyId/issues/:issueId/evidence-links/upload", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const issueId = req.params.issueId as string;
+    assertCompanyAccess(req, companyId);
+    const issue = await svc.getById(issueId);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    if (issue.companyId !== companyId) {
+      res.status(422).json({ error: "Issue does not belong to company" });
+      return;
+    }
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+    if (!externalStorageService) {
+      res.status(501).json({ error: "External evidence storage is not configured for this instance" });
+      return;
+    }
+
+    const company = await companiesSvc.getById(companyId);
+    const maxBytes = normalizeIssueAttachmentMaxBytes(company?.attachmentMaxBytes);
+
+    try {
+      await runSingleFileUpload(req, res, maxBytes);
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res.status(422).json({ error: `Evidence file exceeds ${maxBytes} bytes` });
+          return;
+        }
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "Missing file field 'file'" });
+      return;
+    }
+
+    const uploadResult = await uploadMinioEvidenceFile(db, externalStorageService, {
+      companyId,
+      originalFilename: file.originalname || null,
+      declaredContentType: file.mimetype,
+      body: file.buffer,
+      maxBytes,
+    });
+
+    const actor = getActorInfo(req);
+    const source = HTTP_EVIDENCE_SOURCE;
+    const evidencePublications: ActivityPublication[] = [];
+    const { link, created } = await issueEvidenceLinksSvc.link(
+      issueId,
+      { externalObjectId: uploadResult.externalObjectId },
+      source,
+      async (tx, result) => {
+        if (!result.created) return;
+        await logActivity(tx, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          agentApiKeyId: actor.agentApiKeyId,
+          action: "issue.evidence_linked",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            evidenceLinkId: result.link.id,
+            externalObjectId: result.link.externalObjectId,
+            providerKey: result.link.providerKey,
+            objectType: result.link.objectType,
+            source,
+          },
+        }, evidencePublications);
+      },
+    );
+    for (const publication of evidencePublications) publishActivity(publication);
+
+    res.status(created ? 201 : 200).json(link);
+  });
 
   router.post("/companies/:companyId/issues", applyCreateIssueStatusDefault, validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
