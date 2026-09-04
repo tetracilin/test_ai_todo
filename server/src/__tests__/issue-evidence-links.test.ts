@@ -576,7 +576,9 @@ describeEmbeddedPostgres("issue evidence links (PC-007)", () => {
     const { companyId, prefix } = await seedCompany();
     const fromIssueId = await seedIssue(companyId, prefix);
     const toIssueId = await seedIssue(companyId, prefix);
-    const target = { providerKey: "minio" as const, objectType: "object", externalId: "evidence/x.jpg" };
+    // Provider key is arbitrary here -- "minio" is reserved by F-007-2's
+    // upload-only route dispatcher, so an unrelated placeholder key is used.
+    const target = { providerKey: "custom" as const, objectType: "object", externalId: "evidence/x.jpg" };
     const app = createApp();
 
     const botFiled = await evidenceSvc.link(fromIssueId, target, "bot", noAudit);
@@ -607,7 +609,9 @@ describeEmbeddedPostgres("issue evidence links (PC-007)", () => {
     const { companyId, prefix } = await seedCompany();
     const fromIssueId = await seedIssue(companyId, prefix);
     const toIssueId = await seedIssue(companyId, prefix);
-    const target = { providerKey: "minio" as const, objectType: "object", externalId: "evidence/y.jpg" };
+    // Provider key is arbitrary here -- "minio" is reserved by F-007-2's
+    // upload-only route dispatcher, so an unrelated placeholder key is used.
+    const target = { providerKey: "custom" as const, objectType: "object", externalId: "evidence/y.jpg" };
     const app = createApp();
 
     const manualFiled = await request(app)
