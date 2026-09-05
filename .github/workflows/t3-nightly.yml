@@ -120,6 +120,10 @@ jobs:
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
           PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # Adapters an operator may pick when hiring an agent on this stack.
+          # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
+          # `staging` GitHub Environment to widen past hermes_gateway.
+          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway' }}
           # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
           # not SECRETS_DIR directly — without them it falls back to a
           # relative ./secrets/... path that doesn't exist on the runner.

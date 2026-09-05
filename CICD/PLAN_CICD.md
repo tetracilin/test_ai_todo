@@ -124,8 +124,8 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130` |
-| `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100` |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Var `SELECTABLE_ADAPTER_TYPES` (comma-separated adapter types selectable when hiring an agent; unset falls back to `hermes_gateway` only — see `deploy/compose.yaml` and `server/src/adapters/registry.ts:listSelectableServerAdapters`) |
+| `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables
 - Repo secret `DISCORD_WEBHOOK_URL` (incoming webhook for channel `1534836487772704800`)
