@@ -597,6 +597,15 @@ export const checkoutIssueSchema = z.object({
 
 export type CheckoutIssue = z.infer<typeof checkoutIssueSchema>;
 
+// PC-002 AC2: scope-change entries are timestamped by the AGENT (not detected by the system --
+// there is no field-diff trigger), which is why this route exists as its own explicit verb rather
+// than being inferred from an issue PATCH.
+export const recordIssueScopeChangeSchema = z.object({
+  note: z.string().trim().min(1).max(2000),
+}).strict();
+
+export type RecordIssueScopeChange = z.infer<typeof recordIssueScopeChangeSchema>;
+
 const commentMetadataLabelSchema = z.string().trim().min(1).max(120);
 const commentMetadataTextSchema = z.string().trim().min(1).max(2000);
 

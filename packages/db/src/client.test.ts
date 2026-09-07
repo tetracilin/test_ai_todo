@@ -1405,4 +1405,69 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
     },
     20_000,
   );
+
+  it(
+    "reconciles a commented migration whose objects already exist instead of replaying it",
+    async () => {
+      // A worktree seed restores a physical copy of a source instance whose
+      // journal lags the code, so the objects are present but unrecorded. The
+      // reconciler recognises that and records the migration; replaying it
+      // fails on the objects it already created. Every matcher it uses is
+      // anchored at the start of the statement, so a migration that documents
+      // itself only stays recognisable if comments are stripped first.
+      const connectionString = await createTempDatabase();
+
+      await applyPendingMigrations(connectionString);
+
+      const migrationFile = "0234_evidence_source_constraints.sql";
+      const content = await fs.promises.readFile(
+        new URL(`./migrations/${migrationFile}`, import.meta.url),
+        "utf8",
+      );
+      expect(content).toMatch(/^\s*--/); // the case this test exists for
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${await migrationHash(migrationFile)}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: [migrationFile],
+        reason: "pending-migrations",
+      });
+
+      await applyPendingMigrations(connectionString);
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const indexes = await verifySql.unsafe<{ indexname: string }[]>(
+          `SELECT indexname FROM pg_indexes
+           WHERE schemaname = 'public' AND indexname = 'issue_evidence_links_issue_object_uq'`,
+        );
+        expect(indexes).toHaveLength(1);
+
+        const constraints = await verifySql.unsafe<{ conname: string }[]>(
+          `SELECT conname FROM pg_constraint
+           WHERE conname IN ('issue_attachments_source_check', 'issue_evidence_links_source_check')
+           ORDER BY conname`,
+        );
+        expect(constraints.map((row) => row.conname)).toEqual([
+          "issue_attachments_source_check",
+          "issue_evidence_links_source_check",
+        ]);
+      } finally {
+        await verifySql.end();
+      }
+    },
+    30_000,
+  );
 });

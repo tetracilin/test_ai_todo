@@ -81,7 +81,7 @@ function findTreePathViolations(trackedPaths) {
     if (ssotLower.has(lower) && !SSOT_PATHS.includes(path)) {
       violations.push({
         path,
-        detail: `case-collides with fork-owned SSoT path "${lower}" — delete the re-added upstream file (its content belongs under doc/, see doc/UPSTREAM-SYNC.md)`,
+        detail: `case-collides with fork-owned SSoT path "${lower}" — delete the re-added upstream file (its content belongs under doc/, see doc/ORIGIN.md)`,
       });
     }
   }

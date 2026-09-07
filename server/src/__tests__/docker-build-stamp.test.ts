@@ -15,12 +15,15 @@ import { describe, expect, it } from "vitest";
  * the server build already ran in the earlier stage.
  *
  * This guard fails if a refactor drops the build-stage ARG, moves it after the
- * server build, or removes the build-arg the docker workflow passes.
+ * server build, or removes the build-args the deploy workflows pass.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
-const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", "docker.yml"), "utf8");
+
+// This fork builds images from the three t3-* workflows only; upstream's
+// docker.yml was deleted with the rest of its release engineering.
+const T3_WORKFLOWS = ["t3-ci.yml", "t3-nightly.yml", "t3-release.yml"];
 
 /**
  * Return the text of the Dockerfile stage that starts at the named target.
@@ -48,11 +51,13 @@ describe("docker build-stamp wiring", () => {
     ).toBeLessThan(serverBuildIdx);
   });
 
-  it("passes PAPERCLIP_BUILD_COMMIT as a build-arg for both image targets", () => {
-    const argLines = [...workflow.matchAll(/^\s*PAPERCLIP_BUILD_COMMIT=.*$/gm)];
-    expect(
-      argLines.length,
-      "the docker workflow must pass PAPERCLIP_BUILD_COMMIT for the production and cloud builds",
-    ).toBeGreaterThanOrEqual(2);
+  // CLAUDE.md pins PAPERCLIP_BUILD_COMMIT / PAPERCLIP_BUILD_VERSION as a pipeline
+  // contract: /api/health reports the commit and the deploy workflows verify the
+  // deployed sha against it. This guard moved off the deleted upstream docker.yml
+  // onto the three t3-* workflows that actually build this fork's images.
+  it.each(T3_WORKFLOWS)("%s passes both build-stamp args", (name) => {
+    const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", name), "utf8");
+    expect(workflow, `${name} must pass PAPERCLIP_BUILD_COMMIT`).toMatch(/PAPERCLIP_BUILD_COMMIT=/);
+    expect(workflow, `${name} must pass PAPERCLIP_BUILD_VERSION`).toMatch(/PAPERCLIP_BUILD_VERSION=/);
   });
 });

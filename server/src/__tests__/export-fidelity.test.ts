@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, createDb, issueLabels, issueRelations, issues, labels } from "@paperclipai/db";
+import {
+  companies,
+  createDb,
+  externalObjects,
+  issueEvidenceLinks,
+  issueLabels,
+  issueRelations,
+  issues,
+  labels,
+} from "@paperclipai/db";
 
 import { buildExportFidelityReport, collectExportFidelityCounts } from "../services/export-fidelity.js";
 import {
@@ -27,6 +36,8 @@ describeEmbeddedPostgres("export fidelity counts", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(issueEvidenceLinks);
+    await db.delete(externalObjects);
     await db.delete(issueLabels);
     await db.delete(issueRelations);
     await db.delete(labels);
@@ -67,6 +78,36 @@ describeEmbeddedPostgres("export fidelity counts", () => {
       { companyId, issueId: issueA, relatedIssueId: issueB, type: "blocks" as const },
     ]);
 
+    // PC-012 evidence substrate: one artifact and one filing act per company,
+    // so a leak across the company boundary shows up as a count of 2.
+    const evidenceObjectId = randomUUID();
+    const otherEvidenceObjectId = randomUUID();
+    await db.insert(externalObjects).values([
+      {
+        id: evidenceObjectId,
+        companyId,
+        providerKey: "teable",
+        objectType: "row",
+        externalId: "tblIntake/recLocal",
+      },
+      {
+        id: otherEvidenceObjectId,
+        companyId: otherCompanyId,
+        providerKey: "teable",
+        objectType: "row",
+        externalId: "tblIntake/recOther",
+      },
+    ]);
+    await db.insert(issueEvidenceLinks).values([
+      { companyId, issueId: issueA, externalObjectId: evidenceObjectId, source: "bot" as const },
+      {
+        companyId: otherCompanyId,
+        issueId: otherIssue,
+        externalObjectId: otherEvidenceObjectId,
+        source: "manual" as const,
+      },
+    ]);
+
     const counts = await collectExportFidelityCounts(db, companyId);
     expect(counts).toEqual({
       labelDefinitions: 1,
@@ -75,6 +116,8 @@ describeEmbeddedPostgres("export fidelity counts", () => {
       issueDocuments: 0,
       issueWorkProducts: 0,
       issueAttachments: 0,
+      issueEvidenceLinks: 1,
+      externalObjects: 1,
       approvals: 0,
       costEvents: 0,
       activityLogEntries: 0,
@@ -85,6 +128,8 @@ describeEmbeddedPostgres("export fidelity counts", () => {
     expect(otherCounts.labelDefinitions).toBe(1);
     expect(otherCounts.issueBlockerRelations).toBe(0);
     expect(otherCounts.issueMonitors).toBe(1);
+    expect(otherCounts.issueEvidenceLinks).toBe(1);
+    expect(otherCounts.externalObjects).toBe(1);
   });
 
   it("builds a report whose warnings reflect the collected counts", async () => {

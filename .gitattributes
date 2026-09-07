@@ -7,3 +7,16 @@
 /roadmap.md merge=ours
 /backlog.md merge=ours
 /design.md merge=ours
+
+# Markdown test fixtures are compared byte for byte against what a renderer emits, and
+# every renderer here emits LF. Without this, `core.autocrlf=true` (the Windows default,
+# and what this repo's owner has set) writes them back as CRLF on the next checkout and
+# the byte-for-byte assertion fails on Windows while Linux CI stays green — see PC-002
+# AC5 and server/src/__tests__/issue-dossier-fixture.test.ts.
+#
+# Deliberately narrow in BOTH directions. A repo-wide `*.md text eol=lf` would renormalize
+# the SSoT trio above; a directory-wide `fixtures/** text eol=lf` would set `text` on every
+# file under fixtures/ and so turn OFF git's binary auto-detection there — the first .png
+# or .pdf fixture added later would have its 0x0d 0x0a byte pairs rewritten on checkout and
+# be silently corrupt. Scoping to *.md keeps auto-detection for everything else.
+server/src/__tests__/fixtures/*.md text eol=lf

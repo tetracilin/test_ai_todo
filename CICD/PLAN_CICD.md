@@ -18,19 +18,49 @@ Everything marked **ASSUMPTION** must be verified against the repo before implem
 
 ---
 
-## 0. Status (as of 2026-09-02)
+## 0. Status (as of 2026-09-07)
 
-Done by the agent already:
-- Phase 0 (fresh-clone patch to Hermes script) — verify tonight's cron result
+Phase 1 is landed. Every item that was open on 2026-09-02 is now closed:
 - `develop` created; staging/production environments configured (§2.3)
-- PR #43 retargeted to `develop`, mergeable
-- Container deploy workflow exists as `release-prod.yml` → **rename to `t3-release.yml`** (§2.5)
-- `ci.yml` reduced to `build-image` only → **rename to `t3-ci.yml`**, re-add fast tests salvaged from `pr.yml` (§1.2)
+- Upstream workflows removed; only `t3-ci.yml`, `t3-nightly.yml`, `t3-release.yml` remain (§1.1)
+- `pr.yml` deleted, its fast jobs salvaged into `t3-ci` (§1.2)
+- Repo default branch is `develop` (§2.0)
+- Root `package.json` is `"private": true`; no upstream remote (A8, §1.1)
 
 Open:
-- `pr.yml` fails on every branch; `verify`/`e2e` are still required checks on `main` (§1.2, §2.2)
-- Upstream workflows still present (§1.1)
-- Repo default branch still `main` (§2.0)
+- **`develop` has no branch protection at all.** `main` requires `unit` / `build` /
+  `build-image`; `GET /repos/tetracilin/test_ai_todo/branches/develop/protection` returns
+  404 "Branch not protected". The "never push directly to `develop`" rule is convention
+  only, not enforced (§2.1).
+- **`t3-nightly` has failed on all seven runs it has ever had** — five scheduled nightlies
+  (2026-09-02 through 2026-09-06) and two `workflow_dispatch` runs on 2026-09-02. Two
+  independent jobs fail for unrelated reasons:
+  - The deploy job has been blocked since the 2026-09-04 nightly —
+    `/etc/t3/secrets/nightly/paperclip_artifacts_access_key` and `..._secret_key` were made
+    mandatory by PR #78 but never created on kmv8. It also failed in both 2026-09-02 manual
+    runs, for the pre-#78 reasons. Its only two successes are the 2026-09-02 and 2026-09-03
+    scheduled runs, so staging is pinned at `c3c03e81`.
+  - `slow-tests` has never been green, and its cause changed mid-window. On 2026-09-02 and
+    2026-09-03 it failed on `cli-invocation-safety.test.ts` alone. From 2026-09-04 two real
+    regressions took over: a `@paperclipai/db` mock missing `externalObjects` (**PR #80** —
+    #80 moved the `externalObjects` deref to module scope in
+    `evidence-provider-minio.ts:131`, where it throws at import; under #79 every reference
+    was still inside a function body) and a `status-cards` assertion invalidated by the
+    dossier intake hook (PR #81). Two further files rotate run to run and look like
+    contention flakes.
+  - **e2e has never run at all.** `Install Chromium` and `E2E` are later steps in the same
+    job as the vitest step and carry no `if: always()`, so the job aborts before them every
+    time. There is zero e2e signal, not merely a red one.
+- **`t3-release` has never run.** Tag `v0.1.0` exists on `main`, but no production deploy has
+  gone through the pipeline. Note `t3-release.yml:102` carries the *same* fail-early gate
+  against `/etc/t3/secrets/prod`; PR #78's message asserts prod already has both artifact
+  keys, but that has not been checked on the host, so the first release may stop there too.
+- **No failure reaches Discord.** `DISCORD_WEBHOOK_URL` is unset. The deploy job logs
+  `DISCORD_WEBHOOK_URL not set; skipping`; the `slow-tests` report step exits silently
+  (`[[ -n "$WEBHOOK" ]] || exit 0`). Fix this first: it is the reason the items above went
+  unnoticed for five days rather than one night. It must be a **repo**-level secret —
+  `slow-tests` declares no `environment:`, so an environment-scoped secret is invisible to it
+  and the alert that actually mattered would still never fire.
 
 ---
 
@@ -94,17 +124,51 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Branch | Rules |
 |---|---|
-| `develop` | Require PR; required checks `t3-ci / build-image`, `t3-ci / unit`; no force push |
-| `main` | Require PR; required checks `t3-ci / build-image`, `t3-ci / unit`; require branch up to date; no force push; no direct push |
+| `develop` | Require PR; required checks `unit`, `build`, `build-image`; no force push |
+| `main` | Require PR; required checks `unit`, `build`, `build-image`; require branch up to date; no force push; no direct push |
+
+> **Use the bare job names — `unit`, `build`, `build-image` — not `t3-ci / unit`.**
+> For GitHub Actions the status-check context is the **job** name, not
+> `<workflow> / <job>`. Confirmed against the API rather than assumed:
+> `gh api repos/tetracilin/test_ai_todo/commits/<sha>/check-runs --jq '.check_runs[].name'`
+> returns `unit`, `build`, `build-image`. (The stale `verify` and `e2e` contexts still on
+> `main` are bare job names from `pr.yml` too — same rule.) A prefixed name matches no
+> check, so branch protection waits forever for a context that never reports and the
+> branch becomes unmergeable. In the settings UI, pick from the search suggestions —
+> it only lists contexts GitHub has actually observed, which sidesteps this entirely.
+
+`build` is in the required set because it carries `pnpm scan:client-bundle` and
+`pnpm test:e2e:no-google-network` — security gates that must block a merge, not merely report.
 
 **Remove** `policy`, `verify`, `e2e` from `main`'s required checks. They no longer exist after Phase 1; leaving them makes every `develop → main` PR unmergeable.
 
-### 2.2 Environments (already done — verify)
+> **Re-verified 2026-09-07 via `gh api`, not inferred.** Partly fixed since the 2026-09-02
+> reading, partly not:
+> - `main`'s required contexts are now `["unit", "build", "build-image"]` — the stale
+>   `verify` / `e2e` contexts from the deleted `pr.yml` are gone. **Closed.**
+> - `develop` still returns HTTP 404 "Branch not protected": no protection at all. CLAUDE.md's
+>   "Never push directly to develop or main" is convention, not enforcement. **Still open.**
+> - `main` still has `allow_force_pushes: true` (contradicts the CLAUDE.md force-push rule)
+>   and `required_linear_history: true` (contradicts the release step's "merge commit, not
+>   squash"). **Still open**, but do not assume linear history is a hard blocker: `main`'s tip
+>   `2b696cad` *is* a two-parent merge commit landed 2026-09-03, after this setting was first
+>   recorded. `enforce_admins` is `false`, so the required reviewer — who is an admin —
+>   bypasses it. It is a contradiction to resolve, not a wall. It will bite the first person
+>   who releases without admin rights.
+>
+> These are repo-settings changes a human must make; no PR can make them.
+
+### 2.2 Environments (partly done — re-verified 2026-09-07)
+
+> `gh variable list --env staging` returns only `NIGHTLY_PORT`; `--env production` only
+> `PROD_PORT`. **Neither environment defines `SELECTABLE_ADAPTER_TYPES`**, so both stacks run
+> on the compose/workflow fallback. The row below describes the intended configuration, not
+> the current one.
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130` |
-| `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100` |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. **Two different defaults, do not conflate them:** unset, the deploy path falls back to `hermes_gateway,claude_local` (`deploy/compose.yaml:53`, `t3-nightly.yml:126`), while the application's own fallback is `hermes_gateway` only (`server/src/adapters/registry.ts:715`). |
+| `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables
 - Repo secret `DISCORD_WEBHOOK_URL` (incoming webhook for channel `1534836487772704800`)
@@ -145,6 +209,14 @@ su - ghrunner -c '
   ./config.sh --url https://github.com/tetracilin/test_ai_todo --token <TOKEN> --name kmv8 --labels kmv8 --unattended'
 cd /home/ghrunner/actions-runner && ./svc.sh install ghrunner && ./svc.sh start
 ```
+**Each directory must contain four non-empty files**, not just the two the Hermes copy
+carried: `postgres_password`, `better_auth_secret`, `paperclip_artifacts_access_key`,
+`paperclip_artifacts_secret_key`. Both deploy workflows fail early and by name if any is
+missing (`t3-nightly.yml:88-91`, `t3-release.yml:99-102`), and `deploy/compose.yaml` mounts
+all four. The two artifact keys were added by PR #78 on 2026-09-04 and **never created under
+`nightly/`** — that is the open P1 in §0. Staging must carry its own credentials; never copy
+prod's.
+
 `SECRETS_DIR` in both deploy workflows already points at `/etc/t3/secrets/{nightly,prod}`. Update the Hermes script too if it's still the fallback during cutover.
 
 Acceptance: runner **Idle** with label `kmv8`.
@@ -205,14 +277,28 @@ echo "FAILED: $url did not become healthy with commit $want" >&2; exit 1
 ---
 
 ## 8. Definition of done
-- [ ] Phase 1 PR merged: upstream workflows gone, tests salvaged, `doc/ORIGIN.md`, remote removed, `private: true`
+
+Marks verified against the repo and the Actions API on 2026-09-07.
+
+- [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `doc/ORIGIN.md`, remote removed, `private: true`
 - [ ] Default branch `develop`; protections on `develop` and `main` use only `t3-ci` checks
+  — **half done.** Default branch is `develop`. `main` requires `unit` / `build` / `build-image`.
+  `develop` has no protection record at all.
 - [ ] Environments verified; `DISCORD_WEBHOOK_URL` set; fork-PR approval on
+  — **`DISCORD_WEBHOOK_URL` is not set.** Every nightly run logs
+  `DISCORD_WEBHOOK_URL not set; skipping` and passes an empty `WEBHOOK` to the report step,
+  so no failure has ever been announced. This is why seven consecutive red nightlies went
+  unnoticed for five days.
 - [ ] Runner `kmv8` idle as `ghrunner`, secrets under `/etc/t3/secrets`
-- [ ] `t3-ci` green on a test PR
+  — **half done.** The runner is serving jobs. `nightly/` is missing two of the four required
+  secret files, and `prod/` has not been checked (see §0 Open and §3).
+- [x] `t3-ci` green on a test PR
 - [ ] `t3-nightly` manual run: deploy + health + e2e green
-- [ ] `t3-release` deployed `v0.1.0` after approval
-- [ ] Hermes cron disabled
+  — **no manual run has ever had a green deploy.** Both 2026-09-02 `workflow_dispatch` runs
+  failed in `build-and-deploy-nightly`. Deploy + health were green only in the 2026-09-02 and
+  2026-09-03 *scheduled* runs. e2e has never executed at all (see §0).
+- [ ] `t3-release` deployed `v0.1.0` after approval — the workflow has never run.
+- [ ] Hermes cron disabled — not verifiable from the repo; check on kmv8.
 - [ ] A1–A8 confirmed or corrected in the PR description
 
 ---
@@ -259,18 +345,23 @@ file and check.
 
 ### 9.2 Known non-bugs — don't re-diagnose these
 
-- **`review` / `commitperclip PR Review` / Dependency Review fails on every
-  single PR, unconditionally.** Cause: GitHub's Dependency Graph is disabled
-  in repo Settings → Security & analysis (not a required check; PR #31 made
-  the step `continue-on-error`, merged 2026-09-02). If you see this failing,
-  it is not your PR's fault — don't spend time on it.
-- **`.github/workflows/pr.yml` only triggers `on: pull_request: branches:
-  [main]`.** A PR opened against `develop` currently gets *only* `review`
-  (advisory) and `build-image` — none of the real unit/verify/e2e suite runs.
-  Don't read a green develop-targeted PR as "fully tested"; it isn't, yet.
-  Full coverage only happens once the branch flows into a `main`-targeted PR.
-  This gap closes when `t3-ci.yml` (triggers on both `develop` and `main`,
-  §Status table) replaces `pr.yml` in Phase 1.
+- **`review` / Dependency Review fails on every single PR, unconditionally.**
+  Cause: GitHub's Dependency Graph is disabled in repo Settings → Security &
+  analysis. The job reports `Dependency review is not supported on this
+  repository`. It is not a required check. If you see this failing, it is not
+  your PR's fault — don't spend time on it. *(The `commitperclip PR Review`
+  half of this note is obsolete: `commitperclip-review.yml` and all of
+  `.github/scripts/` were deleted in Phase 1 by owner decision, 2026-09-02.
+  Automated PR-rule enforcement — filled template, linked issue, coverage —
+  no longer exists; those AGENTS.md §§10–11 requirements are now reviewer-
+  enforced only.)*
+- ~~**`.github/workflows/pr.yml` only triggers on `main`.**~~ **Closed in
+  Phase 1.** `pr.yml` is deleted; `t3-ci.yml` triggers on PRs to *both*
+  `develop` and `main`, so a develop-targeted PR now gets the full fast gate
+  (`unit`, `build`, `build-image`). The slow suites (full vitest, e2e) moved
+  to `t3-nightly` and are **no longer merge-blocking** on any branch — that is
+  the deliberate trade in §1.2, not an oversight. A green PR means the fast
+  gate passed; it does not mean e2e passed.
 
 ### 9.3 Working-tree hygiene for agents fixing CI on this repo
 

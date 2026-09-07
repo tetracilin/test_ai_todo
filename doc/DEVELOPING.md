@@ -83,15 +83,16 @@ Known limitation: Storybook visual baselines are Linux/Ubuntu-only. The manifest
 pins the capture environment to `ubuntu-24.04` and the Playwright suite uses
 pixel-exact comparison, so local runs on macOS, Windows, or other non-matching
 platforms can report false-positive diffs from font rasterization and subpixel
-rendering. Use the `Storybook Visual` GitHub Actions workflow on `ubuntu-latest`
-as the source of truth, or run locally in a matching Linux environment before
+rendering. Run the suite locally in a matching Linux environment before
 accepting or updating baselines.
 
-PR visual checks are opt-in while the suite stabilizes. Add the
-`storybook-visual` label to a PR, or run the `Storybook Visual` GitHub Actions
-workflow manually, to produce downloadable Playwright report/test-result
-artifacts. Normal PR visual runs use read-only repository permissions and do not
-upload or mutate baseline objects.
+> **No CI path since the hard fork.** The `Storybook Visual` GitHub Actions
+> workflow (`.github/workflows/storybook-visual.yml`) was deleted along with the
+> rest of upstream's workflows; this fork keeps only `t3-ci`, `t3-nightly` and
+> `t3-release` (see `doc/ORIGIN.md`). There is therefore no `storybook-visual` PR
+> label and no hosted `ubuntu-latest` baseline runner. `pnpm test:storybook-visual`
+> and the baseline tooling are unchanged and still work locally on Linux — they are
+> simply not run by CI. Treat baselines produced on macOS or Windows as unreliable.
 
 ## UI Fonts And Screenshots
 

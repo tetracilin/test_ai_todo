@@ -28,7 +28,6 @@ import {
   issueRelations,
   issueComments,
   issueDocuments,
-  issueEvidenceLinks,
   issueReadStates,
   issueThreadInteractions,
   issues,
@@ -66,6 +65,7 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  WORK_PACKAGE_LABEL_NAME,
 } from "@paperclipai/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
@@ -94,6 +94,12 @@ import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { redactSensitiveText } from "../redaction.js";
 import { resolveIssueGoalId, resolveNextIssueGoalId } from "./issue-goal-fallback.js";
+// PC-011 AC1 provenance union, declared once in the schema layer and given its
+// meaning by the wedge-metric reader.
+import type { EvidenceSource } from "./evidence-provenance.js";
+// The engineer-facing half of the PC-001 gate rejection. Type-only: the gate
+// names a phrase key, the chat bridge renders it.
+import type { Wp0MessageId } from "@paperclipai/shared/wp0-phrases";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
@@ -122,6 +128,13 @@ import {
   type IssueGraphLivenessInput,
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
+import { countEvidenceForIssue } from "./issue-evidence-links.js";
+import { issueDossierService } from "./issue-dossier.js";
+import {
+  incompleteWorkPackageChildren,
+  listWorkPackageChildren,
+  wpCloseExportService,
+} from "./wp-close-export.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -165,6 +178,41 @@ const ISSUE_CREATE_IDEMPOTENCY_KEY_RETENTION_MS = ISSUE_CREATE_IDEMPOTENCY_KEY_R
 const ISSUE_CREATE_IDEMPOTENCY_KEY_CLEANUP_BATCH_SIZE = 500;
 const DELETED_ISSUE_COMMENT_BODY = "";
 const ISSUE_WAKE_DIAGNOSTICS_ACTIVITY_ACTIONS = ["issue.tree_hold_wakeup_deferred"] as const;
+
+/**
+ * The PC-001 evidence-gate rejection as an API caller reads it. The prose is
+ * unchanged and stays English: it tells a developer holding a 422 body what to
+ * do. The engineer-facing line is a separate, additive thing -- see
+ * `EVIDENCE_GATE_CHAT_PHRASE_KEY`.
+ */
+export const EVIDENCE_GATE_REJECTION_MESSAGE =
+  "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
+  "attached to this issue, or an evidence link to an external object. Attach a " +
+  "file to this issue or link evidence via the API before marking it done.";
+
+/** Stable discriminator, so no consumer has to string-match the prose above. */
+export const EVIDENCE_GATE_REJECTION_CODE = "evidence_gate_missing_evidence";
+
+/** The two filing tables `countEvidenceForIssue` sums, named for the caller. */
+export const EVIDENCE_GATE_ACCEPTED_EVIDENCE_TYPES = ["issue_attachment", "issue_evidence_link"] as const;
+
+/**
+ * The WP-0 message the chat bridge renders for a field engineer, who has no
+ * API to "link evidence via" (PC-001 AC2). Typed as `Wp0MessageId` so the key
+ * is checked against the checked-in phrase table at compile time -- WP-0 op
+ * AC10: a rejection can never name a phrase the bot does not answer to. The
+ * `gate_rejection` template takes a `card` var, which is why the rejection
+ * details carry `issueIdentifier` alongside this key.
+ */
+export const EVIDENCE_GATE_CHAT_PHRASE_KEY: Wp0MessageId = "gate_rejection";
+
+/** PC-006 AC1: a WP (parent issue labelled "WP") cannot close with an incomplete child. */
+export const WP_CLOSE_GATE_REJECTION_MESSAGE =
+  "Issue cannot be marked done: it is a work package (label \"WP\") with a child card that is " +
+  "neither done nor cancelled. Close or cancel every child card before closing the work package.";
+
+/** Stable discriminator, so no consumer has to string-match the prose above. */
+export const WP_CLOSE_GATE_REJECTION_CODE = "wp_close_incomplete_children";
 
 function wakeRequestTargetsIssue(issueId: string) {
   return sql`(
@@ -7096,7 +7144,8 @@ export function issueService(db: Db) {
       if (data.status === "in_progress" && !data.assigneeAgentId && !data.assigneeUserId) {
         throw unprocessable("in_progress issues require an assignee");
       }
-      return db.transaction(async (tx) => {
+      let wasDeduplicated = false;
+      const created = await db.transaction(async (tx) => {
         const idempotencyKey = rawIdempotencyKey?.trim() || null;
         const normalizedTitle = normalizeCreateIssueTitle(issueData.title);
         if (allowDuplicate === false) {
@@ -7161,6 +7210,7 @@ export function issueService(db: Db) {
               .onConflictDoNothing();
           }
           if (deduplicationReason) onDeduplicated?.(deduplicationReason);
+          wasDeduplicated = true;
           const [enriched] = await withIssueLabels(tx, [existingIssue]);
           const [withRelations] = await withIssueRelationSummaries(companyId, [enriched], tx);
           return withRelations;
@@ -7388,6 +7438,26 @@ export function issueService(db: Db) {
         const [withRelations] = await withIssueRelationSummaries(companyId, [enriched], tx);
         return withRelations;
       });
+
+      // PC-002 AC1: every intake-created card gets a dossier -- but a dedup hit returns an
+      // EXISTING issue (which may already have one), and this must never fail or delay issue
+      // creation itself. Best-effort, after the transaction has committed.
+      if (!wasDeduplicated) {
+        await issueDossierService(db)
+          .seed(
+            created.id,
+            { title: created.title, jobOrder: created.description ?? created.title },
+            {
+              agentId: issueData.createdByAgentId ?? null,
+              userId: issueData.createdByUserId ?? null,
+              runId: actorRunId ?? null,
+            },
+          )
+          .catch((err) => {
+            logger.warn({ err, issueId: created.id }, "failed to seed dossier at intake");
+          });
+      }
+      return created;
     },
 
     /**
@@ -7853,24 +7923,14 @@ export function issueService(db: Db) {
         const isTransitionIntoDone = patch.status === "done" && receiptExisting.status !== "done";
         let evidenceCountForTransition: number | null = null;
         if (isTransitionIntoDone) {
-          const [[{ attachmentCount }], [{ evidenceLinkCount }]] = await Promise.all([
-            tx
-              .select({ attachmentCount: sql<number>`count(*)::int` })
-              .from(issueAttachments)
-              .where(
-                and(eq(issueAttachments.companyId, receiptExisting.companyId), eq(issueAttachments.issueId, id)),
-              ),
-            tx
-              .select({ evidenceLinkCount: sql<number>`count(*)::int` })
-              .from(issueEvidenceLinks)
-              .where(
-                and(
-                  eq(issueEvidenceLinks.companyId, receiptExisting.companyId),
-                  eq(issueEvidenceLinks.issueId, id),
-                ),
-              ),
-          ]);
-          evidenceCountForTransition = attachmentCount + evidenceLinkCount;
+          // Counted through the one shared predicate rather than inline, so the
+          // gate, the digest, and the WP-close export can never disagree about
+          // the same card. `tx` keeps the count under the row lock taken above.
+          const { total } = await countEvidenceForIssue(tx, {
+            companyId: receiptExisting.companyId,
+            issueId: id,
+          });
+          evidenceCountForTransition = total;
 
           const [company] = await tx
             .select({ evidenceGateEnabled: companies.evidenceGateEnabled })
@@ -7878,12 +7938,49 @@ export function issueService(db: Db) {
             .where(eq(companies.id, receiptExisting.companyId))
             .limit(1);
           if (company?.evidenceGateEnabled && evidenceCountForTransition === 0) {
-            throw unprocessable(
-              "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
-                "attached to this issue, or an evidence link to an external object. Attach a " +
-                "file to this issue or link evidence via the API before marking it done.",
-              { evidenceCount: evidenceCountForTransition },
-            );
+            // The message stays English for API callers; the structured details
+            // are additive, and are what the chat bridge renders the engineer's
+            // one Vietnamese line from (card + filing phrase).
+            throw unprocessable(EVIDENCE_GATE_REJECTION_MESSAGE, {
+              evidenceCount: evidenceCountForTransition,
+              code: EVIDENCE_GATE_REJECTION_CODE,
+              acceptedEvidenceTypes: [...EVIDENCE_GATE_ACCEPTED_EVIDENCE_TYPES],
+              chatPhraseKey: EVIDENCE_GATE_CHAT_PHRASE_KEY,
+              issueIdentifier: receiptExisting.identifier ?? null,
+            });
+          }
+
+          // PC-006 AC1: closing a WP (a parent issue carrying the "WP" label,
+          // K6 domain map -- no work_packages table) refuses while any direct
+          // child card is neither done nor cancelled. Same commit-point choke
+          // as the evidence gate above, for the same reason (review finding
+          // 1.4): a separate hook here would re-fragment the one place every
+          // done-producing path already funnels through.
+          const [wpLabel] = await tx
+            .select({ id: labels.id })
+            .from(labels)
+            .where(and(eq(labels.companyId, receiptExisting.companyId), eq(labels.name, WORK_PACKAGE_LABEL_NAME)))
+            .limit(1);
+          if (wpLabel) {
+            // A request that both attaches the WP label and closes in the same
+            // PATCH must be gated on the label it is ABOUT to have, not the one
+            // it had before this call -- otherwise "add WP label + close" in one
+            // request would skip the gate entirely.
+            const isWorkPackage =
+              nextLabelIds !== undefined
+                ? nextLabelIds.includes(wpLabel.id)
+                : ((await labelMapForIssues(tx, [id])).get(id) ?? []).some((label) => label.id === wpLabel.id);
+            if (isWorkPackage) {
+              const children = await listWorkPackageChildren(tx, receiptExisting.companyId, id);
+              const incompleteChildren = incompleteWorkPackageChildren(children);
+              if (incompleteChildren.length > 0) {
+                throw unprocessable(WP_CLOSE_GATE_REJECTION_MESSAGE, {
+                  code: WP_CLOSE_GATE_REJECTION_CODE,
+                  incompleteChildIssueIds: incompleteChildren.map((child) => child.id),
+                  issueIdentifier: receiptExisting.identifier ?? null,
+                });
+              }
+            }
           }
         }
 
@@ -8146,6 +8243,30 @@ export function issueService(db: Db) {
       const result = await (dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx));
       if (dbOrTx === db && !postCommitActivityPublications) {
         for (const publication of ownedActivityPublications) publishActivity(publication);
+      }
+      // PC-006 AC1: once a WP (a parent issue labelled "WP") successfully closes --
+      // the gate above already refused this transaction while a child card was
+      // incomplete -- render and persist the close-export bundle. Best-effort and
+      // post-commit, same pattern as the dossier intake seed above (`create()`): a
+      // bundle-generation failure must never undo or block the close itself, and
+      // the underlying data (dossier, evidence, wedge ratio) stays separately
+      // queryable/regenerable if this fails.
+      if (
+        dbOrTx === db &&
+        result &&
+        existing.status !== "done" &&
+        result.status === "done" &&
+        result.labels?.some((label: { name: string }) => label.name === WORK_PACKAGE_LABEL_NAME)
+      ) {
+        await wpCloseExportService(db)
+          .generateAndPersist(existing.companyId, id, {
+            agentId: actorAgentId ?? null,
+            userId: actorUserId ?? null,
+            runId: null,
+          })
+          .catch((err) => {
+            logger.warn({ err, issueId: id }, "failed to generate WP-close export bundle");
+          });
       }
       return result;
     },
@@ -9002,9 +9123,20 @@ export function issueService(db: Db) {
       return redactIssueComment(comment, currentUserRedactionOptions.enabled);
     },
 
+    /**
+     * PC-011 AC1: an attachment IS a filing act, so the row carries its own
+     * `source` provenance and the wedge metric unions this table with
+     * `issue_evidence_links`. `source` is a required input rather than a
+     * defaulted one: it used to be omitted entirely, which left the DB default
+     * 'manual' on every attachment and made `bot` unwritable on this table --
+     * a structural bias in `wp0_evidence_via_bot`'s denominator that no amount
+     * of real bot adoption could correct. Callers must state the provenance of
+     * the filing act they are performing.
+     */
     createAttachment: async (input: {
       issueId: string;
       issueCommentId?: string | null;
+      source: EvidenceSource;
       provider: string;
       objectKey: string;
       contentType: string;
@@ -9056,6 +9188,7 @@ export function issueService(db: Db) {
             issueId: issue.id,
             assetId: asset.id,
             issueCommentId: input.issueCommentId ?? null,
+            source: input.source,
           })
           .returning();
 
@@ -9065,6 +9198,7 @@ export function issueService(db: Db) {
           issueId: attachment.issueId,
           issueCommentId: attachment.issueCommentId,
           assetId: attachment.assetId,
+          source: attachment.source,
           provider: asset.provider,
           objectKey: asset.objectKey,
           contentType: asset.contentType,
@@ -9087,6 +9221,10 @@ export function issueService(db: Db) {
           issueId: issueAttachments.issueId,
           issueCommentId: issueAttachments.issueCommentId,
           assetId: issueAttachments.assetId,
+          // PC-011 AC2 provenance of the filing act. Selected here as well as on
+          // createAttachment's return so a consumer reading `source` off a POST
+          // response finds the same field when it re-reads the attachment.
+          source: issueAttachments.source,
           provider: assets.provider,
           objectKey: assets.objectKey,
           contentType: assets.contentType,
@@ -9111,6 +9249,7 @@ export function issueService(db: Db) {
           issueId: issueAttachments.issueId,
           issueCommentId: issueAttachments.issueCommentId,
           assetId: issueAttachments.assetId,
+          source: issueAttachments.source,
           provider: assets.provider,
           objectKey: assets.objectKey,
           contentType: assets.contentType,

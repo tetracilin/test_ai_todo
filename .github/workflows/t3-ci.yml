@@ -1,8 +1,15 @@
 # t3-ci — merge gate. Runs on every PR into develop or main, and on pushes to them.
 # GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
 #
-# Required status checks for branch protection:
-#   "t3-ci / unit", "t3-ci / build", "t3-ci / build-image"
+# Required status checks for branch protection — use these EXACT names:
+#   "unit", "build", "build-image"
+#
+# NOT "t3-ci / unit". For GitHub Actions the status-check context is the JOB name,
+# not "<workflow> / <job>". Verified against the API:
+#   gh api repos/tetracilin/test_ai_todo/commits/<sha>/check-runs --jq '.check_runs[].name'
+# returns bare `unit`, `build`, `build-image`. A prefixed name matches no check, and
+# branch protection then waits forever for a context that never reports — the same
+# deadlock the deleted pr.yml's `verify`/`e2e` left on main.
 #
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
@@ -30,14 +37,14 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
           version: 9.15.4
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -63,8 +70,39 @@ jobs:
         run: node --test ./scripts/__tests__/e2e-shard.test.mjs
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Test plugin-SDK dev symlinker
+        # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
+        # otherwise release-only and is deleted with the rest of upstream's
+        # release engineering. This one file is not a release test: it covers
+        # scripts/link-plugin-dev-sdk.mjs, the root `postinstall` that every
+        # build and test run depends on. vitest.config.ts declares no `scripts`
+        # project, so nothing else in CI executes it.
+        run: node --test ./scripts/link-plugin-dev-sdk.test.js
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
+
+      # PLAN_CICD.md section 1.2 classifies code-behaviour tests as fast
+      # (< 5 min -> this job) or slow (sharded server vitest, e2e ->
+      # t3-nightly.yml). The fast half was never wired up: before this step the
+      # job ran guard scripts and four `node --test` script tests, and no
+      # vitest at all, so a pull request went green with every unit test in it
+      # failing.
+      #
+      # These two groups are the non-server vitest projects. They need no
+      # embedded Postgres, which is what makes the server suites slow and
+      # contention-prone. `general-server` and the serialized suites stay in
+      # t3-nightly.yml, exactly as section 1.2 specifies.
+      - name: Unit tests (shared, db, adapters, plugin SDK)
+        run: pnpm run test:run:general --group general-workspaces-b
+      - name: Unit tests (ui, cli)
+        run: pnpm run test:run:general --group general-workspaces-a
+
+      # discord-bridge is not a pnpm workspace member (see pnpm-workspace.yaml)
+      # and carries its own package-lock.json, so the vitest projects above
+      # never reach it. It needs its own npm invocation.
+      - name: Unit tests (discord-bridge)
+        working-directory: discord-bridge
+        run: npm ci && npm test
 
   # Salvaged wholesale from pr.yml `build`. The client-bundle scan and the
   # no-google network guard are security gates and must block a merge, so this
@@ -74,12 +112,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
           version: 9.15.4
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -100,10 +138,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Build image (not pushed)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile

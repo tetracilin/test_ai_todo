@@ -161,6 +161,59 @@ function asTextFile(entry: CompanyPortabilityFileEntry | undefined) {
   return typeof entry === "string" ? entry : "";
 }
 
+/**
+ * Stand-in drizzle client for the suite's mocked-service tests.
+ *
+ * The portability service reads a few tables directly rather than through a
+ * domain service -- evidence links joined to their external objects on export,
+ * external objects on import. Those reads are real drizzle calls, so a bare
+ * `{}` throws. Every query here resolves to no rows and every write is a no-op,
+ * which is exactly what a company with no evidence substrate looks like; tests
+ * that care about those rows build their own stub or use embedded Postgres.
+ */
+function emptyQueryDb() {
+  const chain: Record<string, unknown> = {};
+  for (const method of [
+    "from",
+    "innerJoin",
+    "leftJoin",
+    "where",
+    "orderBy",
+    "limit",
+    "values",
+    "set",
+    "onConflictDoNothing",
+    "onConflictDoUpdate",
+    "returning",
+  ]) {
+    chain[method] = () => chain;
+  }
+  chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve);
+  return {
+    select: () => chain,
+    insert: () => chain,
+    update: () => chain,
+    delete: () => chain,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+/**
+ * `emptyQueryDb` with the evidence-link join answering rows. The portability
+ * service issues exactly one direct read on export (evidence links joined to
+ * their external objects), so a single canned result set is enough.
+ */
+function evidenceQueryDb(rows: Array<Record<string, unknown>>) {
+  const db = emptyQueryDb();
+  const chain: Record<string, unknown> = {};
+  for (const method of ["from", "innerJoin", "where", "orderBy"]) {
+    chain[method] = () => chain;
+  }
+  chain.then = (resolve: (value: unknown[]) => unknown) => Promise.resolve(rows).then(resolve);
+  db.select = () => chain;
+  return db;
+}
+
 describe("company portability", () => {
   const paperclipKey = "paperclipai/paperclip/paperclip";
   const companyPlaybookKey = "company/company-1/company-playbook";
@@ -509,7 +562,7 @@ describe("company portability", () => {
   });
 
   it("exports referenced skills as stubs by default with sanitized Paperclip extension data", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -553,7 +606,7 @@ describe("company portability", () => {
   });
 
   it("does not load or emit skills when agents are included but skills are disabled", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -621,7 +674,7 @@ describe("company portability", () => {
   });
 
   it("exports hire approval policy only when approval is required", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.getById.mockResolvedValueOnce({
       id: "company-1",
@@ -647,7 +700,7 @@ describe("company portability", () => {
   });
 
   it("exports legacy inline sensitive env values as declarations without values", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([
       {
         id: "agent-inline-secret",
@@ -711,7 +764,7 @@ describe("company portability", () => {
   });
 
   it("exports default sidebar order into the Paperclip extension and manifest", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -769,7 +822,7 @@ describe("company portability", () => {
   });
 
   it("expands referenced skills when requested", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -788,7 +841,7 @@ describe("company portability", () => {
   });
 
   it("exports catalog skill provenance in portable Paperclip frontmatter", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const catalogKey = "paperclipai/bundled/software-development/review";
     const originHash = "sha256:catalog-origin";
     const catalogSkill = {
@@ -888,7 +941,7 @@ describe("company portability", () => {
   });
 
   it("exports only selected skills when skills filter is provided", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -906,7 +959,7 @@ describe("company portability", () => {
   });
 
   it("warns and exports all skills when skills filter matches nothing", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -947,7 +1000,7 @@ describe("company portability", () => {
       originalFilename: "logo.png",
     });
 
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -968,7 +1021,7 @@ describe("company portability", () => {
   });
 
   it("exports duplicate skill slugs into readable namespaced paths", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySkillSvc.readFile.mockImplementation(async (_companyId: string, skillId: string, relativePath: string) => {
       if (skillId === "skill-local") {
@@ -1054,7 +1107,7 @@ describe("company portability", () => {
   });
 
   it("builds export previews without tasks by default", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -1114,7 +1167,7 @@ describe("company portability", () => {
   });
 
   it("prefetches task export records with bounded concurrency", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const issues = ["issue-1", "issue-2", "issue-3"].map((id, index) => ({
       id,
       identifier: `PAP-${index + 1}`,
@@ -1173,7 +1226,7 @@ describe("company portability", () => {
   });
 
   it("exports portable project workspace metadata and remaps it on import", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -1374,7 +1427,7 @@ describe("company portability", () => {
   });
 
   it("normalizes invalid imported project icon names to null", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -1425,7 +1478,7 @@ describe("company portability", () => {
   });
 
   it("infers portable git metadata from a local checkout without task warning fan-out", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-portability-git-"));
     execFileSync("git", ["init"], { cwd: repoDir, stdio: "ignore" });
     execFileSync("git", ["checkout", "-b", "main"], { cwd: repoDir, stdio: "ignore" });
@@ -1510,7 +1563,7 @@ describe("company portability", () => {
   });
 
   it("collapses repeated task workspace warnings into one summary per missing workspace", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -1613,7 +1666,7 @@ describe("company portability", () => {
   });
 
   it("reads env inputs back from .paperclip.yaml during preview import", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -1670,7 +1723,7 @@ describe("company portability", () => {
   });
 
   it("materializes required agent env inputs from import secretValues as company secrets", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([]);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
       id: "agent-imported",
@@ -1777,7 +1830,7 @@ describe("company portability", () => {
   });
 
   it("imports agent permission grants from package metadata", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([]);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
       id: "agent-imported",
@@ -1861,7 +1914,7 @@ describe("company portability", () => {
   });
 
   it("removes import secrets created before a later import failure", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([]);
     secretSvc.create.mockResolvedValueOnce({ id: "secret-created-for-failed-import" });
     agentSvc.create.mockRejectedValueOnce(new Error("agent create failed"));
@@ -1924,7 +1977,7 @@ describe("company portability", () => {
   });
 
   it("fails closed on an inline import that arrived with fewer files than declared", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([]);
 
     // The client declared four files, but the body was truncated in transit and
@@ -1977,7 +2030,7 @@ describe("company portability", () => {
   });
 
   it("imports an inline bundle whose file count matches the declared count", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([]);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
       id: "agent-imported",
@@ -2029,7 +2082,7 @@ describe("company portability", () => {
   });
 
   it("reparents imported roots to pre-existing target managers before resolving imported hierarchy", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     agentSvc.list.mockResolvedValue([
       {
         id: "existing-ceo",
@@ -2114,7 +2167,7 @@ describe("company portability", () => {
   });
 
   it("exports project env as portable inputs without concrete values", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -2169,7 +2222,7 @@ describe("company portability", () => {
   });
 
   it("reads project env inputs back from .paperclip.yaml during preview import", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -2236,7 +2289,7 @@ describe("company portability", () => {
   });
 
   it("exports routines as recurring task packages with Paperclip routine extensions", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -2366,7 +2419,7 @@ describe("company portability", () => {
   });
 
   it("skips built-in managed agents and routines during export", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     agentSvc.list.mockResolvedValue([
       {
@@ -2483,7 +2536,7 @@ describe("company portability", () => {
   });
 
   it("imports recurring task packages as routines instead of one-time issues", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2610,7 +2663,7 @@ describe("company portability", () => {
   });
 
   it("pauses imported agents and routines when pauseAutomations is requested", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2680,7 +2733,7 @@ describe("company portability", () => {
   });
 
   it("leaves imported agents and routines active when pauseAutomations is absent", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2749,7 +2802,7 @@ describe("company portability", () => {
   });
 
   it("migrates legacy schedule.recurrence imports into routine triggers", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2823,7 +2876,7 @@ describe("company portability", () => {
   });
 
   it("imports recurring tasks without a project or assignee as paused routines", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2870,7 +2923,7 @@ describe("company portability", () => {
   });
 
   it("imports a vendor-neutral package without .paperclip.yaml", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -2988,7 +3041,7 @@ describe("company portability", () => {
   });
 
   it("preserves agent role from frontmatter when extension block omits it", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const preview = await portability.previewImport({
       source: {
@@ -3032,7 +3085,7 @@ describe("company portability", () => {
   });
 
   it("treats no-separator auth and api key env names as secrets during export", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     agentSvc.list.mockResolvedValue([
       {
@@ -3089,7 +3142,7 @@ describe("company portability", () => {
   });
 
   it("imports packaged skills and restores desired skill refs on agents", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3192,7 +3245,7 @@ describe("company portability", () => {
       name: "ClaudeCoder",
     });
 
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     const exported = await portability.exportBundle("company-1", {
       include: {
         company: true,
@@ -3252,7 +3305,7 @@ describe("company portability", () => {
   });
 
   it("copies source company memberships for safe new-company imports", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3307,7 +3360,7 @@ describe("company portability", () => {
   });
 
   it("disables timer heartbeats on imported agents", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3363,7 +3416,7 @@ describe("company portability", () => {
   });
 
   it("imports only selected files and leaves unchecked company metadata alone", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: {
@@ -3452,7 +3505,7 @@ describe("company portability", () => {
   });
 
   it("applies adapter overrides while keeping imported AGENTS content implicit", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3532,7 +3585,7 @@ describe("company portability", () => {
   });
 
   it("does not implicitly add local adapter permission bypass defaults on import", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -3624,7 +3677,7 @@ describe("company portability", () => {
   });
 
   it("carries labels by name through export and import round-trip", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([
       {
@@ -3674,8 +3727,8 @@ describe("company portability", () => {
     expect(extension).not.toContain("labelIds");
     expect(extension).not.toContain("label-a");
     // Fresh exports declare the current bundle shape end-to-end.
-    expect(extension).toContain("schemaVersion: 7");
-    expect(exported.manifest.schemaVersion).toBe(7);
+    expect(extension).toContain("schemaVersion: 8");
+    expect(exported.manifest.schemaVersion).toBe(8);
     expect(exported.manifest.labels).toEqual([
       { name: "bug", color: "#ff0000" },
       { name: "urgent", color: "#00ff00" },
@@ -3713,7 +3766,7 @@ describe("company portability", () => {
   });
 
   it("reuses existing target labels on name collision and keeps the target color", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([]);
     projectSvc.listWorkspaces.mockResolvedValue([]);
@@ -3774,7 +3827,7 @@ describe("company portability", () => {
   });
 
   it("drops unresolvable raw labelIds from old bundles with a warning instead of failing", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({ id: "company-imported", name: "Legacy Import" });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
@@ -3941,6 +3994,7 @@ describe("company portability", () => {
     const insertedRelationValues: Array<Record<string, unknown>> = [];
     const monitorUpdates: Array<Record<string, unknown>> = [];
     const db = {
+      ...emptyQueryDb(),
       insert: () => ({
         values: (rows: Array<Record<string, unknown>>) => ({
           onConflictDoNothing: async () => {
@@ -4193,7 +4247,7 @@ describe("company portability", () => {
     });
 
     const extension = asTextFile(exported.files[".paperclip.yaml"]);
-    expect(extension).toContain("schemaVersion: 7");
+    expect(extension).toContain("schemaVersion: 8");
     expect(extension).toContain('parent: "pap-1"');
     expect(extension).toContain('createdAt: "2026-01-01T00:00:00.000Z"');
     expect(exported.warnings).toContain(
@@ -4276,7 +4330,7 @@ describe("company portability", () => {
       "tasks/task-c/TASK.md": taskFile("Task C"),
       ".paperclip.yaml": [
         'schema: "paperclip/v1"',
-        "schemaVersion: 7",
+        "schemaVersion: 8",
         "tasks:",
         "  task-a:",
         '    status: "todo"',
@@ -4412,6 +4466,7 @@ describe("company portability", () => {
         byteSize: 9,
         sha256: sha256Of("png-bytes"),
         originalFilename: "screenshot.png",
+        source: "bot",
         createdAt: new Date("2026-06-03T00:00:00.000Z"),
       },
       {
@@ -4424,6 +4479,7 @@ describe("company portability", () => {
         byteSize: 9,
         sha256: "stale-asset-row-hash",
         originalFilename: "notes.bin",
+        source: "manual",
         createdAt: new Date("2026-06-02T12:00:00.000Z"),
       },
       ...extraRows,
@@ -4432,7 +4488,7 @@ describe("company portability", () => {
 
   it("carries issue attachments as content-addressed blobs through export and import", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockAttachmentExportSources();
     const sha = sha256Of("png-bytes");
 
@@ -4460,6 +4516,7 @@ describe("company portability", () => {
         originalFilename: "notes.bin",
         byteSize: 9,
         commentIndex: null,
+        source: "manual",
       },
       {
         sha256: sha,
@@ -4467,6 +4524,9 @@ describe("company portability", () => {
         originalFilename: "screenshot.png",
         byteSize: 9,
         commentIndex: 1,
+        // PC-011 provenance survives the export leg; the import leg restores it
+        // onto the column (see company-portability-evidence-round-trip).
+        source: "bot",
       },
     ]);
     expect(exported.warnings).toContain(
@@ -4524,7 +4584,7 @@ describe("company portability", () => {
   });
 
   it("skips attachment export with a per-task warning when storage is unavailable", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     mockAttachmentExportSources();
 
     const exported = await portability.exportBundle("company-1", {
@@ -4540,13 +4600,13 @@ describe("company portability", () => {
 
   it("skips all attachment imports with one warning when the target has no storage", async () => {
     const storage = fakeAttachmentStorage();
-    const exporting = companyPortabilityService({} as any, storage as any);
+    const exporting = companyPortabilityService(emptyQueryDb(), storage as any);
     mockAttachmentExportSources();
     const exported = await exporting.exportBundle("company-1", {
       include: { company: true, agents: false, projects: false, issues: true },
     });
 
-    const importing = companyPortabilityService({} as any);
+    const importing = companyPortabilityService(emptyQueryDb());
     companySvc.create.mockResolvedValue({ id: "company-imported", name: "Imported" });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
@@ -4566,7 +4626,7 @@ describe("company portability", () => {
 
   it("fails closed when a bundle blob does not match its declared sha256", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockAttachmentExportSources();
     const sha = sha256Of("png-bytes");
 
@@ -4600,7 +4660,7 @@ describe("company portability", () => {
 
   it("skips oversized and missing-blob attachments with warnings instead of failing", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockAttachmentExportSources([
       {
         id: "attachment-3",
@@ -4710,7 +4770,7 @@ describe("company portability", () => {
 
   it("carries embedded asset images through export and import with rewritten references", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockEmbeddedAssetExportSources();
     const sha = sha256Of("embedded-image-bytes");
 
@@ -4794,7 +4854,7 @@ describe("company portability", () => {
 
   it("skips embedded image references that are foreign or dangling with one aggregate warning", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     const foreignAssetId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const missingAssetId = "12345678-1234-4123-8123-123456789abc";
     mockEmbeddedAssetExportSources(
@@ -4834,7 +4894,7 @@ describe("company portability", () => {
 
   it("leaves embedded image references untouched when their blob is missing at import", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockEmbeddedAssetExportSources();
     const sha = sha256Of("embedded-image-bytes");
 
@@ -4868,7 +4928,7 @@ describe("company portability", () => {
 
   it("prunes embedded asset entries and blobs when the referencing files are excluded from the export selection", async () => {
     const storage = fakeAttachmentStorage();
-    const portability = companyPortabilityService({} as any, storage as any);
+    const portability = companyPortabilityService(emptyQueryDb(), storage as any);
     mockEmbeddedAssetExportSources();
     const sha = sha256Of("embedded-image-bytes");
 
@@ -4888,6 +4948,52 @@ describe("company portability", () => {
     expect(prunedYaml).not.toContain("embeddedAssets:");
     expect(prunedYaml).not.toContain("blobs:");
     expect(pruned.manifest.embeddedAssets).toEqual([]);
+  });
+
+  it("prunes external object entries when the tasks referencing them leave the export selection", async () => {
+    const storage = fakeAttachmentStorage();
+    // A NAS path reference is the sharpest case: pruning it is a
+    // confidentiality boundary, not a bundle-size optimisation.
+    const db = evidenceQueryDb([
+      {
+        issueId: "issue-1",
+        source: "bot",
+        createdAt: new Date("2026-09-01T00:00:00.000Z"),
+        providerKey: "nas",
+        objectType: "file",
+        externalId: "vault/2026/run-14",
+        sanitizedCanonicalUrl: "nas://vault/2026/run-14",
+        displayTitle: "run-14",
+      },
+    ]);
+    const portability = companyPortabilityService(db, storage as any);
+    mockEmbeddedAssetExportSources();
+
+    const kept = await portability.exportBundle("company-1", {
+      include: { company: true, agents: false, projects: false, issues: true },
+    });
+    const keptYaml = asTextFile(kept.files[".paperclip.yaml"]);
+    expect(keptYaml).toContain("externalObjects:");
+    expect(keptYaml).toContain("nas://vault/2026/run-14");
+    expect(kept.manifest.externalObjects).toEqual([
+      {
+        ref: "nas:file:vault/2026/run-14",
+        providerKey: "nas",
+        objectType: "file",
+        externalId: "vault/2026/run-14",
+        sanitizedCanonicalUrl: "nas://vault/2026/run-14",
+        displayTitle: "run-14",
+      },
+    ]);
+
+    const pruned = await portability.exportBundle("company-1", {
+      include: { company: true, agents: false, projects: false, issues: true },
+      selectedFiles: ["COMPANY.md", ".paperclip.yaml"],
+    });
+    const prunedYaml = asTextFile(pruned.files[".paperclip.yaml"]);
+    expect(prunedYaml).not.toContain("externalObjects:");
+    expect(prunedYaml).not.toContain("nas://vault/2026/run-14");
+    expect(pruned.manifest.externalObjects).toEqual([]);
   });
 
   function legacyPackageFiles(extensionLines: string[]) {
@@ -4919,9 +5025,9 @@ describe("company portability", () => {
   }
 
   it("imports unstamped v5 packages with an info warning about task data they predate", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const v5Warning =
-      "This package declares schemaVersion 5 and predates label, blocker, document, work product, monitor, attachment, embedded image, task timestamp, and parent link transfer; that task data imports only if the bundle carries it.";
+      "This package declares schemaVersion 5 and predates label, blocker, document, work product, monitor, attachment, embedded image, task timestamp, parent link, evidence link, and external object transfer; that task data imports only if the bundle carries it.";
 
     companySvc.create.mockResolvedValue({ id: "company-imported", name: "Legacy Import" });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
@@ -4951,7 +5057,7 @@ describe("company portability", () => {
   });
 
   it("keeps packages declaring schemaVersions below 5 importable", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const preview = await portability.previewImport({
       source: { type: "inline", rootPath: "legacy-package", files: legacyPackageFiles(["schemaVersion: 1"]) },
@@ -4967,10 +5073,10 @@ describe("company portability", () => {
   });
 
   it("rejects packages produced by a newer Paperclip", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     await expect(portability.importBundle({
-      source: { type: "inline", rootPath: "future-package", files: legacyPackageFiles(["schemaVersion: 8"]) },
+      source: { type: "inline", rootPath: "future-package", files: legacyPackageFiles(["schemaVersion: 9"]) },
       include: { company: true, agents: false, projects: false, issues: true },
       target: { mode: "new_company", newCompanyName: "Future Import" },
       agents: "all",
@@ -4980,7 +5086,7 @@ describe("company portability", () => {
   });
 
   it("preserves issue comment presentation fields through export and import", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const presentation = { kind: "system_notice", tone: "warning", detailsDefaultOpen: false };
     const metadata = {
       version: 1,
@@ -5059,7 +5165,7 @@ describe("company portability", () => {
   });
 
   it("does not export raw comment author user ids", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([]);
     projectSvc.listWorkspaces.mockResolvedValue([]);
@@ -5106,7 +5212,7 @@ describe("company portability", () => {
   });
 
   it("downgrades user-authored imported comments to system when no importing user exists", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([]);
     projectSvc.listWorkspaces.mockResolvedValue([]);
@@ -5178,7 +5284,7 @@ describe("company portability", () => {
   });
 
   it("strips root AGENTS frontmatter when importing a nested agent entry path", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -5248,7 +5354,7 @@ describe("company portability", () => {
   });
 
   it("rejects dangerous adapter types on agent-safe imports", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const exported = await portability.exportBundle("company-1", {
       include: {
         company: true,
@@ -5296,7 +5402,7 @@ describe("company portability", () => {
   });
 
   it("reports unsafe project workspace commands on agent-safe import preview", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const preview = await portability.previewImport({
       source: {
@@ -5337,7 +5443,7 @@ describe("company portability", () => {
   });
 
   it("reports invalid imported project env on agent-safe import preview", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     secretSvc.normalizeEnvBindingsForPersistence.mockRejectedValueOnce(new Error("Secret must belong to same company"));
 
     const preview = await portability.previewImport({
@@ -5384,7 +5490,7 @@ describe("company portability", () => {
   });
 
   it("rejects unsafe routine and issue execution overrides on agent-safe import apply", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     await expect(portability.importBundle({
       source: {
@@ -5432,7 +5538,7 @@ describe("company portability", () => {
   });
 
   it("imports new agents as active while preserving future hire approval settings", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const exported = await portability.exportBundle("company-1", {
       include: {
         company: true,
@@ -5499,7 +5605,7 @@ describe("company portability", () => {
   });
 
   it("normalizes adapter config on replace imports before updating existing agents", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
     const exported = await portability.exportBundle("company-1", {
       include: {
         company: true,
@@ -5564,7 +5670,7 @@ describe("company portability", () => {
   });
 
   it("nameOverrides applied after collision detection do not re-validate uniqueness", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: { company: false, agents: true, projects: false, issues: false },
@@ -5593,7 +5699,7 @@ describe("company portability", () => {
   });
 
   it("handles circular reportsTo chains without infinite recursion during export", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     agentSvc.list.mockResolvedValue([
       {
@@ -5624,7 +5730,7 @@ describe("company portability", () => {
   });
 
   it("resolves issue assignee to existing agent when agent is skipped", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     projectSvc.list.mockResolvedValue([{
       id: "project-1", companyId: "company-1", name: "TestProject", urlKey: "testproject",
@@ -5679,7 +5785,7 @@ describe("company portability", () => {
   });
 
   it("handles a package with only skills (no agents or projects)", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: { company: false, agents: false, projects: false, issues: false, skills: true },
@@ -5694,7 +5800,7 @@ describe("company portability", () => {
   });
 
   it("preview import detects no agents to import when agents are excluded", async () => {
-    const portability = companyPortabilityService({} as any);
+    const portability = companyPortabilityService(emptyQueryDb());
 
     const exported = await portability.exportBundle("company-1", {
       include: { company: true, agents: true, projects: false, issues: false },

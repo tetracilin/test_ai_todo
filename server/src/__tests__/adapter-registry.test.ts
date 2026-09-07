@@ -71,6 +71,31 @@ describe("server adapter registry", () => {
     expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
   });
 
+  it("widens the selectable set when PAPERCLIP_SELECTABLE_ADAPTER_TYPES names more adapters", () => {
+    const previous = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    try {
+      process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway, claude_local";
+      expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual([
+        "hermes_gateway",
+        "claude_local",
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+      else process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = previous;
+    }
+  });
+
+  it("skips unknown or unregistered types in PAPERCLIP_SELECTABLE_ADAPTER_TYPES", () => {
+    const previous = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    try {
+      process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "not_a_registered_adapter,,hermes_gateway,hermes_gateway";
+      expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+      else process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = previous;
+    }
+  });
+
   it("exposes adapter model profiles when adapters declare them", async () => {
     const adapterWithProfiles: ServerAdapterModule = {
       ...externalAdapter,

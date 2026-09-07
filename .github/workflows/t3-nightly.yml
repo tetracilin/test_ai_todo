@@ -41,9 +41,10 @@ jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
-    outputs:
-      skipped: ${{ steps.guard.outputs.skip }}
-      sha: ${{ steps.out.outputs.sha }}
+    # No `outputs:` here on purpose. slow-tests deliberately does NOT `needs:`
+    # this job (ASSUMPTION A6): Playwright bootstraps its own instance, so the
+    # suite runs on a GitHub-hosted runner even when the deploy guard skips.
+    # Coupling them would make a skipped deploy silently skip the tests too.
     environment:
       name: staging
       url: http://127.0.0.1:33130
@@ -69,7 +70,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.guard.outputs.skip == 'false'
         with:
           ref: ${{ steps.guard.outputs.ref }}
@@ -81,7 +82,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in postgres_password better_auth_secret; do
+          # The artifact keys are required by deploy/compose.yaml. Checking them
+          # here turns a missing file into a named error instead of a bind-mount
+          # failure several steps later.
+          for f in postgres_password better_auth_secret \
+                   paperclip_artifacts_access_key paperclip_artifacts_secret_key; do
             [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
           done
 
@@ -115,6 +120,17 @@ jobs:
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
           PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # Adapters an operator may pick when hiring an agent on this stack.
+          # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
+          # `staging` GitHub Environment to override this default.
+          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway,claude_local' }}
+          # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
+          # not SECRETS_DIR directly — without them it falls back to a
+          # relative ./secrets/... path that doesn't exist on the runner.
+          POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
+          BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
+          PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_access_key
+          PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_secret_key
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
@@ -142,17 +158,15 @@ jobs:
           out=$(deploy/scripts/version-drift.sh 2>&1 || true)
           { echo "report<<EOF"; echo "$out"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
-      - name: Expose outputs for the e2e job
-        id: out
-        if: steps.guard.outputs.skip == 'false'
-        shell: bash
-        run: echo "sha=${{ steps.tag.outputs.full }}" >> "$GITHUB_OUTPUT"
-
       - name: Discord report
         if: always()
         shell: bash
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Host-derived, multi-line, and not ours to trust: version-drift.sh
+          # output must reach bash as data, never be interpolated into the
+          # script source where a quote or $( ) span would be evaluated.
+          DRIFT: ${{ steps.drift.outputs.report }}
         run: |
           set -euo pipefail
           [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
@@ -165,8 +179,7 @@ jobs:
             emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
           fi
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          drift="${{ steps.drift.outputs.report }}"
-          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${drift:-(no drift report)}")
+          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${DRIFT:-(no drift report)}")
           jq -n --arg c "$content" '{content: $c}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
 
@@ -188,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref || 'develop' }}
           fetch-depth: 1
@@ -196,16 +209,28 @@ jobs:
         with:
           version: 9.15.4
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
       - name: Full vitest suite (general + serialized)
-        run: pnpm test:run
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
 
       - name: Install Chromium
+        # Deliberately Playwright's bundled Chromium, NOT the runner's stable
+        # Google Chrome. pr.yml and e2e.yml both pinned
+        # PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome; this fork drops that on purpose
+        # (docs/migration/test-ai-todo-inventory.md: replace Google Chrome
+        # invocation with vendor-neutral browser tooling; see also the
+        # check:no-google-runtime gate in t3-ci). Bundled Chromium is also
+        # version-pinned by the Playwright dependency, so nightly results do
+        # not move when the runner image bumps Chrome.
         run: pnpm exec playwright install --with-deps chromium
 
       - name: E2E (Playwright bootstraps its own instance)
@@ -213,12 +238,17 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-nightly
-          path: tests/e2e/playwright-report
+          # test-results/ carries the failure screenshots and first-retry
+          # traces (playwright.config.ts). Without it an unattended 22:00 UTC
+          # failure arrives with nothing to triage from the next morning.
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
 
       - name: Discord report (slow tests)
         if: failure()

@@ -586,6 +586,7 @@ export async function createApp(
     feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
     approveToolActionRequest: (input) => toolGateway.approveActionRequest(input),
+    externalStorage: opts.externalStorage ?? null,
   }));
   api.use(artifactRoutes(db, opts.storageService, opts.externalStorage ?? null));
   if (process.env.PAPERCLIP_WOPI_STAGING_ENABLED === "true") {

@@ -1,6 +1,7 @@
 # t3-ci — merge gate. Runs on every PR into develop or main, and on pushes to them.
 # GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
-# Required status checks for branch protection: "t3-ci / build-image" and "t3-ci / unit".
+# Required status checks for branch protection, exact names: "unit", "build", "build-image".
+# NOT "t3-ci / unit" — for GitHub Actions the context is the job name. See PLAN_CICD.md §2.1.
 #
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs (typecheck / lint / unit) belong in the `unit` job below; its SLOW jobs (sharded
@@ -25,7 +26,7 @@ jobs:
   # ASSUMPTION A4 — replace the three `run:` lines with the exact commands salvaged
   # from upstream pr.yml's fast jobs. Keep this job under ~5 minutes; anything slower
   # goes to t3-nightly. If the repo has no fast tests at all, delete this job and
-  # remove "t3-ci / unit" from the required checks.
+  # remove "unit" from the required checks.
   unit:
     name: unit
     runs-on: ubuntu-latest

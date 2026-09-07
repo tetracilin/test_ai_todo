@@ -11,10 +11,12 @@ import {
   createDb,
   externalObjects,
   issueAttachments,
+  issueComments,
   issueEvidenceLinks,
   issueRecoveryActions,
   issues,
 } from "@paperclipai/db";
+import { WP0_MESSAGE_TEMPLATES, renderWp0Message } from "@paperclipai/shared/wp0-phrases";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -38,6 +40,20 @@ const EXPECTED_REJECTION_MESSAGE =
   "Issue cannot be marked done without linked evidence. Accepted evidence: a file " +
   "attached to this issue, or an evidence link to an external object. Attach a " +
   "file to this issue or link evidence via the API before marking it done.";
+
+// PC-001 AC2: the same rejection has to reach a field engineer, who has no API
+// to "link evidence via". The 422 therefore carries a structured payload
+// ALONGSIDE the English prose -- a stable `code`, the accepted filing kinds,
+// and a WP-0 phrase key the chat bridge renders one Vietnamese line from.
+// Spelled out literally rather than imported from the service: importing the
+// constants would make this assertion agree with any future edit to them,
+// which is the opposite of pinning a contract other processes depend on.
+const EXPECTED_REJECTION_DETAILS = {
+  evidenceCount: 0,
+  code: "evidence_gate_missing_evidence",
+  acceptedEvidenceTypes: ["issue_attachment", "issue_evidence_link"],
+  chatPhraseKey: "gate_rejection",
+};
 
 if (!embeddedPostgresSupport.supported) {
   console.warn(
@@ -163,6 +179,38 @@ describeEmbeddedPostgres("issue evidence gate (PC-001)", () => {
     return id;
   }
 
+  // An issue parked on a pending review stage whose participant is the board
+  // actor `createApp()` installs. That is the precondition the comment route
+  // checks before it treats an approving comment as a done decision.
+  async function seedIssueAwaitingBoardReview(companyId: string, prefix: string) {
+    const stageId = randomUUID();
+    const implementerAgentId = await seedAgent(companyId);
+    const issueId = await seedIssue(companyId, prefix, {
+      status: "in_review",
+      executionPolicy: {
+        mode: "normal",
+        commentRequired: true,
+        stages: [
+          { id: stageId, type: "review", approvalsNeeded: 1, participants: [{ type: "user", userId: "board" }] },
+        ],
+        monitor: null,
+        maxReviewRounds: null,
+      },
+      executionState: {
+        status: "pending",
+        currentStageId: stageId,
+        currentStageIndex: 0,
+        currentStageType: "review",
+        currentParticipant: { type: "user", userId: "board", agentId: null },
+        returnAssignee: { type: "agent", agentId: implementerAgentId, userId: null },
+        completedStageIds: [],
+        lastDecisionId: null,
+        lastDecisionOutcome: null,
+      },
+    });
+    return { issueId, identifier: `${prefix}-${issueCounter}` };
+  }
+
   function createApp(actor: any = { type: "board", source: "local_implicit" }) {
     const app = express();
     app.use(express.json());
@@ -191,11 +239,32 @@ describeEmbeddedPostgres("issue evidence gate (PC-001)", () => {
     await expect(svc.update(issueId, { status: "done" })).rejects.toMatchObject({
       status: 422,
       message: EXPECTED_REJECTION_MESSAGE,
-      details: { evidenceCount: 0 },
+      details: { ...EXPECTED_REJECTION_DETAILS, issueIdentifier: `${prefix}-${issueCounter}` },
     });
 
     const [row] = await db.select().from(issues).where(eq(issues.id, issueId));
     expect(row?.status).toBe("todo");
+  });
+
+  it("carries a chat phrase key the WP-0 table can actually render for the engineer", async () => {
+    const { companyId, prefix } = await seedCompany({ evidenceGateEnabled: true });
+    const issueId = await seedIssue(companyId, prefix);
+
+    const rejection = await svc.update(issueId, { status: "done" }).catch((err: unknown) => err);
+    const details = (rejection as { details: { chatPhraseKey: string; issueIdentifier: string } }).details;
+
+    // WP-0 op AC10: a rejection can never name a phrase the bot does not answer
+    // to. The key must resolve in the checked-in table, and the identifier must
+    // satisfy the template's declared vars -- `renderWp0Message` throws on a
+    // missing or undeclared var, so this fails loudly if either side drifts.
+    expect(Object.keys(WP0_MESSAGE_TEMPLATES)).toContain(details.chatPhraseKey);
+    const engineerLine = renderWp0Message(details.chatPhraseKey as "gate_rejection", {
+      card: details.issueIdentifier,
+    });
+    expect(engineerLine).toContain(details.issueIdentifier);
+    // The line has to name the filing phrase, not an API call.
+    expect(engineerLine).toContain("nộp bằng chứng");
+    expect(engineerLine).not.toContain("API");
   });
 
   it("flag on, >=1 issue_evidence_links row: closing succeeds", async () => {
@@ -313,7 +382,12 @@ describeEmbeddedPostgres("issue evidence gate (PC-001)", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe(EXPECTED_REJECTION_MESSAGE);
-    expect(res.body.details).toMatchObject({ evidenceCount: 0 });
+    // Both halves survive serialization: the English prose for the API caller,
+    // the structured payload for the chat bridge.
+    expect(res.body.details).toMatchObject({
+      ...EXPECTED_REJECTION_DETAILS,
+      issueIdentifier: `${prefix}-${issueCounter}`,
+    });
     const [row] = await db.select().from(issues).where(eq(issues.id, issueId));
     expect(row?.status).toBe("todo");
   });
@@ -359,6 +433,47 @@ describeEmbeddedPostgres("issue evidence gate (PC-001)", () => {
     expect(res.body.error).toBe(EXPECTED_REJECTION_MESSAGE);
     const [row] = await db.select().from(issues).where(eq(issues.id, issueId));
     expect(row?.status).toBe("blocked");
+  });
+
+  // AC6: the third done-producing path. An approving reviewer comment on an
+  // issue whose execution stage is pending closes the issue without any
+  // PATCH -- the comment and the status write share one transaction inside the
+  // route. It is the easiest path to close without evidence, precisely because
+  // nobody typed "done".
+  it("POST /api/issues/:id/comments surfaces the same 422 when an approval comment auto-closes", async () => {
+    const { companyId, prefix } = await seedCompany({ evidenceGateEnabled: true });
+    const { issueId, identifier } = await seedIssueAwaitingBoardReview(companyId, prefix);
+    const app = createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${issueId}/comments`)
+      .send({ body: "## Review: APPROVED\n\nLooks good to me." });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe(EXPECTED_REJECTION_MESSAGE);
+    expect(res.body.details).toMatchObject({ ...EXPECTED_REJECTION_DETAILS, issueIdentifier: identifier });
+    const [row] = await db.select().from(issues).where(eq(issues.id, issueId));
+    expect(row?.status).toBe("in_review");
+    // The route wraps the comment insert and the status write in one
+    // transaction so a gate rejection cannot leave an orphan approval comment
+    // on a still-open issue.
+    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+    expect(comments).toHaveLength(0);
+  });
+
+  it("POST /api/issues/:id/comments auto-closes on approval once evidence is linked", async () => {
+    const { companyId, prefix } = await seedCompany({ evidenceGateEnabled: true });
+    const { issueId } = await seedIssueAwaitingBoardReview(companyId, prefix);
+    await seedEvidenceLink(companyId, issueId);
+    const app = createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${issueId}/comments`)
+      .send({ body: "## Review: APPROVED\n\nLooks good to me." });
+
+    expect(res.status).toBe(201);
+    const [row] = await db.select().from(issues).where(eq(issues.id, issueId));
+    expect(row?.status).toBe("done");
   });
 });
 

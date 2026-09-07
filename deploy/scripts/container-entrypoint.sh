@@ -22,6 +22,28 @@ read_secret() {
 read_secret POSTGRES_PASSWORD
 read_secret BETTER_AUTH_SECRET
 
+# Compose mounts file-backed Docker secrets with host ownership and mode. The
+# server runs as the unprivileged Paperclip user, so copy only storage secrets
+# into a per-container tmpfs before the image entrypoint drops privileges.
+materialize_storage_secret() {
+  secret_name="$1"
+  source_path="/run/secrets/$secret_name"
+  target_dir="${PAPERCLIP_SECRETS_DIR:-/run/paperclip-storage-secrets}"
+  target_path="$target_dir/$secret_name"
+  [ -r "$source_path" ] || {
+    printf '%s\n' "storage secret $secret_name is not readable" >&2
+    exit 1
+  }
+  mkdir -p "$target_dir"
+  umask 077
+  cat "$source_path" > "$target_path"
+  chown "${USER_UID:-1000}:${USER_GID:-1000}" "$target_path"
+  chmod 0400 "$target_path"
+}
+
+materialize_storage_secret paperclip_artifacts_access_key
+materialize_storage_secret paperclip_artifacts_secret_key
+
 : "${POSTGRES_HOST:=db}"
 : "${POSTGRES_PORT:=5432}"
 : "${POSTGRES_USER:=paperclip}"

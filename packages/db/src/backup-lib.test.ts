@@ -350,6 +350,61 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
   );
 
   it(
+    "restores check constraints so the target enforces what the source enforced",
+    async () => {
+      const sourceConnectionString = await createTempDatabase();
+      const restoreConnectionString = await createSiblingDatabase(
+        sourceConnectionString,
+        "paperclip_check_constraint_restore_target",
+      );
+      const backupDir = createTempDir("paperclip-db-check-constraint-backup-");
+      const sourceSql = postgres(sourceConnectionString, { max: 1, onnotice: () => {} });
+      const restoreSql = postgres(restoreConnectionString, { max: 1, onnotice: () => {} });
+
+      try {
+        await sourceSql.unsafe(`
+          CREATE TABLE "public"."evidence_filings" (
+            "id" serial PRIMARY KEY,
+            "source" text NOT NULL DEFAULT 'manual'
+          );
+          ALTER TABLE "public"."evidence_filings"
+            ADD CONSTRAINT "evidence_filings_source_check"
+            CHECK ("source" IN ('bot', 'manual', 'system'));
+          INSERT INTO "public"."evidence_filings" ("source") VALUES ('bot');
+        `);
+
+        const result = await runDatabaseBackup({
+          connectionString: sourceConnectionString,
+          backupDir,
+          retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+          filenamePrefix: "paperclip-check-constraint-test",
+          backupEngine: "javascript",
+        });
+
+        await runDatabaseRestore({
+          connectionString: restoreConnectionString,
+          backupFile: result.backupFile,
+        });
+
+        const rows = await restoreSql.unsafe<{ source: string }[]>(
+          `SELECT "source" FROM "public"."evidence_filings"`,
+        );
+        expect(rows).toEqual([{ source: "bot" }]);
+
+        // The point of the test: a restored database that accepts a value the
+        // source rejected is a silently weaker schema, not a cosmetic loss.
+        await expect(
+          restoreSql.unsafe(`INSERT INTO "public"."evidence_filings" ("source") VALUES ('banana')`),
+        ).rejects.toThrow();
+      } finally {
+        await sourceSql.end();
+        await restoreSql.end();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "preserves composite foreign key column order without duplicate referenced columns",
     async () => {
       const sourceConnectionString = await createTempDatabase();

@@ -169,7 +169,15 @@ Compose `environment` value, logs, CI output, or shell history.
 
 ### CI/CD
 
-`.github/workflows/discord-staging.yml` deploys the bridge from CI. Dispatch it manually
+> **Removed 2026-09-02 (hard fork).** `.github/workflows/discord-staging.yml` was deleted;
+> this fork ships only `t3-ci`, `t3-nightly` and `t3-release` (`doc/ORIGIN.md`). There is no
+> CI deploy path for the bridge any more — the steps below describe what the workflow *used
+> to* do and are kept as the specification for doing it by hand on the staging host. The
+> `discord-staging` GitHub Environment now has no consumer; review its secrets for
+> revocation. Everything outside this section (compose project, secrets layout, healthcheck)
+> is still current.
+
+`.github/workflows/discord-staging.yml` deployed the bridge from CI. It was dispatched manually
 with the ref to deploy (default `main`). The `build` job runs the bridge test suite,
 typechecks/builds, validates the Compose file, and builds the image; the `deploy-staging`
 job then SSHes to the staging host, writes the credential files (from the protected

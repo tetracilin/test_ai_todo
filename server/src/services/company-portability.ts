@@ -5,7 +5,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { and, eq, inArray } from "drizzle-orm";
 import {
+  assets,
   builtInManagedResources,
+  externalObjects,
+  issueAttachments,
+  issueEvidenceLinks,
   issueRelations,
   principalPermissionGrants,
   type Db,
@@ -36,6 +40,8 @@ import type {
   CompanyPortabilityIssueWorkProductManifestEntry,
   CompanyPortabilityIssueMonitorManifestEntry,
   CompanyPortabilityIssueAttachmentManifestEntry,
+  CompanyPortabilityIssueEvidenceLinkManifestEntry,
+  CompanyPortabilityExternalObjectManifestEntry,
   CompanyPortabilityIssueManifestEntry,
   CompanyPortabilitySidebarOrder,
   CompanyPortabilitySkillManifestEntry,
@@ -189,7 +195,7 @@ const DEFAULT_COLLISION_STRATEGY: CompanyPortabilityCollisionStrategy = "rename"
 // bundles are read as 5, the last unstamped shape. 7 adds preserved task
 // timestamps and parent links; 5/6 bundles still import, with those fields
 // falling back to import-time defaults.
-const BUNDLE_SCHEMA_VERSION = 7;
+const BUNDLE_SCHEMA_VERSION = 8;
 const UNSTAMPED_BUNDLE_SCHEMA_VERSION = 5;
 const DEFAULT_IMPORTED_LABEL_COLOR = "#6366f1";
 // Blob entries are content-addressed by sha256; the store itself is
@@ -1143,9 +1149,130 @@ function normalizePortableIssueAttachments(
       originalFilename: asString(entry.originalFilename),
       byteSize: byteSize !== null && byteSize >= 0 ? byteSize : 0,
       commentIndex: commentIndex !== null && commentIndex >= 0 ? commentIndex : null,
+      source: normalizePortableEvidenceSource(entry.source, warnings, `${sourceLabel} attachment ${index + 1}`),
     });
   }
   return attachments;
+}
+
+/**
+ * PC-011 provenance union, restated for the portability layer.
+ *
+ * The values are declared once as `EVIDENCE_SOURCES`
+ * (packages/db/src/schema/issue_evidence_links.ts) but that constant is not
+ * re-exported from the db package index, so this map restates them. It is keyed
+ * by the column's own type, so adding a source to the schema fails to compile
+ * here until portability has decided how the new value travels -- the two can
+ * never drift silently, which is the failure this whole unit exists to close.
+ */
+type PortableEvidenceSource = (typeof issueEvidenceLinks.$inferSelect)["source"];
+
+const PORTABLE_EVIDENCE_SOURCES: Record<PortableEvidenceSource, true> = {
+  bot: true,
+  manual: true,
+  system: true,
+};
+
+/** The column default, and the value bundles written before v8 normalize to. */
+const DEFAULT_PORTABLE_EVIDENCE_SOURCE: PortableEvidenceSource = "manual";
+
+function normalizePortableEvidenceSource(
+  value: unknown,
+  warnings: string[],
+  sourceLabel: string,
+): PortableEvidenceSource {
+  const raw = asString(value);
+  if (raw === null) return DEFAULT_PORTABLE_EVIDENCE_SOURCE;
+  if (hasOwn(PORTABLE_EVIDENCE_SOURCES, raw)) return raw as PortableEvidenceSource;
+  warnings.push(`${sourceLabel} provenance "${raw}" is not a recognized evidence source and was imported as ${DEFAULT_PORTABLE_EVIDENCE_SOURCE}.`);
+  return DEFAULT_PORTABLE_EVIDENCE_SOURCE;
+}
+
+/**
+ * Bundle-local identity for an external object, and the key the importer
+ * dedupes on. Treated as opaque: it is never split back apart, so an
+ * `externalId` containing the separator is harmless.
+ */
+function portableExternalObjectRef(providerKey: string, objectType: string, externalId: string) {
+  return `${providerKey}:${objectType}:${externalId}`;
+}
+
+function normalizePortableExternalObjects(
+  value: unknown,
+  warnings: string[],
+): CompanyPortabilityExternalObjectManifestEntry[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    warnings.push("External objects were ignored because they are not an array.");
+    return [];
+  }
+  const entries: CompanyPortabilityExternalObjectManifestEntry[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    if (!isPlainRecord(entry)) {
+      warnings.push(`External object ${index + 1} was ignored because it is not an object.`);
+      continue;
+    }
+    const providerKey = asString(entry.providerKey);
+    const objectType = asString(entry.objectType);
+    const externalId = asString(entry.externalId);
+    if (!providerKey || !objectType || !externalId) {
+      warnings.push(`External object ${index + 1} was ignored because it has no provider key, object type, or external id.`);
+      continue;
+    }
+    const ref = asString(entry.ref) ?? portableExternalObjectRef(providerKey, objectType, externalId);
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    entries.push({
+      ref,
+      providerKey,
+      objectType,
+      externalId,
+      // The only locator that travels. For provider `nas` this is a path
+      // reference and nothing else: no bytes and no NAS content are ever read
+      // into the bundle (PC-007 AC3).
+      sanitizedCanonicalUrl: asString(entry.sanitizedCanonicalUrl),
+      displayTitle: asString(entry.displayTitle),
+    });
+  }
+  return entries;
+}
+
+function normalizePortableIssueEvidenceLinks(
+  value: unknown,
+  warnings: string[],
+  sourceLabel: string,
+): CompanyPortabilityIssueEvidenceLinkManifestEntry[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    warnings.push(`${sourceLabel} evidence links were ignored because they are not an array.`);
+    return [];
+  }
+  const links: CompanyPortabilityIssueEvidenceLinkManifestEntry[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    if (!isPlainRecord(entry)) {
+      warnings.push(`${sourceLabel} evidence link ${index + 1} was ignored because it is not an object.`);
+      continue;
+    }
+    const objectRef = asString(entry.objectRef);
+    if (!objectRef) {
+      warnings.push(`${sourceLabel} evidence link ${index + 1} was ignored because it names no external object.`);
+      continue;
+    }
+    // One filing act per (card, artifact) -- the same idempotency the evidence
+    // service keeps on write, so a hand-edited bundle cannot import an inflated
+    // evidence count.
+    if (seen.has(objectRef)) continue;
+    seen.add(objectRef);
+    const linkLabel = `${sourceLabel} evidence link ${index + 1}`;
+    links.push({
+      objectRef,
+      source: normalizePortableEvidenceSource(entry.source, warnings, linkLabel),
+      createdAt: readPortableIssueTimestamp(entry.createdAt, warnings, linkLabel, "createdAt"),
+    });
+  }
+  return links;
 }
 
 function appendCodexImportArg(adapterConfig: Record<string, unknown>, arg: string) {
@@ -2135,6 +2262,31 @@ function filterPortableExtensionYaml(
     }
   }
 
+  // External objects follow their evidence links: an object referenced only by
+  // a task the operator deselected must not ride along. That is a
+  // confidentiality rule as much as a size one -- for provider `nas` the entry
+  // is a filesystem path from the source company.
+  if (Array.isArray(parsed.externalObjects)) {
+    const referencedObjectRefs = new Set<string>();
+    const tasksSection = parsed.tasks;
+    if (isPlainRecord(tasksSection)) {
+      for (const entry of Object.values(tasksSection)) {
+        if (!isPlainRecord(entry)) continue;
+        for (const link of normalizePortableIssueEvidenceLinks(entry.evidenceLinks, [], "")) {
+          referencedObjectRefs.add(link.objectRef);
+        }
+      }
+    }
+    const filteredExternalObjects = parsed.externalObjects.filter(
+      (entry) => isPlainRecord(entry) && typeof entry.ref === "string" && referencedObjectRefs.has(entry.ref.trim()),
+    );
+    if (filteredExternalObjects.length > 0) {
+      parsed.externalObjects = filteredExternalObjects;
+    } else {
+      delete parsed.externalObjects;
+    }
+  }
+
   const sidebarOrder = normalizePortableSidebarOrder(parsed.sidebar);
   if (sidebarOrder) {
     const filteredSidebar = stripEmptyValues({
@@ -3031,7 +3183,7 @@ function readAgentSkillRefs(frontmatter: Record<string, unknown>) {
   ));
 }
 
-function buildManifestFromPackageFiles(
+export function buildManifestFromPackageFiles(
   files: Record<string, CompanyPortabilityFileEntry>,
   opts?: { sourceLabel?: { companyId: string; companyName: string } | null },
 ): ResolvedSource {
@@ -3068,6 +3220,11 @@ function buildManifestFromPackageFiles(
   const paperclipLabels = normalizePortableLabelDefinitions(paperclipExtension.labels);
   const paperclipBlobs = normalizePortableBlobIndex(paperclipExtension.blobs);
   const paperclipEmbeddedAssets = normalizePortableEmbeddedAssets(paperclipExtension.embeddedAssets);
+  const paperclipManifestWarnings: string[] = [];
+  const paperclipExternalObjects = normalizePortableExternalObjects(
+    paperclipExtension.externalObjects,
+    paperclipManifestWarnings,
+  );
   const paperclipAgents = isPlainRecord(paperclipExtension.agents) ? paperclipExtension.agents : {};
   const paperclipProjects = isPlainRecord(paperclipExtension.projects) ? paperclipExtension.projects : {};
   const paperclipTasks = isPlainRecord(paperclipExtension.tasks) ? paperclipExtension.tasks : {};
@@ -3136,6 +3293,10 @@ function buildManifestFromPackageFiles(
         typeof paperclipCompany.requireBoardApprovalForNewAgents === "boolean"
           ? paperclipCompany.requireBoardApprovalForNewAgents
           : readCompanyApprovalDefault(companyFrontmatter),
+      evidenceGateEnabled:
+        typeof paperclipCompany.evidenceGateEnabled === "boolean"
+          ? paperclipCompany.evidenceGateEnabled
+          : false,
       feedbackDataSharingEnabled:
         typeof paperclipCompany.feedbackDataSharingEnabled === "boolean"
           ? paperclipCompany.feedbackDataSharingEnabled
@@ -3153,6 +3314,7 @@ function buildManifestFromPackageFiles(
     labels: paperclipLabels,
     blobs: paperclipBlobs,
     embeddedAssets: paperclipEmbeddedAssets,
+    externalObjects: paperclipExternalObjects,
     agents: [],
     skills: [],
     projects: [],
@@ -3160,7 +3322,7 @@ function buildManifestFromPackageFiles(
     envInputs: [],
   };
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...paperclipManifestWarnings];
   if (manifest.company?.logoPath && !normalizedFiles[manifest.company.logoPath]) {
     warnings.push(`Referenced company logo file is missing from package: ${manifest.company.logoPath}`);
   }
@@ -3413,6 +3575,7 @@ function buildManifestFromPackageFiles(
       workProducts: normalizePortableIssueWorkProducts(extension.workProducts),
       monitor: normalizePortableIssueMonitor(extension.monitor),
       attachments: normalizePortableIssueAttachments(extension.attachments, warnings, `Task ${slug}`),
+      evidenceLinks: normalizePortableIssueEvidenceLinks(extension.evidenceLinks, warnings, `Task ${slug}`),
       parentSlug: asString(extension.parent),
       createdAt: readPortableIssueTimestamp(extension.createdAt, warnings, `Task ${slug}`, "createdAt"),
       updatedAt: readPortableIssueTimestamp(extension.updatedAt, warnings, `Task ${slug}`, "updatedAt"),
@@ -3428,8 +3591,10 @@ function buildManifestFromPackageFiles(
 
   if (bundleSchemaVersion < BUNDLE_SCHEMA_VERSION && manifest.issues.length > 0) {
     const predated = bundleSchemaVersion < 6
-      ? "label, blocker, document, work product, monitor, attachment, embedded image, task timestamp, and parent link transfer"
-      : "task timestamp and parent link transfer";
+      ? "label, blocker, document, work product, monitor, attachment, embedded image, task timestamp, parent link, evidence link, and external object transfer"
+      : bundleSchemaVersion < 7
+        ? "task timestamp, parent link, evidence link, and external object transfer"
+        : "evidence link and external object transfer";
     warnings.push(`This package declares schemaVersion ${bundleSchemaVersion} and predates ${predated}; that task data imports only if the bundle carries it.`);
   }
 
@@ -3512,6 +3677,107 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
   const workProductsSvc = workProductService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const defaultSecretProvider = getConfiguredSecretProvider();
+
+  /**
+   * PC-012 step one: land the artifacts before anything references them.
+   *
+   * Every `issue_evidence_links` row is a NOT NULL foreign key onto
+   * `external_objects`, so registering the link table without this would import
+   * as an FK violation rather than as restored evidence.
+   *
+   * Rows land as STATIC evidence artifacts, matching what the evidence-link
+   * service writes: `nextRefreshAt` stays NULL so the external-object refresh
+   * sweeper (which selects on `next_refresh_at <= now`) never picks them up,
+   * and `liveness`/`isTerminal` keep their neutral defaults. On conflict the
+   * existing row wins untouched -- re-importing a bundle into a company that
+   * already holds the artifact must not turn a live, resolver-owned object
+   * static.
+   *
+   * Dedupe is by (company, provider key, object type, external id), the tuple
+   * `external_objects_company_external_id_uq` enforces.
+   */
+  async function resolveImportedExternalObjects(
+    companyId: string,
+    entries: CompanyPortabilityExternalObjectManifestEntry[],
+  ): Promise<Map<string, string>> {
+    const idByRef = new Map<string, string>();
+    if (entries.length === 0) return idByRef;
+
+    await db
+      .insert(externalObjects)
+      .values(entries.map((entry) => ({
+        companyId,
+        providerKey: entry.providerKey,
+        objectType: entry.objectType,
+        externalId: entry.externalId,
+        displayTitle: entry.displayTitle ?? entry.sanitizedCanonicalUrl ?? entry.externalId,
+        sanitizedCanonicalUrl: entry.sanitizedCanonicalUrl,
+        nextRefreshAt: null,
+      })))
+      .onConflictDoNothing();
+
+    const existing = await db
+      .select({
+        id: externalObjects.id,
+        providerKey: externalObjects.providerKey,
+        objectType: externalObjects.objectType,
+        externalId: externalObjects.externalId,
+      })
+      .from(externalObjects)
+      .where(and(
+        eq(externalObjects.companyId, companyId),
+        inArray(externalObjects.externalId, Array.from(new Set(entries.map((entry) => entry.externalId)))),
+      ));
+    const idByIdentity = new Map(
+      existing.map((row) => [portableExternalObjectRef(row.providerKey, row.objectType, row.externalId), row.id] as const),
+    );
+    for (const entry of entries) {
+      const id = idByIdentity.get(portableExternalObjectRef(entry.providerKey, entry.objectType, entry.externalId));
+      if (id) idByRef.set(entry.ref, id);
+    }
+    return idByRef;
+  }
+
+  /**
+   * Restores PC-011 provenance on the attachments this import just wrote.
+   *
+   * `issueService().addImportedAttachments` inserts the asset and link rows but
+   * not the `source` column, so they land on the column default and the filing
+   * act's provenance is lost. `assets.object_key` is minted per put by the
+   * storage service, which makes it an exact key for the rows this import
+   * created; matching on content hash or on ordinal would be ambiguous when the
+   * same file is filed twice on one card with different provenance.
+   *
+   * Rows already carrying the default need no statement, so a bundle with no
+   * bot-filed attachments issues no writes here.
+   */
+  async function restoreImportedAttachmentSources(
+    companyId: string,
+    rows: Array<{ objectKey: string; source: PortableEvidenceSource }>,
+  ) {
+    const objectKeysBySource = new Map<PortableEvidenceSource, string[]>();
+    for (const row of rows) {
+      if (row.source === DEFAULT_PORTABLE_EVIDENCE_SOURCE) continue;
+      const objectKeys = objectKeysBySource.get(row.source) ?? [];
+      objectKeys.push(row.objectKey);
+      objectKeysBySource.set(row.source, objectKeys);
+    }
+    for (const [source, objectKeys] of objectKeysBySource) {
+      await db
+        .update(issueAttachments)
+        .set({ source })
+        .where(and(
+          eq(issueAttachments.companyId, companyId),
+          inArray(
+            issueAttachments.assetId,
+            db
+              .select({ id: assets.id })
+              .from(assets)
+              .where(and(eq(assets.companyId, companyId), inArray(assets.objectKey, objectKeys))),
+          ),
+        ));
+    }
+  }
 
   async function applyImportedAgentPermissionGrants(
     companyId: string,
@@ -4340,6 +4606,59 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         },
       ),
     );
+    // PC-012: evidence links travel with the artifacts they point at. The link
+    // row is a NOT NULL foreign key onto `external_objects`, so the bundle
+    // carries a company-level object list and each task references it by ref;
+    // exporting links alone would import as an FK violation, not as evidence.
+    //
+    // Read in one join rather than per task: this is metadata only, and it
+    // NEVER touches the storage plane. Evidence filed against provider `nas` is
+    // a path reference (`sanitized_canonical_url`) and stays one -- no bytes and
+    // no NAS content enter the bundle (PC-007 AC3). The object's `data` payload
+    // is deliberately not carried for the same reason.
+    const exportedExternalObjects = new Map<string, CompanyPortabilityExternalObjectManifestEntry>();
+    const evidenceLinksByIssueId = new Map<string, CompanyPortabilityIssueEvidenceLinkManifestEntry[]>();
+    if (selectedIssueRows.length > 0) {
+      const evidenceRows = await db
+        .select({
+          issueId: issueEvidenceLinks.issueId,
+          source: issueEvidenceLinks.source,
+          createdAt: issueEvidenceLinks.createdAt,
+          providerKey: externalObjects.providerKey,
+          objectType: externalObjects.objectType,
+          externalId: externalObjects.externalId,
+          sanitizedCanonicalUrl: externalObjects.sanitizedCanonicalUrl,
+          displayTitle: externalObjects.displayTitle,
+        })
+        .from(issueEvidenceLinks)
+        .innerJoin(externalObjects, eq(issueEvidenceLinks.externalObjectId, externalObjects.id))
+        .where(and(
+          eq(issueEvidenceLinks.companyId, companyId),
+          inArray(issueEvidenceLinks.issueId, selectedIssueRows.map((issue) => issue.id)),
+        ))
+        .orderBy(issueEvidenceLinks.createdAt);
+      for (const row of evidenceRows) {
+        const ref = portableExternalObjectRef(row.providerKey, row.objectType, row.externalId);
+        if (!exportedExternalObjects.has(ref)) {
+          exportedExternalObjects.set(ref, {
+            ref,
+            providerKey: row.providerKey,
+            objectType: row.objectType,
+            externalId: row.externalId,
+            sanitizedCanonicalUrl: row.sanitizedCanonicalUrl ?? null,
+            displayTitle: row.displayTitle ?? null,
+          });
+        }
+        const links = evidenceLinksByIssueId.get(row.issueId) ?? [];
+        links.push({
+          objectRef: ref,
+          source: row.source,
+          createdAt: toPortableTimestamp(row.createdAt) ?? null,
+        });
+        evidenceLinksByIssueId.set(row.issueId, links);
+      }
+    }
+
     for (const issue of selectedIssueRows) {
       const details = issueExportDetails.get(issue.id)!;
       const taskSlug = taskSlugByIssueId.get(issue.id)!;
@@ -4452,6 +4771,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             commentIndex: attachment.issueCommentId != null
               ? commentIndexById.get(attachment.issueCommentId) ?? null
               : null,
+            // PC-011 provenance of the filing act; this is the column the
+            // pilot's pass/abort metric is computed from, so it has to survive
+            // the round trip rather than reset to the column default.
+            source: attachment.source,
           });
         }
       }
@@ -4500,6 +4823,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         documents: documentEntries,
         workProducts: workProductEntries,
         attachments: attachmentEntries,
+        evidenceLinks: evidenceLinksByIssueId.get(issue.id) ?? [],
         monitor: {
           notes: issue.monitorNotes ?? null,
           scheduledBy: issue.monitorScheduledBy ?? null,
@@ -4648,6 +4972,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const paperclipExtensionPath = ".paperclip.yaml";
     const exportedBlobIndex = Array.from(exportedBlobs.values())
       .sort((left, right) => left.sha256.localeCompare(right.sha256));
+    const exportedExternalObjectIndex = Array.from(exportedExternalObjects.values())
+      .sort((left, right) => left.ref.localeCompare(right.ref));
     const paperclipAgents = Object.fromEntries(
       Object.entries(paperclipAgentsOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
     );
@@ -4669,6 +4995,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           logoPath: companyLogoPath,
           attachmentMaxBytes: company.attachmentMaxBytes,
           requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents ? true : undefined,
+          evidenceGateEnabled: company.evidenceGateEnabled ? true : undefined,
           feedbackDataSharingEnabled: company.feedbackDataSharingEnabled ? true : undefined,
           feedbackDataSharingConsentAt: company.feedbackDataSharingConsentAt?.toISOString() ?? null,
           feedbackDataSharingConsentByUserId: company.feedbackDataSharingConsentByUserId ?? null,
@@ -4678,6 +5005,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         labels: exportedLabels.length > 0 ? exportedLabels : undefined,
         blobs: exportedBlobIndex.length > 0 ? exportedBlobIndex : undefined,
         embeddedAssets: embeddedAssetIndex.length > 0 ? embeddedAssetIndex : undefined,
+        externalObjects: exportedExternalObjectIndex.length > 0 ? exportedExternalObjectIndex : undefined,
         agents: Object.keys(paperclipAgents).length > 0 ? paperclipAgents : undefined,
         projects: Object.keys(paperclipProjects).length > 0 ? paperclipProjects : undefined,
         tasks: Object.keys(paperclipTasks).length > 0 ? paperclipTasks : undefined,
@@ -5253,6 +5581,9 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         requireBoardApprovalForNewAgents: include.company
           ? (sourceManifest.company?.requireBoardApprovalForNewAgents ?? false)
           : false,
+        evidenceGateEnabled: include.company
+          ? (sourceManifest.company?.evidenceGateEnabled ?? false)
+          : false,
         feedbackDataSharingEnabled: include.company
           ? (sourceManifest.company?.feedbackDataSharingEnabled ?? false)
           : false,
@@ -5290,6 +5621,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           brandColor: sourceManifest.company.brandColor,
           attachmentMaxBytes: sourceManifest.company.attachmentMaxBytes ?? undefined,
           requireBoardApprovalForNewAgents: sourceManifest.company.requireBoardApprovalForNewAgents,
+          evidenceGateEnabled: sourceManifest.company.evidenceGateEnabled,
           feedbackDataSharingEnabled: sourceManifest.company.feedbackDataSharingEnabled,
           feedbackDataSharingConsentAt: sourceManifest.company.feedbackDataSharingConsentAt
             ? new Date(sourceManifest.company.feedbackDataSharingConsentAt)
@@ -5873,6 +6205,18 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         const documentRows: ImportIssueDocumentRow[] = [];
         const workProductRows: ImportIssueWorkProductRow[] = [];
         const attachmentRows: ImportIssueAttachmentRow[] = [];
+        // Provenance rides alongside the attachment rows rather than in them:
+        // `ImportIssueAttachmentRow` has no `source` field and its writer lives
+        // in the issues service, so the column is restored in a keyed follow-up
+        // update (see `restoreImportedAttachmentSources`).
+        const attachmentSourceRows: Array<{ objectKey: string; source: PortableEvidenceSource }> = [];
+        const evidenceLinkRows: Array<typeof issueEvidenceLinks.$inferInsert> = [];
+        // External objects first: every evidence link below is a NOT NULL FK
+        // onto one of these rows.
+        const externalObjectIdByRef = await resolveImportedExternalObjects(
+          targetCompany.id,
+          sourceManifest.externalObjects ?? [],
+        );
 
         for (const manifestIssue of sourceManifest.issues) {
           const markdownRaw = readPortableTextFile(plan.source.files, manifestIssue.path);
@@ -6169,9 +6513,38 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
                 createdByAgentId: null,
                 createdByUserId: actorUserId ?? null,
               });
+              attachmentSourceRows.push({
+                objectKey: stored.objectKey,
+                source: normalizePortableEvidenceSource(
+                  attachmentEntry.source,
+                  warnings,
+                  `Task ${manifestIssue.slug} attachment ${attachmentLabel}`,
+                ),
+              });
             } catch (error) {
               warnings.push(`Task ${manifestIssue.slug} attachment ${attachmentLabel} could not be imported: ${error instanceof Error ? error.message : String(error)}`);
             }
+          }
+          for (const evidenceEntry of manifestIssue.evidenceLinks ?? []) {
+            const externalObjectId = externalObjectIdByRef.get(evidenceEntry.objectRef);
+            if (!externalObjectId) {
+              warnings.push(`Task ${manifestIssue.slug} evidence link was skipped because its external object ${evidenceEntry.objectRef} is missing from the package.`);
+              continue;
+            }
+            const createdAt = portableManifestDate(evidenceEntry.createdAt);
+            evidenceLinkRows.push({
+              companyId: targetCompany.id,
+              issueId,
+              externalObjectId,
+              source: normalizePortableEvidenceSource(
+                evidenceEntry.source,
+                warnings,
+                `Task ${manifestIssue.slug} evidence link`,
+              ),
+              // Omitted rather than nulled when the bundle carries no filing
+              // time, so the column default (now) applies.
+              ...(createdAt ? { createdAt } : {}),
+            });
           }
           issueRows.push({
             id: issueId,
@@ -6278,7 +6651,15 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         if (commentRows.length > 0) await issues.addImportedComments(commentRows);
         if (documentRows.length > 0) await documentsSvc.createIssueDocumentsForImport(documentRows);
         if (workProductRows.length > 0) await workProductsSvc.createManyForImport(workProductRows);
-        if (attachmentRows.length > 0) await issues.addImportedAttachments(attachmentRows);
+        if (attachmentRows.length > 0) {
+          await issues.addImportedAttachments(attachmentRows);
+          await restoreImportedAttachmentSources(targetCompany.id, attachmentSourceRows);
+        }
+        // Evidence links last: they reference both the issue rows written above
+        // and the external objects resolved before the loop.
+        if (evidenceLinkRows.length > 0) {
+          await db.insert(issueEvidenceLinks).values(evidenceLinkRows);
+        }
 
         if (blockedByBySlug.size > 0) {
           const acceptedAdjacency = new Map<string, string[]>();

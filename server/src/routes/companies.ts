@@ -1228,6 +1228,30 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
         details: body,
       });
     }
+    // The PC-001 evidence gate flag is the pilot's on-switch and its documented
+    // rollback path, so a flip gets its own auditable action rather than only a
+    // field inside a `company.updated` details blob -- which a status
+    // transition in the same PATCH suppresses entirely.
+    if (
+      typeof body.evidenceGateEnabled === "boolean"
+      && body.evidenceGateEnabled !== existingCompany.evidenceGateEnabled
+    ) {
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "company.evidence_gate_updated",
+        entityType: "company",
+        entityId: companyId,
+        details: {
+          evidenceGateEnabled: body.evidenceGateEnabled,
+          previousEvidenceGateEnabled: existingCompany.evidenceGateEnabled,
+        },
+      });
+    }
     res.json(company);
   });
 
