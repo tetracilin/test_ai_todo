@@ -192,7 +192,7 @@ main is production-ready code only. It advances only by PR from develop.
 feature/*, fix/*, chore/* are the only branch prefixes. Branch from develop, never from main (hotfixes excepted — see below).
 Legacy t3-paperclip-aitodo/* branches are retired. Do not create new ones; the nightly script no longer scans them.
 Hard rules
-Never push directly to develop or main. Both are protected. Open a PR.
+Never push directly to develop or main. Open a PR. (Enforcement is currently uneven: main requires the three t3-ci checks, but as of 2026-09-07 develop has no branch protection record at all, so nothing stops a direct push except this rule. Treat it as binding anyway; see CICD/PLAN_CICD.md §0.)
 Never force-push a shared branch. git push --force is allowed only on your own feature/* branch, and only before anyone else has based work on it.
 Never edit /root/projects/t3-paperclip-Aitodo in place. That path belongs to the agent team's automation. For any manual work on kmv8 use git worktree add ../t3-<purpose> <branch> or a fresh clone.
 Never deploy by hand. No docker build / docker compose up against t3-nightly or t3-prod outside the GitHub Actions workflows. If you need a staging deploy now, trigger t3-nightly from the Actions tab (Run workflow) instead of running anything on the host.
@@ -203,6 +203,8 @@ This is a hard fork of paperclipai/paperclip. Do not add an upstream remote, mer
 What a PR must have before merge
 Based on current develop (rebase before opening; rebase again if develop moves).
 The t3-ci checks unit, build and build-image green. (Those are the literal status-check names — GitHub Actions reports the job name, not "t3-ci / unit".) A red CI is never "flaky, merge anyway" — fix it or ask.
+
+Green t3-ci does NOT mean the server tests pass. The unit job runs only the non-server vitest groups (general-workspaces-a and -b); the server suites and e2e run in t3-nightly, after merge. Two regressions reached develop this way in September 2026 (PRs #79 and #81). If your change touches server/, run the relevant server suite locally before opening the PR — npx vitest run server/src/__tests__/<file>.test.ts.
 Title in imperative mood, ≤ 70 chars. Body says what changed and how it was verified.
 No changes to files outside the task's scope. Drive-by refactors go in a separate PR.
 If the change alters /api/health, the Dockerfile, build args, ports, or compose service names, say so explicitly in the PR body — those are pipeline contracts.
@@ -214,7 +216,7 @@ Build args	PAPERCLIP_BUILD_COMMIT, PAPERCLIP_BUILD_VERSION	Dockerfile must keep 
 Compose image var	PAPERCLIP_IMAGE	deploy/compose.yaml must read the image from this env var
 Port vars	NIGHTLY_PORT (33130), PROD_PORT (33100)	Compose must bind to these; nightly stays on 127.0.0.1, prod on the tailnet IP
 Compose projects	t3-nightly, t3-prod	Separate DB/volumes. A change that merges or renames them is a migration, not a tweak
-Secrets files	postgres_password, better_auth_secret in SECRETS_DIR	Workflows hard-fail if either is missing/empty
+Secrets files	postgres_password, better_auth_secret, paperclip_artifacts_access_key, paperclip_artifacts_secret_key in SECRETS_DIR	Workflows hard-fail if any is missing/empty. Adding a name to this list is a host-side prerequisite: create the file on kmv8 in both /etc/t3/secrets/{nightly,prod} before merging the workflow change, or every deploy stops. The two artifact keys were added by PR #78 without that step and nightly has been red since 2026-09-04
 
 If your task requires changing any of these, it is a pipeline change: separate PR, human review, update CICD/PLAN_CICD.md and this section.
 
@@ -237,7 +239,7 @@ Branch fix/<topic> from main, PR into main, tag, release as above. Then open a s
 Staging / nightly
 develop deploys to t3-nightly at 22:00 UTC if it has changed since the last run, or on demand via Run workflow.
 Nightly is bound to 127.0.0.1:33130 on kmv8 — reachable only from the host (ssh kmv8 curl 127.0.0.1:33130/api/health) or via an SSH tunnel. It is not on the tailnet by design.
-After deploy, the slow test suite (e2e job) runs against :33130. A failed deploy or e2e is reported to Discord with a link to the run. Whoever's PR most recently landed on develop investigates first.
+After deploy, the slow test suite (e2e job) runs against :33130. A failed deploy or e2e is meant to be reported to Discord with a link to the run — but as of 2026-09-07 DISCORD_WEBHOOK_URL is unset, so the report step short-circuits and no alert is ever sent. Until that is fixed, check the Actions tab yourself; do not read silence as success. Whoever's PR most recently landed on develop investigates first.
 Nightly data is disposable and separate from prod. Do not rely on anything stored there.
 For agents specifically
 Before starting a task: git fetch origin && git checkout -b feature/<topic> origin/develop.

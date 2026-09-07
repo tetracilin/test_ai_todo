@@ -5,7 +5,7 @@ status: APPROVED
 owner: tetracilin
 derives_from: docs/designs/t3-company-os-ssot.md
 targets: [backlog.md, roadmap.md]
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # T3 — Slice 1 feature decomposition (agent-implementable)
@@ -37,6 +37,12 @@ only the pure markdown grammar module — there was still no persistence layer, 
 `issue_documents` row for key `dossier` ever created, until PR #81. **Read B.1's Status column
 first** — it is the fastest way to see what is actually shipped in Lane A. Treat any claim in this
 table as provisional until you have grepped for it yourself; this table drifts.
+
+**"SHIPPED" means merged to `develop`. It does not mean running.** As of 2026-09-07 the
+staging stack at `:33130` is still serving `c3c03e81` (2026-09-03): `t3-nightly`'s deploy job
+has failed every night since 2026-09-04 on two secret files that were never created on kmv8,
+so PRs #78, #79, #80, #81, #84, #85, #87 and #88 have never run anywhere outside CI. Nothing
+in Lane A has been exercised against a real deployment yet. See `CICD/PLAN_CICD.md` §0.
 
 | Claim | Verified | Evidence |
 |---|---|---|
