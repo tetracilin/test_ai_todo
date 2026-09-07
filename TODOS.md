@@ -26,3 +26,29 @@ Deferred work with enough context to pick up cold. Format: what / why / context 
 - [ ] **Identity doctrine sentence in roadmap.md (owner edit)** (P2, human: ~15min)
   - What: add: "For now, Tecotec-specific wins on conflict; portability is preserved only as (a) no company-id hardcoding and (b) company export keeps working."
   - Why: gate decision D4 (2026-09-02) — resolves the portable-OS premise vs Tecotec-bound backlog tension before WP-0 implementation hits it.
+
+## From /document-release status audit (2026-09-07)
+
+All four found by auditing the docs against live repo and Actions state. The first two are the
+reason the other two went unnoticed for five days.
+
+- [ ] **Set `DISCORD_WEBHOOK_URL` as a repository secret** (P1, human: ~10min / CC: 0 — needs repo settings access)
+  - What: populate the secret every report step reads, so failures actually post.
+  - Why: all seven t3-nightly runs to date produced zero alerts. The deploy job logs `DISCORD_WEBHOOK_URL not set; skipping`; the `slow-tests` report step exits silently on `[[ -n "$WEBHOOK" ]] || exit 0`. CLAUDE.md promises "a failed deploy or e2e is reported to Discord with a link to the run" — today that never happens, which is why the other items here went unnoticed for five days.
+  - Context: it must be a **repo**-level secret, not an environment secret. The `deploy` job declares `environment: staging`, but `slow-tests` (`t3-nightly.yml:199`, `runs-on: ubuntu-latest`) declares no environment at all, so an environment-scoped secret is invisible to it — and the slow-tests alert is the one that would have caught the test regressions. PLAN_CICD.md §2.3 already says repo secret. Channel 1534836487772704800.
+
+- [ ] **Create the nightly artifact-storage secrets on kmv8** (P1, human: ~15min if staging MinIO credentials exist, ~1h if a staging bucket + user must be minted / CC: 0 — agents must not touch kmv8)
+  - What: `/etc/t3/secrets/nightly/paperclip_artifacts_access_key` and `..._secret_key`, `root:ghrunner`, mode 0640, holding staging-scoped credentials.
+  - Why: PR #78 made both mandatory in `t3-nightly.yml`'s fail-early check and in `deploy/compose.yaml`, and merged without the host-side prerequisite its own commit message demanded. Staging has been frozen at `c3c03e81` (2026-09-03) ever since.
+  - Context: staging must never carry production bucket credentials. `deploy/paperclip-config.json` currently sets `storage.provider = "local_disk"` with no `accessKeySecretRef`, so nothing reads the values yet — placeholders would unblock the deploy, but leave a trap for whoever first points staging at S3.
+
+- [ ] **Fix the two server-test regressions on develop** (P2, human: ~1-2h / CC: ~20min)
+  - What: (a) `server-startup-feedback-export.test.ts` replaces `@paperclipai/db` wholesale and omits `externalObjects`, which `evidence-provider-minio.ts:131` dereferences at module scope — the file throws before any test runs. (b) `status-cards.test.ts:885` asserts `documentRevisions` is empty, but PR #81's dossier intake hook now seeds a revision for every created issue.
+  - Why: both merged green because t3-ci runs no server vitest. Nightly has been red on them since 2026-09-04.
+  - Context: (a) came from **PR #80** (`53d00239`), not #79 — `git log -S objectIdentityColumns -- server/src/services/evidence-provider-minio.ts` shows #80 hoisted the deref to module scope; under #79 every `externalObjects` reference sat inside a function body and the mock gap never fired at import. (b) came from PR #81. Two further failures on 2026-09-06 (`tool-gateway.test.ts:2357`, `workspace-runtime.test.ts:7619`) look like contention flakes — the failing set rotates run to run — so reproduce before touching them. Note the earlier nightlies (09-02, 09-03) failed on an unrelated third suite, `cli-invocation-safety.test.ts`.
+  - Running these locally needs the plugin-SDK prebuilt first, exactly as the nightly does it: `pnpm --filter @paperclipai/plugin-sdk ensure-build-deps` before any `vitest run`, or you get `ERR_MODULE_NOT_FOUND` for `@paperclipai/plugin-sdk/testing`.
+
+- [ ] **Fix the three branch-protection gaps** (P2, human: ~15min / CC: 0 — needs repo settings access)
+  - What: (a) protect `develop` with the `unit` / `build` / `build-image` checks, matching `main`; (b) turn off `allow_force_pushes` on `main`; (c) turn off `required_linear_history` on `main`.
+  - Why: `GET /repos/.../branches/develop/protection` returns 404 "Branch not protected", so "never push directly to develop" is convention only. On `main`, `allow_force_pushes: true` contradicts the CLAUDE.md force-push rule, and `required_linear_history: true` contradicts the release procedure's "merge commit, not squash". The linear-history one is a live contradiction rather than a hard wall: `main`'s tip `2b696cad` is already a two-parent merge commit landed 2026-09-03, and `enforce_admins` is `false`, so the admin reviewer bypasses it. It will stop the first non-admin release.
+  - Context: re-verified 2026-09-07 via `gh api`; see PLAN_CICD.md §2.1. Repo settings only; no PR can make these changes.
