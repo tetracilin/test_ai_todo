@@ -31,19 +31,36 @@ Open:
 - **`develop` has no branch protection at all.** `main` requires `unit` / `build` /
   `build-image`; `GET /repos/tetracilin/test_ai_todo/branches/develop/protection` returns
   404 "Branch not protected". The "never push directly to `develop`" rule is convention
-  only, not enforced (§2.2).
-- **`t3-nightly` has failed on every run since 2026-09-02.** Two independent causes:
-  - Deploy job blocked since 2026-09-04 — `/etc/t3/secrets/nightly/paperclip_artifacts_access_key`
-    and `..._secret_key` were made mandatory by PR #78 but never created on kmv8. Staging is
-    therefore pinned at `c3c03e81` (2026-09-03); nothing merged since has run anywhere.
-  - `slow-tests` (server vitest + e2e) has never been green. Two real regressions are in it —
-    a `@paperclipai/db` mock missing `externalObjects` (PR #79) and a `status-cards` assertion
-    invalidated by the dossier intake hook (PR #81) — plus rotating flakes.
+  only, not enforced (§2.1).
+- **`t3-nightly` has failed on all seven runs it has ever had** — five scheduled nightlies
+  (2026-09-02 through 2026-09-06) and two `workflow_dispatch` runs on 2026-09-02. Two
+  independent jobs fail for unrelated reasons:
+  - The deploy job has been blocked since the 2026-09-04 nightly —
+    `/etc/t3/secrets/nightly/paperclip_artifacts_access_key` and `..._secret_key` were made
+    mandatory by PR #78 but never created on kmv8. It also failed in both 2026-09-02 manual
+    runs, for the pre-#78 reasons. Its only two successes are the 2026-09-02 and 2026-09-03
+    scheduled runs, so staging is pinned at `c3c03e81`.
+  - `slow-tests` has never been green, and its cause changed mid-window. On 2026-09-02 and
+    2026-09-03 it failed on `cli-invocation-safety.test.ts` alone. From 2026-09-04 two real
+    regressions took over: a `@paperclipai/db` mock missing `externalObjects` (**PR #80** —
+    #80 moved the `externalObjects` deref to module scope in
+    `evidence-provider-minio.ts:131`, where it throws at import; under #79 every reference
+    was still inside a function body) and a `status-cards` assertion invalidated by the
+    dossier intake hook (PR #81). Two further files rotate run to run and look like
+    contention flakes.
+  - **e2e has never run at all.** `Install Chromium` and `E2E` are later steps in the same
+    job as the vitest step and carry no `if: always()`, so the job aborts before them every
+    time. There is zero e2e signal, not merely a red one.
 - **`t3-release` has never run.** Tag `v0.1.0` exists on `main`, but no production deploy has
-  gone through the pipeline; `:33100` is still whatever the retired Hermes cron left there.
-- **No failure reaches Discord.** `DISCORD_WEBHOOK_URL` is unset, so every report step short-circuits
-  (`DISCORD_WEBHOOK_URL not set; skipping`). Fix this first: it is the reason the three items
-  above went unnoticed for five days rather than one night.
+  gone through the pipeline. Note `t3-release.yml:102` carries the *same* fail-early gate
+  against `/etc/t3/secrets/prod`; PR #78's message asserts prod already has both artifact
+  keys, but that has not been checked on the host, so the first release may stop there too.
+- **No failure reaches Discord.** `DISCORD_WEBHOOK_URL` is unset. The deploy job logs
+  `DISCORD_WEBHOOK_URL not set; skipping`; the `slow-tests` report step exits silently
+  (`[[ -n "$WEBHOOK" ]] || exit 0`). Fix this first: it is the reason the items above went
+  unnoticed for five days rather than one night. It must be a **repo**-level secret —
+  `slow-tests` declares no `environment:`, so an environment-scoped secret is invisible to it
+  and the alert that actually mattered would still never fire.
 
 ---
 
@@ -133,16 +150,24 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 >   "Never push directly to develop or main" is convention, not enforcement. **Still open.**
 > - `main` still has `allow_force_pushes: true` (contradicts the CLAUDE.md force-push rule)
 >   and `required_linear_history: true` (contradicts the release step's "merge commit, not
->   squash" — a merge commit into `main` will be rejected). **Still open, and the linear-history
->   one will block the first real release.**
+>   squash"). **Still open**, but do not assume linear history is a hard blocker: `main`'s tip
+>   `2b696cad` *is* a two-parent merge commit landed 2026-09-03, after this setting was first
+>   recorded. `enforce_admins` is `false`, so the required reviewer — who is an admin —
+>   bypasses it. It is a contradiction to resolve, not a wall. It will bite the first person
+>   who releases without admin rights.
 >
 > These are repo-settings changes a human must make; no PR can make them.
 
-### 2.2 Environments (already done — verify)
+### 2.2 Environments (partly done — re-verified 2026-09-07)
+
+> `gh variable list --env staging` returns only `NIGHTLY_PORT`; `--env production` only
+> `PROD_PORT`. **Neither environment defines `SELECTABLE_ADAPTER_TYPES`**, so both stacks run
+> on the compose/workflow fallback. The row below describes the intended configuration, not
+> the current one.
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Var `SELECTABLE_ADAPTER_TYPES` (comma-separated adapter types selectable when hiring an agent; unset falls back to `hermes_gateway,claude_local` — see `deploy/compose.yaml` and `server/src/adapters/registry.ts:listSelectableServerAdapters`) |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. **Two different defaults, do not conflate them:** unset, the deploy path falls back to `hermes_gateway,claude_local` (`deploy/compose.yaml:53`, `t3-nightly.yml:126`), while the application's own fallback is `hermes_gateway` only (`server/src/adapters/registry.ts:715`). |
 | `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables
@@ -184,6 +209,14 @@ su - ghrunner -c '
   ./config.sh --url https://github.com/tetracilin/test_ai_todo --token <TOKEN> --name kmv8 --labels kmv8 --unattended'
 cd /home/ghrunner/actions-runner && ./svc.sh install ghrunner && ./svc.sh start
 ```
+**Each directory must contain four non-empty files**, not just the two the Hermes copy
+carried: `postgres_password`, `better_auth_secret`, `paperclip_artifacts_access_key`,
+`paperclip_artifacts_secret_key`. Both deploy workflows fail early and by name if any is
+missing (`t3-nightly.yml:88-91`, `t3-release.yml:99-102`), and `deploy/compose.yaml` mounts
+all four. The two artifact keys were added by PR #78 on 2026-09-04 and **never created under
+`nightly/`** — that is the open P1 in §0. Staging must carry its own credentials; never copy
+prod's.
+
 `SECRETS_DIR` in both deploy workflows already points at `/etc/t3/secrets/{nightly,prod}`. Update the Hermes script too if it's still the fallback during cutover.
 
 Acceptance: runner **Idle** with label `kmv8`.
@@ -256,12 +289,14 @@ Marks verified against the repo and the Actions API on 2026-09-07.
   `DISCORD_WEBHOOK_URL not set; skipping` and passes an empty `WEBHOOK` to the report step,
   so no failure has ever been announced. This is why seven consecutive red nightlies went
   unnoticed for five days.
-- [x] Runner `kmv8` idle as `ghrunner`, secrets under `/etc/t3/secrets`
-  — runner is serving jobs; the secrets directory is **incomplete** (see §0 Open).
+- [ ] Runner `kmv8` idle as `ghrunner`, secrets under `/etc/t3/secrets`
+  — **half done.** The runner is serving jobs. `nightly/` is missing two of the four required
+  secret files, and `prod/` has not been checked (see §0 Open and §3).
 - [x] `t3-ci` green on a test PR
 - [ ] `t3-nightly` manual run: deploy + health + e2e green
-  — deploy + health were green on 2026-09-02 and 2026-09-03; the slow-test/e2e job has
-  never been green, and the deploy job has been red since 2026-09-04.
+  — **no manual run has ever had a green deploy.** Both 2026-09-02 `workflow_dispatch` runs
+  failed in `build-and-deploy-nightly`. Deploy + health were green only in the 2026-09-02 and
+  2026-09-03 *scheduled* runs. e2e has never executed at all (see §0).
 - [ ] `t3-release` deployed `v0.1.0` after approval — the workflow has never run.
 - [ ] Hermes cron disabled — not verifiable from the repo; check on kmv8.
 - [ ] A1–A8 confirmed or corrected in the PR description
