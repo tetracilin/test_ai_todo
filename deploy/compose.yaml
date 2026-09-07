@@ -48,9 +48,9 @@ services:
       PAPERCLIP_TELEMETRY_DISABLED: "1"
       # Comma-separated adapter types an operator may pick when hiring an
       # agent (server/src/adapters/registry.ts:listSelectableServerAdapters).
-      # Unset here falls back to hermes_gateway only, so an instance that
-      # wants e.g. claude_local selectable must set this explicitly.
-      PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${PAPERCLIP_SELECTABLE_ADAPTER_TYPES:-hermes_gateway}
+      # Unset here falls back to hermes_gateway,claude_local, so an instance
+      # that wants a narrower or different set must set this explicitly.
+      PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${PAPERCLIP_SELECTABLE_ADAPTER_TYPES:-hermes_gateway,claude_local}
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${POSTGRES_USER:-paperclip}
