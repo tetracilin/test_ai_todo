@@ -18,14 +18,17 @@ Supersedes: none (first design on this branch; extends premise 5 of `t3-company-
 
 ## Problem Statement
 
-`t3-nightly` has failed **every run it has ever had** — seven runs between 2026-09-02 and
-2026-09-08, five scheduled and two manual. There has never been a green one. Three
+`t3-nightly` failed **every run it had**, from its first on 2026-09-02 until 2026-09-08 — nine
+runs, none green. The deploy half was fixed on 2026-09-08 when the operator created the two
+missing secret files on kmv8; the 01:24 dispatch deployed successfully and staging now runs
+`41c64c62`. The runs still read red, because `slow-tests` fails independently and has never
+passed. Three
 unrelated causes produced those failures in six days, and a fourth arrived during this
 session. The pattern matters more than any single cause:
 
 | Failure | Why the merge gate missed it |
 |---|---|
-| PR #78 made two host files mandatory; nobody created them | `t3-ci` runs on a GitHub runner and **cannot see kmv8**. The prerequisite lived only in a commit message |
+| PR #78 made two host files mandatory; nobody created them (fixed 2026-09-08) | `t3-ci` runs on a GitHub runner and **cannot see kmv8**. The prerequisite lived only in a commit message |
 | PRs #80 and #81 broke server tests | `t3-ci` **runs no server vitest** (`t3-ci.yml:95-99`). Those suites are nightly-only |
 | PRs #62 and #63 merged red, five days stale, 98s apart | **`develop` has no branch protection**, so red and out-of-date PRs are mergeable |
 | e2e has never executed once | `Install Chromium` and `E2E` carry no `if: always()`; the job aborts at the failed vitest step every time |
@@ -129,10 +132,10 @@ retained as a complement — A gives the agent a door, C means it knocks less of
 **A, sequenced behind two things that must come first.**
 
 **Phase 0 — restore a baseline (blocks everything).**
-1. Merge PR #91 (reverts #62/#63). `develop` is currently red at `pnpm install`; verified
-   green on the revert branch.
-2. Create the two artifact key files under `/etc/t3/secrets/nightly/`, `root:ghrunner`,
-   `0640`. Staging-scoped credentials, or documented placeholders — never prod's keys.
+1. ~~Merge PR #91 (reverts #62/#63).~~ **Done 2026-09-08.** `develop` is green again.
+2. ~~Create the two artifact key files under `/etc/t3/secrets/nightly/`.~~ **Done 2026-09-08.**
+   The deploy job now succeeds and staging runs the current `develop`. Note the files were
+   created with placeholder values; the trap in `TODOS.md` stands.
 3. Set `DISCORD_WEBHOOK_URL` as a **repository** secret. It must not be environment-scoped:
    `slow-tests` (`t3-nightly.yml:199`) declares no `environment:`, so an env secret is
    invisible to the job whose alert would have caught the test regressions.
