@@ -101,3 +101,5 @@ Branch `fix/<topic>` from `main`, PR into `main`, tag, release as above. Then op
 | Compose | `deploy/compose.yaml` |
 | Run logs | GitHub → Actions; Discord channel `1534836487772704800` for summaries |
 | Runner | kmv8, user `ghrunner`, label `kmv8`, systemd service |
+| Operator guide (how to drive PRs and deploys safely) | `docs/operating-with-claude-code.md` |
+| What runs on kmv8, and what depends on it | `docs/deploy/kmv8-stack-inventory.md` |
