@@ -14,6 +14,20 @@ A hostname and a port are not enough to identify a deployment on this box.
 
 ---
 
+## Which commit is actually running
+
+Never infer this from a workflow run. Ask the stack:
+
+```
+ssh kmv8 'curl -s 127.0.0.1:33130/api/health'
+```
+```
+curl -s 100.103.41.112:33100/api/health
+```
+
+Both return JSON containing `"commit": "<sha>"`. That is the only authoritative answer, and it
+is what the deploy workflow's own health check verifies.
+
 ## The short answer
 
 | I want... | Stack | Reach it at | Kept current by |
@@ -39,6 +53,7 @@ pick up anything merged to `develop`.
 | Deployed by | `.github/workflows/t3-nightly.yml` — 22:00 UTC, **only if `develop` changed since the last run**, or on demand via Run workflow |
 | Port | `127.0.0.1:33130` → 3100. Not on the tailnet, by design (`t3-nightly.yml:122`) |
 | Secrets | `/etc/t3/secrets/nightly/` — four files required (`t3-nightly.yml:88-91`) |
+| Running at capture | `paperclip:nightly-41c64c62` — the PR #91 merge, deployed 2026-09-08T01:31Z |
 
 Browse it from a laptop with `ssh -L 33130:127.0.0.1:33130 kmv8`, then open
 `http://127.0.0.1:33130`. This needs an SSH key on the host and a `kmv8` alias in your
@@ -46,6 +61,18 @@ Browse it from a laptop with `ssh -L 33130:127.0.0.1:33130 kmv8`, then open
 
 Because the schedule skips when `develop` has not moved, "no deploy happened" can mean
 skipped, not failed. Check the Actions tab rather than inferring.
+
+**A red `t3-nightly` run does not mean the deploy failed.** The workflow has two independent
+jobs and they fail for unrelated reasons. As of 2026-09-08 the deploy job succeeds and
+`slow-tests` does not, so every run is marked red while staging is perfectly current. Read the
+job, not the run:
+
+```
+gh run list --workflow=t3-nightly.yml --limit 3 --json databaseId,conclusion
+```
+```
+gh run view <run-id> --json jobs -q '.jobs[]|"\(.name)=\(.conclusion)"'
+```
 
 ### `t3-prod` — production
 | | |
@@ -55,6 +82,7 @@ skipped, not failed. Check the Actions tab rather than inferring.
 | Deployed by | **Nothing, in practice.** `t3-release.yml` exists and triggers on `v*` tags, but has never run. Current containers were deployed by hand |
 | Port | `100.103.41.112:33100` → 3100 |
 | Secrets | `/etc/t3/secrets/prod/` — same four files (`t3-release.yml:100-102`) |
+| Running at capture | `t3-paperclip:6673cb65b`, container up 6 days. Provenance unknown — see gap 4 |
 
 Production tracks `v*` tags on `main`, **not** `develop`.
 
