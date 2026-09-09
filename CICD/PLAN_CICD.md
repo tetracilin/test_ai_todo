@@ -225,7 +225,7 @@ Acceptance: runner **Idle** with label `kmv8`.
 
 ## 4. Phase 4 — cut over, retire the cron
 
-1. Actions → t3-nightly → Run workflow. Confirm image `paperclip:nightly-<sha>`, `curl 127.0.0.1:33130/api/health` shows that sha, e2e job green, Discord message received.
+1. Actions → t3-nightly → Run workflow. Confirm image `paperclip:nightly-<sha>`, `curl 100.103.41.112:33130/api/health` shows that sha (from any tailnet host; loopback is no longer bound), e2e job green, Discord message received.
 2. Disable Hermes cron `8b51805f9dc5`. Keep the script one week.
 3. First release: PR `develop → main` (merge commit), `git tag -a v0.1.0 -m "First release via Actions" && git push origin v0.1.0`, approve `production` gate, confirm `100.103.41.112:33100/api/health`.
 4. After one clean week: delete the cron job and script; hand `/root/projects/t3-paperclip-Aitodo` to the agent team exclusively or archive it.
