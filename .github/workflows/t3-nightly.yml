@@ -134,6 +134,15 @@ jobs:
           # browser can use either; loopback stays for anything still on the host.
           # See t3-release.yml for the same guard on production.
           PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,hostinger-kvm8-host.tail9831b.ts.net,localhost,127.0.0.1
+          # The browser is told this is the instance's own base URL, and the
+          # container entrypoint writes it into config.auth.publicBaseUrl with
+          # baseUrlMode=explicit. Without it, deploy/compose.yaml defaults to
+          # http://127.0.0.1:33100 -- wrong host AND wrong port -- so the UI
+          # loads over the tailnet and then issues API/auth calls to loopback,
+          # which fails the origin check. t3-release.yml:146 sets the prod
+          # equivalent; this is the fifth value that must move with a bind
+          # change, not the fourth.
+          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33130
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `staging` GitHub Environment to override this default.
