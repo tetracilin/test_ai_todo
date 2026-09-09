@@ -85,6 +85,23 @@ Re-derive the split rather than trusting this paragraph:
 - ~~AC6~~ — **closed**. `issue-evidence-gate.test.ts` now exercises the comment-decision
   auto-approval path (F-001-1, shipped).
 
+**Next unblocked unit (as of 2026-09-05).** With F-006-1 shipped, Lane A's substrate is
+essentially done bar F-002-5 (UI-only). Three candidates remain, and only one is actually
+unblocked:
+
+- **Lane B — F-010 Teable client.** Nothing is built (`Teable client` row above). No open
+  product question blocks it; it needs Teable API surface knowledge/credentials an
+  implementing agent should ask for rather than guess. **Recommended pick.**
+- **Lane D — F-402 pilot card gate.** `backlog.md`'s own **OQ-4 is still open** ("Is a
+  flowchart mandatory for every SW card?") — the brief-linkage mechanism AC1 needs is
+  undefined. Get OQ-4 answered before starting this one, or it will need a throwaway design
+  decision re-litigated later.
+- **Lane C — Discord DM/capture verbs (F-DM-2 onward).** Blocked on gate **G-2** (external
+  Discord privileged-intent approval), not something an agent can unblock.
+- **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
+  direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
+  most dev environments will not have configured — confirm access before picking it up.
+
 ---
 
 ## Part A — user-story completeness pass
