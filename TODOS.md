@@ -48,10 +48,10 @@ reason the other two went unnoticed for five days.
   - Context: (a) came from **PR #80** (`53d00239`), not #79 — `git log -S objectIdentityColumns -- server/src/services/evidence-provider-minio.ts` shows #80 hoisted the deref to module scope; under #79 every `externalObjects` reference sat inside a function body and the mock gap never fired at import. (b) came from PR #81. Two further failures on 2026-09-06 (`tool-gateway.test.ts:2357`, `workspace-runtime.test.ts:7619`) look like contention flakes — the failing set rotates run to run — so reproduce before touching them. Note the earlier nightlies (09-02, 09-03) failed on an unrelated third suite, `cli-invocation-safety.test.ts`.
   - Running these locally needs the plugin-SDK prebuilt first, exactly as the nightly does it: `pnpm --filter @paperclipai/plugin-sdk ensure-build-deps` before any `vitest run`, or you get `ERR_MODULE_NOT_FOUND` for `@paperclipai/plugin-sdk/testing`.
 
-- [ ] **Fix the three branch-protection gaps** (P2, human: ~15min / CC: 0 — needs repo settings access)
-  - What: (a) protect `develop` with the `unit` / `build` / `build-image` checks, matching `main`; (b) turn off `allow_force_pushes` on `main`; (c) turn off `required_linear_history` on `main`.
+- [ ] **Fix the two remaining branch-protection gaps on `main`** (P2, human: ~10min / CC: ~5min — needs an admin token)
+  - What: (a) ~~protect `develop`~~ **done 2026-09-09** — requires the three t3-ci checks, a PR, an up-to-date branch, and blocks force pushes and deletions; (b) turn off `allow_force_pushes` on `main`; (c) turn off `required_linear_history` on `main`.
   - Why: `GET /repos/.../branches/develop/protection` returns 404 "Branch not protected", so "never push directly to develop" is convention only. On `main`, `allow_force_pushes: true` contradicts the CLAUDE.md force-push rule, and `required_linear_history: true` contradicts the release procedure's "merge commit, not squash". The linear-history one is a live contradiction rather than a hard wall: `main`'s tip `2b696cad` is already a two-parent merge commit landed 2026-09-03, and `enforce_admins` is `false`, so the admin reviewer bypasses it. It will stop the first non-admin release.
-  - Context: re-verified 2026-09-07 via `gh api`; see PLAN_CICD.md §2.1. Repo settings only; no PR can make these changes.
+  - Context: re-verified 2026-09-07 via `gh api`; see PLAN_CICD.md §2.1. Repo settings, not a code change — but reachable through the API with a `repo`-scoped token, which is how (a) was done, so this does not require the web UI.
 
 ## From /document-release operator-guide pass (2026-09-08)
 

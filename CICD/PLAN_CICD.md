@@ -28,10 +28,11 @@ Phase 1 is landed. Every item that was open on 2026-09-02 is now closed:
 - Root `package.json` is `"private": true`; no upstream remote (A8, §1.1)
 
 Open:
-- **`develop` has no branch protection at all.** `main` requires `unit` / `build` /
-  `build-image`; `GET /repos/tetracilin/test_ai_todo/branches/develop/protection` returns
-  404 "Branch not protected". The "never push directly to `develop`" rule is convention
-  only, not enforced (§2.1).
+- ~~`develop` has no branch protection.~~ **Closed 2026-09-09.** `develop` now requires
+  `unit` / `build` / `build-image`, requires a pull request, requires the branch to be **up to
+  date** before merging, and blocks force pushes and deletions. `enforce_admins` is `false`, so
+  an admin retains a bypass — deliberate, so a solo operator cannot lock themselves out of
+  their own integration branch (§2.1).
 - **`t3-nightly` has never produced a fully green run** — nine runs to date. Its two jobs are
   independent and fail for unrelated reasons, so read the job, not the run: as of 2026-09-08
   the deploy half is fixed and `slow-tests` is not, which means every run still reads red while
@@ -148,8 +149,11 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 > reading, partly not:
 > - `main`'s required contexts are now `["unit", "build", "build-image"]` — the stale
 >   `verify` / `e2e` contexts from the deleted `pr.yml` are gone. **Closed.**
-> - `develop` still returns HTTP 404 "Branch not protected": no protection at all. CLAUDE.md's
->   "Never push directly to develop or main" is convention, not enforcement. **Still open.**
+> - `develop` was unprotected until 2026-09-09; it now requires the three checks, a PR, and an
+>   up-to-date branch, and blocks force pushes and deletions. **Closed.** Note `strict: true`
+>   (up to date) is the setting that would have blocked PRs #62 and #63, which were merged five
+>   days stale and broke `develop`. `required_linear_history` was deliberately NOT set here, to
+>   avoid repeating the contradiction it creates on `main`.
 > - `main` still has `allow_force_pushes: true` (contradicts the CLAUDE.md force-push rule)
 >   and `required_linear_history: true` (contradicts the release step's "merge commit, not
 >   squash"). **Still open**, but do not assume linear history is a hard blocker: `main`'s tip
@@ -283,9 +287,10 @@ echo "FAILED: $url did not become healthy with commit $want" >&2; exit 1
 Marks verified against the repo and the Actions API on 2026-09-07.
 
 - [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `doc/ORIGIN.md`, remote removed, `private: true`
-- [ ] Default branch `develop`; protections on `develop` and `main` use only `t3-ci` checks
-  — **half done.** Default branch is `develop`. `main` requires `unit` / `build` / `build-image`.
-  `develop` has no protection record at all.
+- [x] Default branch `develop`; protections on `develop` and `main` use only `t3-ci` checks
+  — **done 2026-09-09.** Both branches require exactly `unit` / `build` / `build-image`.
+  `develop` also requires an up-to-date branch and blocks force pushes. `main`'s
+  `allow_force_pushes` and `required_linear_history` remain open; see §2.1.
 - [ ] Environments verified; `DISCORD_WEBHOOK_URL` set; fork-PR approval on
   — **`DISCORD_WEBHOOK_URL` is not set.** Every nightly run logs
   `DISCORD_WEBHOOK_URL not set; skipping` and passes an empty `WEBHOOK` to the report step,

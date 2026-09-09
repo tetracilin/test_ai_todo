@@ -19,7 +19,7 @@ A hostname and a port are not enough to identify a deployment on this box.
 Never infer this from a workflow run. Ask the stack:
 
 ```
-ssh kmv8 'curl -s 127.0.0.1:33130/api/health'
+curl -s 100.103.41.112:33130/api/health
 ```
 ```
 curl -s 100.103.41.112:33100/api/health
@@ -32,7 +32,7 @@ is what the deploy workflow's own health check verifies.
 
 | I want... | Stack | Reach it at | Kept current by |
 |---|---|---|---|
-| CI/CD staging | `t3-nightly` | `127.0.0.1:33130` on the host — needs an SSH tunnel | `t3-nightly.yml` |
+| CI/CD staging | `t3-nightly` | `100.103.41.112:33130` — any tailnet host | `t3-nightly.yml` |
 | production | `t3-prod` | `100.103.41.112:33100` (tailnet) | nothing automatic — see below |
 | the WOPI / office pilot | `t3-wopi-staging` | `:8445` (editor UI on `:8444`) | nothing |
 
@@ -51,13 +51,21 @@ pick up anything merged to `develop`.
 | Containers | `t3-nightly-paperclip-1`, `t3-nightly-db-1` |
 | Compose file | `deploy/compose.yaml`, project `t3-nightly` |
 | Deployed by | `.github/workflows/t3-nightly.yml` — 22:00 UTC, **only if `develop` changed since the last run**, or on demand via Run workflow |
-| Port | `127.0.0.1:33130` → 3100. Not on the tailnet, by design (`t3-nightly.yml:122`) |
+| Port | `100.103.41.112:33130` → 3100, on the tailnet since PR #96 (`t3-nightly.yml:122`). Also answers to `hostinger-kvm8-host.tail9831b.ts.net:33130`. **`127.0.0.1:33130` is no longer bound** |
 | Secrets | `/etc/t3/secrets/nightly/` — four files required (`t3-nightly.yml:88-91`) |
 | Running at capture | `paperclip:nightly-41c64c62` — the PR #91 merge, deployed 2026-09-08T01:31Z |
 
-Browse it from a laptop with `ssh -L 33130:127.0.0.1:33130 kmv8`, then open
-`http://127.0.0.1:33130`. This needs an SSH key on the host and a `kmv8` alias in your
-`~/.ssh/config`. **If you did not open that tunnel, you are not looking at nightly.**
+Open `http://100.103.41.112:33130` from any machine on the tailnet, or use the MagicDNS name
+`http://hostinger-kvm8-host.tail9831b.ts.net:33130`. Both are in the app's allowed-hostname
+list; a host outside that list gets a 403 from the private-hostname guard **before** any route
+runs, which looks like the app being broken rather than a config rejection.
+
+You still need a login: `deploy/compose.yaml` sets `PAPERCLIP_DEPLOYMENT_MODE=authenticated`,
+so this is tailnet-scoped *and* login-gated.
+
+Until PR #96 (2026-09-09) this stack bound loopback only and needed
+`ssh -L 33130:127.0.0.1:33130 kmv8`. That tunnel no longer works, because compose publishes a
+single address and it is now the tailnet one.
 
 Because the schedule skips when `develop` has not moved, "no deploy happened" can mean
 skipped, not failed. Check the Actions tab rather than inferring.
