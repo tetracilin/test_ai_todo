@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEnvironmentCapabilities } from "@paperclipai/shared";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "../context/ToastContext";
+import { setSelectableAdapterTypes } from "../adapters/selectable-store";
 import { NewAgent } from "./NewAgent";
 
 // The real adapter registry stays in place so the create request runs the real
@@ -72,9 +73,26 @@ vi.mock("../lib/clipboard", () => ({
   copyTextToClipboard: mockClipboard.copyTextToClipboard,
 }));
 
-vi.mock("../adapters/use-disabled-adapters", () => ({
-  useDisabledAdaptersSync: () => new Set<string>(),
-}));
+// Which adapters the instance offers is the server's answer. The real hook
+// hydrates the selectable-adapter store on the way through — `isValidAdapterType`
+// reads that store, not the hook's return value — so the mock does the same.
+const mockSelectableAdapterTypes = vi.hoisted(() => ({ current: ["hermes_gateway"] }));
+// `loaded: false` reproduces the real pre-hydration window, where the store still holds the
+// server's own ["hermes_gateway"] fallback and a widened adapter looks unavailable. The preset
+// effect must refuse to decide until this flips.
+const mockAdapterRegistryLoaded = vi.hoisted(() => ({ loaded: true }));
+
+vi.mock("../adapters/use-disabled-adapters", async () => {
+  const { setSelectableAdapterTypes } = await import("../adapters/selectable-store");
+  return {
+    useDisabledAdaptersSync: () => new Set<string>(),
+    useAdapterRegistryLoaded: () => mockAdapterRegistryLoaded.loaded,
+    useSelectableAdapterTypes: () => {
+      setSelectableAdapterTypes(mockSelectableAdapterTypes.current);
+      return new Set(mockSelectableAdapterTypes.current);
+    },
+  };
+});
 
 // The form reads the projected adapter login capability to pick the login flow
 // and to gate the login panel. The server projects these safe scalar fields.
@@ -222,10 +240,12 @@ async function renderNewAgent() {
   return { container, root };
 }
 
-describe("NewAgent Hermes Gateway selection", () => {
+describe("NewAgent adapter deep link", () => {
   let roots: Root[] = [];
 
   beforeEach(() => {
+    mockSelectableAdapterTypes.current = ["hermes_gateway"];
+    mockAdapterRegistryLoaded.loaded = true;
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.detectModel.mockResolvedValue(null);
@@ -302,10 +322,11 @@ describe("NewAgent Hermes Gateway selection", () => {
     }
     roots = [];
     document.body.innerHTML = "";
+    setSelectableAdapterTypes(null);
     vi.clearAllMocks();
   });
 
-  it("ignores a legacy Claude deep link and creates a Hermes Gateway agent", async () => {
+  it("ignores a Claude deep link when the instance does not offer claude_local", async () => {
     const result = await renderNewAgent();
     roots.push(result.root);
 
@@ -323,5 +344,46 @@ describe("NewAgent Hermes Gateway selection", () => {
     expect(companyId).toBe("company-1");
     expect(payload.adapterType).toBe("hermes_gateway");
     expect(payload).not.toHaveProperty("storedSessionId");
+  });
+
+  // Finding 5 from the adversarial review: the two tests above both hydrate the store
+  // synchronously, so the undefined -> resolved transition never happens and they would pass
+  // against the old first-render-only effect too. This one holds the registry unresolved,
+  // which is the state the fix exists for: the store still returns the server's own
+  // ["hermes_gateway"] fallback, and deciding on it would wrongly reject a valid preset.
+  it("defers the deep link until the adapter registry has actually arrived", async () => {
+    mockSelectableAdapterTypes.current = ["hermes_gateway", "claude_local"];
+    mockAdapterRegistryLoaded.loaded = false;
+
+    const result = await renderNewAgent();
+    roots.push(result.root);
+
+    // Registry unresolved: no decision taken, so the default gateway form is still showing
+    // and the preset has NOT been consumed.
+    expect(result.container.textContent).toContain("API base URL");
+    expect(result.container.textContent).not.toContain("Agent instructions file");
+  });
+
+  it("honours the Claude deep link when the instance offers claude_local", async () => {
+    mockSelectableAdapterTypes.current = ["hermes_gateway", "claude_local"];
+
+    const result = await renderNewAgent();
+    roots.push(result.root);
+
+    // The Claude config fields render in place of the gateway's, so the adapter
+    // is pickable and its form is wired, not just permitted by the allowlist.
+    expect(result.container.textContent).toContain("Agent instructions file");
+    expect(result.container.textContent).not.toContain("API base URL");
+
+    await clickByText(result.container, "Create agent");
+    await flushUntil(() => mockAgentsApi.hire.mock.calls.length > 0);
+
+    expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+    const [companyId, payload] = mockAgentsApi.hire.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(companyId).toBe("company-1");
+    expect(payload.adapterType).toBe("claude_local");
   });
 });

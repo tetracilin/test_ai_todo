@@ -42,6 +42,7 @@ import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/compon
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/lib/router";
 import { IssueArtifactManager } from "./IssueArtifactManager";
+import { IssueEvidenceLinkManager } from "./IssueEvidenceLinkManager";
 
 interface IssuePropertiesArtifactsTabProps {
   issue: Issue;
@@ -441,6 +442,7 @@ export function IssuePropertiesArtifactsTab({ issue, documentDeepLink }: IssuePr
   return (
     <div className="flex flex-col gap-2 py-2">
       <IssueArtifactManager companyId={issue.companyId} issueId={issue.id} />
+      <IssueEvidenceLinkManager companyId={issue.companyId} issueId={issue.id} />
       {noArtifacts ? (
         <div className="px-1 py-6 text-sm text-muted-foreground">
           {loadFailed ? (

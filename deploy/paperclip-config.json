@@ -41,6 +41,15 @@
       "region": "us-east-1",
       "prefix": "",
       "forcePathStyle": false
+    },
+    "external": {
+      "endpoint": "http://nas-storage-t19.tail9831b.ts.net:9000",
+      "region": "us-east-1",
+      "bucket": "paperclip-artifacts",
+      "prefix": "",
+      "forcePathStyle": true,
+      "accessKeySecretRef": "paperclip_artifacts_access_key",
+      "secretKeySecretRef": "paperclip_artifacts_secret_key"
     }
   },
   "secrets": {

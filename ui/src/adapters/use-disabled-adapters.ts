@@ -1,9 +1,24 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { adaptersApi } from "@/api/adapters";
+import { adaptersApi, type AdapterInfo } from "@/api/adapters";
 import { setDisabledAdapterTypes } from "@/adapters/disabled-store";
+import {
+  getSelectableAdapterTypes,
+  setSelectableAdapterTypes,
+} from "@/adapters/selectable-store";
 import { syncExternalAdapters } from "@/adapters/registry";
 import { queryKeys } from "@/lib/queryKeys";
+
+/**
+ * Extract the adapter types the server offers at agent creation.
+ *
+ * Returns null when no entry carries the flag — a server that predates it —
+ * so the store keeps its fallback instead of reading the silence as "none".
+ */
+function selectableTypesFrom(adapters: AdapterInfo[]): string[] | null {
+  if (!adapters.some((a) => a.selectable !== undefined)) return null;
+  return adapters.filter((a) => a.selectable).map((a) => a.type);
+}
 
 /**
  * Fetch adapters and keep the disabled-adapter store + UI adapter registry
@@ -11,6 +26,9 @@ import { queryKeys } from "@/lib/queryKeys";
  *
  * - Registers external adapter types in the UI registry so they appear in
  *   dropdowns (done eagerly during render — idempotent, no React state).
+ * - Syncs the selectable-adapter store, also eagerly during render, so a menu
+ *   built by a useMemo in the same render cycle sees the server's answer
+ *   rather than the pre-hydration fallback.
  * - Syncs the disabled-adapter store for non-React consumers (useEffect).
  *
  * Returns a reactive Set of disabled types for use as useMemo dependencies.
@@ -39,6 +57,7 @@ export function useDisabledAdaptersSync(options: { enabled?: boolean } = {}): Se
           overrideDisabled: a.overridePaused,
         })),
     );
+    setSelectableAdapterTypes(selectableTypesFrom(adapters));
   }
 
   // Sync the disabled set to the global store for non-React code
@@ -53,6 +72,33 @@ export function useDisabledAdaptersSync(options: { enabled?: boolean } = {}): Se
     () => new Set(adapters?.filter((a) => a.disabled).map((a) => a.type) ?? []),
     [adapters],
   );
+}
+
+/**
+ * The adapter types this instance offers at agent creation, as a reactive Set.
+ *
+ * Hydrates the selectable-adapter store on the way through, so a caller that
+ * reads `isValidAdapterType` inside an effect can list this Set as a dependency
+ * and re-check once the server's answer lands. Without that dependency the
+ * check runs only on the first render, when the store still holds the
+ * pre-hydration fallback and a widened adapter looks unavailable.
+ *
+ * Reads the same query key as {@link useDisabledAdaptersSync}, so it shares
+ * that cache entry rather than adding a request.
+ */
+export function useSelectableAdapterTypes(options: { enabled?: boolean } = {}): Set<string> {
+  const enabled = options.enabled ?? true;
+  const { data: adapters } = useQuery({
+    queryKey: queryKeys.adapters.all,
+    queryFn: () => adaptersApi.list(),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (adapters) setSelectableAdapterTypes(selectableTypesFrom(adapters));
+
+  // Read back through the store so both hydration paths agree on the fallback.
+  return useMemo(() => new Set(getSelectableAdapterTypes()), [adapters]);
 }
 
 /**

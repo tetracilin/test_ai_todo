@@ -146,6 +146,29 @@ describe("adapter routes", () => {
     }
   });
 
+  it("GET /api/adapters reports which adapters the instance offers at agent creation", async () => {
+    const previous = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway,claude_local";
+    try {
+      const app = createApp();
+
+      const res = await request(app).get("/api/adapters");
+      expect(res.status).toBe(200);
+
+      const selectable = res.body
+        .filter((a: any) => a.selectable)
+        .map((a: any) => a.type)
+        .sort();
+      expect(selectable).toEqual(["claude_local", "hermes_gateway"]);
+
+      // Registered but not named by the env var — a client must not offer it.
+      expect(res.body.find((a: any) => a.type === "codex_local").selectable).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+      else process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = previous;
+    }
+  });
+
   it("GET /api/adapters returns correct capabilities for built-in adapters", async () => {
     const app = createApp();
 

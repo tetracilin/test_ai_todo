@@ -4,10 +4,13 @@
  * This module bridges the static display metadata with the dynamic adapter registry.
  * "Coming soon" status is derived from the display registry's `comingSoon` flag.
  * "Hidden" status comes from the disabled-adapter store (server-side toggle).
+ * "Selectable" status comes from the selectable-adapter store (server-side
+ * PAPERCLIP_SELECTABLE_ADAPTER_TYPES).
  */
 import type { UIAdapterModule } from "./types";
 import { listUIAdapters } from "./registry";
 import { isAdapterTypeHidden } from "./disabled-store";
+import { isSelectableAdapterType } from "./selectable-store";
 import { getAdapterLabel, getAdapterDisplay } from "./adapter-display-registry";
 
 export interface AdapterOptionMetadata {
@@ -36,11 +39,14 @@ export function isEnabledAdapterType(type: string): boolean {
 
 /**
  * Check whether an adapter type is a valid choice for new agent creation.
- * Includes all registered UI adapters (built-in + external) and
- * any non-"coming soon" adapter from the display registry.
+ *
+ * The instance decides which adapters it offers — the server answers with
+ * `selectable` on GET /api/adapters and enforces the same set on the hire
+ * route. A "coming soon" adapter is still withheld even if the server offers
+ * it, because that flag is about the UI not being ready for it.
  */
 export function isValidAdapterType(type: string): boolean {
-  return type === "hermes_gateway" && !getAdapterDisplay(type).comingSoon;
+  return isSelectableAdapterType(type) && !getAdapterDisplay(type).comingSoon;
 }
 
 /**
@@ -70,12 +76,16 @@ export function listAdapterOptions(
   }));
 }
 
+/**
+ * Build option metadata for the adapters this instance offers at agent
+ * creation, in registry order. Same rule as {@link isValidAdapterType}.
+ */
 export function listSelectableAdapterOptions(
   labelFor?: (type: string) => string,
   adapters: UIAdapterModule[] = listUIAdapters(),
 ): AdapterOptionMetadata[] {
-  return listAdapterOptions(labelFor, adapters).filter(
-    (option) => option.value === "hermes_gateway",
+  return listAdapterOptions(labelFor, adapters).filter((option) =>
+    isValidAdapterType(option.value),
   );
 }
 

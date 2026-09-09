@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
@@ -32,6 +32,7 @@ import { buildFixedClaudeOAuthBinding } from "../components/environment-variable
 import type { EnvBinding } from "@paperclipai/shared";
 import { getUIAdapter } from "../adapters";
 import { isValidAdapterType } from "../adapters/metadata";
+import { useAdapterRegistryLoaded, useSelectableAdapterTypes } from "../adapters/use-disabled-adapters";
 import { ReportsToPicker } from "../components/ReportsToPicker";
 import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";
 import { TrustPresetSection } from "../components/TrustPresetSection";
@@ -136,15 +137,31 @@ export function NewAgent() {
     }
   }, [isFirstAgent]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Which adapters the instance offers arrives with the server's adapter list,
+  // so a preset naming a widened adapter is not yet valid on the first render.
+  // Wait for the list to actually resolve, then decide ONCE.
+  //
+  // The ref is claimed before the validity check, not after. Setting it only on a
+  // successful apply left it null when the pre-hydration fallback rejected the preset,
+  // so the effect re-ran when the query resolved and reset a form the operator had
+  // since filled in by hand -- the exact overwrite this comment promises cannot happen.
+  const selectableAdapterTypes = useSelectableAdapterTypes();
+  const adapterRegistryLoaded = useAdapterRegistryLoaded();
+  const appliedPresetAdapterType = useRef<string | null>(null);
   useEffect(() => {
     const requested = presetAdapterType;
     if (!requested) return;
+    if (appliedPresetAdapterType.current === requested) return;
+    // Decide only on a real answer. useAdapterRegistryLoaded reports arrival, so the
+    // pre-hydration fallback can no longer reject a preset the instance actually offers.
+    if (!adapterRegistryLoaded) return;
+    appliedPresetAdapterType.current = requested;
     if (!isValidAdapterType(requested)) return;
     setConfigValues((prev) => {
       if (prev.adapterType === requested) return prev;
       return createValuesForAdapterType(requested as CreateConfigValues["adapterType"]);
     });
-  }, [presetAdapterType]);
+  }, [presetAdapterType, selectableAdapterTypes, adapterRegistryLoaded]);
 
   const createAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) =>

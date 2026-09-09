@@ -57,6 +57,11 @@ The S3 storage config accepts an endpoint, region, and credentials **by named
 secret reference only**. No literal credential value is ever placed in config,
 code, cards, or metadata.
 
+The `storage.s3` block below configures the **primary** object store, i.e. it
+moves every stored object onto S3/MinIO. For the artifact picker's external
+source, use `storage.external` instead — see
+[Pointing the open-file external storage at the NAS MinIO](#pointing-the-open-file-external-storage-at-the-nas-minio).
+
 ```jsonc
 // ~/.paperclip/instances/default/config.json
 {
@@ -95,37 +100,96 @@ credential chain (environment, shared credentials file, IAM) exactly as before.
 
 ## Pointing the open-file external storage at the NAS MinIO
 
-The artifact "open file" flow selects between **internal** storage and one or
-more **external** storages. To point the first external option at this MinIO
-instance, set the storage provider to `s3` and populate the `s3` block above
-with the NAS endpoint, bucket, and the two secret references.
+The artifact "open file" flow selects between **internal** storage and one
+**external** storage. The external source is configured under
+`storage.external` — **not** by setting `storage.provider` to `s3`.
 
-In the Docker Compose deployment (`deploy-prod`), the credential values are
-injected as Docker secrets referenced by **name**, not inlined in the
-environment:
+`storage.external` is **additive**: it adds a second source that the artifact
+picker can browse and leaves the primary store (here `local_disk`) untouched.
+Switching `storage.provider` instead would move *everything* — uploads,
+attachments, every existing object path — onto the NAS, which is not what this
+feature is for.
+
+This is what `deploy/paperclip-config.json` ships (mounted read-only at
+`/etc/paperclip/config.json` by `deploy/compose.yaml`):
+
+```jsonc
+{
+  "storage": {
+    "provider": "local_disk",
+    "external": {
+      "endpoint": "http://nas-storage-t19.tail9831b.ts.net:9000",
+      "region": "us-east-1",
+      "bucket": "paperclip-artifacts",
+      "prefix": "",
+      "forcePathStyle": true,
+      "accessKeySecretRef": "paperclip_artifacts_access_key",
+      "secretKeySecretRef": "paperclip_artifacts_secret_key"
+    }
+  }
+}
+```
+
+| Key | Env override | Meaning |
+|-----|--------------|---------|
+| `external.endpoint` | `PAPERCLIP_STORAGE_EXTERNAL_ENDPOINT` | MinIO endpoint URL (**required**) |
+| `external.bucket` | `PAPERCLIP_STORAGE_EXTERNAL_BUCKET` | Bucket name (**required**) |
+| `external.region` | `PAPERCLIP_STORAGE_EXTERNAL_REGION` | Region; cosmetic for single-node MinIO (default `us-east-1`) |
+| `external.prefix` | `PAPERCLIP_STORAGE_EXTERNAL_PREFIX` | Key prefix inside the bucket (default `""`) |
+| `external.forcePathStyle` | `PAPERCLIP_STORAGE_EXTERNAL_FORCE_PATH_STYLE` | Path-style addressing; MinIO needs `true` (default `true`) |
+| `external.accessKeySecretRef` | `PAPERCLIP_STORAGE_EXTERNAL_ACCESS_KEY_SECRET_REF` | **Name** of the secret holding the access key |
+| `external.secretKeySecretRef` | `PAPERCLIP_STORAGE_EXTERNAL_SECRET_KEY_SECRET_REF` | **Name** of the secret holding the secret key |
+
+Three rules the config layer enforces, quietly or loudly:
+
+- **`endpoint` and `bucket` are both required.** The external source is only
+  constructed when both are present (`server/src/config.ts`); set just one and
+  `storage.external` stays `undefined` with no error — the picker's
+  "External NAS MinIO" button simply stays disabled.
+- **Both secret refs or neither.** `createS3StorageProvider` throws
+  `accessKeySecretRef and secretKeySecretRef must be set together` when only one
+  is set. Omitting both is legal and falls back to the AWS SDK default
+  credential chain.
+- **Refs are names, never values.** A credential value must never appear in
+  config, env, code, or a card.
+
+Env overrides win over the file, but note that `deploy/compose.yaml` does not
+currently forward any `PAPERCLIP_STORAGE_EXTERNAL_*` variable into the
+container, so putting them in `deploy/.env` alone has no effect. The file-based
+config above is the path that works today; adding the env passthrough is a
+pipeline change (its own `ci`-labelled PR).
+
+`prefix` is empty because the bucket is dedicated to this flow. The server
+scopes every external listing to `<companyId>/` on top of the prefix, so
+objects are read from `paperclip-artifacts/<companyId>/…`. Set a prefix only if
+this bucket is later shared with something else — a non-empty prefix hides
+anything sitting at the bucket root.
+
+`deploy/compose.yaml` already mounts both credentials as Docker secrets, and
+`deploy/scripts/container-entrypoint.sh` copies them into
+`PAPERCLIP_SECRETS_DIR` (`/run/paperclip-storage-secrets`) with app-user
+ownership before privileges drop — Docker mounts `/run/secrets` root-owned, so
+the app could not otherwise read them:
 
 ```yaml
 services:
   paperclip:
     environment:
-      PAPERCLIP_STORAGE_S3_ENDPOINT: "http://nas-storage-t19.tail9831b.ts.net:9000"
-      PAPERCLIP_STORAGE_S3_REGION: "us-east-1"
-      PAPERCLIP_STORAGE_S3_ACCESS_KEY_SECRET_REF: "paperclip_artifacts_access_key"
-      PAPERCLIP_STORAGE_S3_SECRET_KEY_SECRET_REF: "paperclip_artifacts_secret_key"
-      PAPERCLIP_SECRETS_DIR: "/run/secrets"
+      PAPERCLIP_SECRETS_DIR: /run/paperclip-storage-secrets
     secrets:
       - paperclip_artifacts_access_key
       - paperclip_artifacts_secret_key
 
 secrets:
   paperclip_artifacts_access_key:
-    file: ./secrets/paperclip_artifacts_access_key
+    file: ${PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE:-./secrets/paperclip_artifacts_access_key}
   paperclip_artifacts_secret_key:
-    file: ./secrets/paperclip_artifacts_secret_key
+    file: ${PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE:-./secrets/paperclip_artifacts_secret_key}
 ```
 
-The files `deploy-prod/secrets/paperclip_artifacts_*` are git-ignored and hold
-the generated MinIO credential values.
+The secret files are git-ignored and hold the generated MinIO credential
+values. They must exist and be non-empty in each environment's `SECRETS_DIR`
+before a deploy — the workflows hard-fail otherwise.
 
 ## Smoke test
 

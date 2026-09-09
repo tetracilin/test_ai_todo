@@ -5220,6 +5220,13 @@ export function IssueDetail() {
         />
       ) : null}
 
+      {/* Evidence and the dossier are deliberately NOT rendered here. The properties pane
+          mounts in BOTH layouts (panelIssue has no taskChatShellEnabled check), so
+          IssuePropertiesArtifactsTab already carries IssueEvidenceLinkManager; a second copy
+          here showed two "Evidence" sections on one screen. The dossier is likewise already
+          listed by IssueDocumentsSection above and by the properties document rows, both with
+          revision history — `dossier` is not in SYSTEM_ISSUE_DOCUMENT_KEYS. */}
+
       <ImageGalleryModal
         items={mediaGalleryItems}
         initialIndex={galleryIndex}

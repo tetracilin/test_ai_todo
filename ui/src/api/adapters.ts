@@ -42,6 +42,12 @@ export interface AdapterInfo {
   modelsCount: number;
   loaded: boolean;
   disabled: boolean;
+  /**
+   * True when this instance offers the adapter at agent creation — server-driven
+   * via PAPERCLIP_SELECTABLE_ADAPTER_TYPES. Optional so a response that omits it
+   * reads as "unanswered" (fall back) rather than "nothing is offered".
+   */
+  selectable?: boolean;
   capabilities: AdapterCapabilities;
   acp?: AcpTargetDescriptor;
   /** Installed version (for external npm adapters) */
