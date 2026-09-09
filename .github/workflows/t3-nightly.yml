@@ -210,10 +210,22 @@ jobs:
   # pr.yml sharded these across a matrix purely for PR latency. Nightly has no latency
   # budget, so it uses the repo's own stable runner (scripts/run-vitest-stable.mjs), which
   # already serializes the suites that contend over embedded Postgres.
-  slow-tests:
-    name: slow-tests
+  # e2e is its OWN job, deliberately, not a tail of slow-tests.
+  #
+  # It used to be three steps after the vitest step in that job. Steps run in
+  # order and the job aborts at the first failure, and vitest failed on every
+  # run this workflow ever had -- so `Install Chromium` and `E2E` were skipped
+  # every single time. e2e has never executed once. A separate job cannot be
+  # hidden by an unrelated red suite, reports its own status, and runs in
+  # parallel instead of queueing behind a 20-minute vitest run.
+  #
+  # It does not `needs:` deploy for the same reason slow-tests does not
+  # (ASSUMPTION A6 above): playwright.config.ts bootstraps its own throwaway
+  # instance on 127.0.0.1 and cannot be pointed at the deployed :33130 stack.
+  e2e:
+    name: e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -229,12 +241,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: Full vitest suite (general + serialized)
-        # pnpm test:run (bare) skips the plugin-sdk build step that
-        # test:run:general / test:run:serialized include, so
-        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
-        # test file that imports it (ERR_MODULE_NOT_FOUND).
-        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+      # The e2e webServer runs `paperclipai onboard --run`, which boots the real
+      # server. That pulls in @paperclipai/plugin-sdk/testing the same way the
+      # vitest suites do, so the prebuild is required here too -- without it the
+      # bootstrap dies with ERR_MODULE_NOT_FOUND before Playwright sees a page.
+      - name: Build plugin-SDK deps
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
 
       - name: Install Chromium
         # Deliberately Playwright's bundled Chromium, NOT the runner's stable
@@ -264,7 +276,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Discord report (slow tests)
+      - name: Discord report (e2e)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          msg=$(printf 'nightly e2e FAILED on develop\n<%s>' "$run_url")
+          jq -n --arg c "$msg" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  slow-tests:
+    name: slow-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Full vitest suite (general + serialized)
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+
+
+      - name: Discord report (vitest)
         if: failure()
         shell: bash
         env:
