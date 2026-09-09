@@ -33,7 +33,7 @@ env:
   COMPOSE_PROJECT: t3-nightly
   COMPOSE_FILE: deploy/compose.yaml
   IMAGE_NAME: paperclip
-  HEALTH_URL: http://127.0.0.1:33130/api/health
+  HEALTH_URL: http://100.103.41.112:33130/api/health
   # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-nightly.
   SECRETS_DIR: /etc/t3/secrets/nightly
 
@@ -47,7 +47,7 @@ jobs:
     # Coupling them would make a skipped deploy silently skip the tests too.
     environment:
       name: staging
-      url: http://127.0.0.1:33130
+      url: http://100.103.41.112:33130
     timeout-minutes: 30
     steps:
       - name: Skip scheduled run if develop has no new commits
@@ -119,7 +119,21 @@ jobs:
           # ASSUMPTION A1 — these must match what deploy/compose.yaml reads.
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
-          PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # Staging is reachable from the tailnet so a remote monitoring host can
+          # poll it. It stays authenticated (deploy/compose.yaml sets
+          # PAPERCLIP_DEPLOYMENT_MODE=authenticated), so this is tailnet-scoped
+          # plus login-gated, the same posture as production.
+          #
+          # Binding the tailnet IP UNBINDS 127.0.0.1:33130 -- the ports entry in
+          # deploy/compose.yaml publishes one address. HEALTH_URL above moves with
+          # it; anything else pointing at loopback on this host must move too.
+          PAPERCLIP_BIND_ADDRESS: 100.103.41.112
+          # exposure=private + mode=authenticated enables the private-hostname
+          # guard, which runs BEFORE the health route and 403s any Host: not in
+          # this list. Both the tailnet IP and the MagicDNS name are listed, so a
+          # browser can use either; loopback stays for anything still on the host.
+          # See t3-release.yml for the same guard on production.
+          PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,hostinger-kvm8-host.tail9831b.ts.net,localhost,127.0.0.1
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `staging` GitHub Environment to override this default.

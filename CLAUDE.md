@@ -214,7 +214,7 @@ Contract	Value	Why it matters
 Health endpoint	GET /api/health → 200, JSON with "commit": "<sha>"	Deploy workflows verify the deployed sha here; if it stops reporting the commit, every deploy fails
 Build args	PAPERCLIP_BUILD_COMMIT, PAPERCLIP_BUILD_VERSION	Dockerfile must keep consuming them and surfacing them in /api/health
 Compose image var	PAPERCLIP_IMAGE	deploy/compose.yaml must read the image from this env var
-Port vars	NIGHTLY_PORT (33130), PROD_PORT (33100)	Compose must bind to these; nightly stays on 127.0.0.1, prod on the tailnet IP
+Port vars	NIGHTLY_PORT (33130), PROD_PORT (33100)	Compose must bind to these. Both stacks bind the tailnet IP 100.103.41.112 (nightly :33130, prod :33100). Changing a bind address means also moving that workflow's HEALTH_URL and adding the new host to PAPERCLIP_ALLOWED_HOSTNAMES, or the private-hostname guard 403s the health check before the route runs
 Compose projects	t3-nightly, t3-prod	Separate DB/volumes. A change that merges or renames them is a migration, not a tweak
 Secrets files	postgres_password, better_auth_secret, paperclip_artifacts_access_key, paperclip_artifacts_secret_key in SECRETS_DIR	Workflows hard-fail if any is missing/empty. Adding a name to this list is a host-side prerequisite: create the file on kmv8 in both /etc/t3/secrets/{nightly,prod} before merging the workflow change, or every deploy stops. The two artifact keys were added by PR #78 without that step and nightly has been red since 2026-09-04
 
@@ -238,7 +238,7 @@ Branch fix/<topic> from main, PR into main, tag, release as above. Then open a s
 
 Staging / nightly
 develop deploys to t3-nightly at 22:00 UTC if it has changed since the last run, or on demand via Run workflow.
-Nightly is bound to 127.0.0.1:33130 on kmv8 — reachable only from the host (ssh kmv8 curl 127.0.0.1:33130/api/health) or via an SSH tunnel. It is not on the tailnet by design.
+Nightly is bound to 100.103.41.112:33130 on kmv8, reachable from anywhere on the tailnet as http://100.103.41.112:33130 or http://hostinger-kvm8-host.tail9831b.ts.net:33130, so a remote monitoring host can poll it. It stays login-gated (deploy/compose.yaml sets PAPERCLIP_DEPLOYMENT_MODE=authenticated), the same posture as production. Note 127.0.0.1:33130 is NOT bound any more: compose publishes one address, so an SSH tunnel to loopback no longer reaches it.
 The slow-tests job does not run against :33130, and does not wait for the deploy. It runs on a GitHub-hosted runner and Playwright bootstraps its own instance, deliberately (t3-nightly.yml job comment, ASSUMPTION A6), so a skipped or failed deploy does not silently skip the tests.
 
 e2e has never actually executed. Install Chromium and E2E follow the vitest step in the same job with no if: always(), and the vitest step has failed on every run to date, so the job always aborts first. There is currently zero e2e signal.
