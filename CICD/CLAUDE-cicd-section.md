@@ -17,8 +17,8 @@ feature/<topic>  →  PR  →  develop  →  nightly deploy to staging (:33130)
 
 ## Hard rules
 
-1. **Never push directly to `develop` or `main`.** Open a PR. (Enforcement is currently uneven: `main` requires the three t3-ci checks, but as of 2026-09-07 `develop` has no branch protection record at all, so nothing stops a direct push except this rule. Treat it as binding anyway; see `PLAN_CICD.md` §0.)
-2. **Never force-push a shared branch.** `git push --force` is allowed only on your own `feature/*` branch, and only before anyone else has based work on it. (As of 2026-09-07 `main` has `allow_force_pushes: true` and `develop` has no protection at all, so nothing enforces this. It is still binding.)
+1. **Never push directly to `develop` or `main`.** Open a PR. Both branches are protected as of 2026-09-09: each requires the three t3-ci checks (`unit`, `build`, `build-image`) and a pull request, and `develop` additionally requires the branch to be **up to date** before merging. `enforce_admins` is `false` on both, so an admin can still bypass; do not.
+2. **Never force-push a shared branch.** `git push --force` is allowed only on your own `feature/*` branch, and only before anyone else has based work on it. `develop` blocks force pushes and deletions as of 2026-09-09; `main` still has `allow_force_pushes: true`, so there it is convention only.
 3. **Never edit `/root/projects/t3-paperclip-Aitodo` in place.** That path belongs to the agent team's automation. For any manual work on kmv8 use `git worktree add ../t3-<purpose> <branch>` or a fresh clone.
 4. **Never deploy by hand.** No `docker build` / `docker compose up` against `t3-nightly` or `t3-prod` outside the GitHub Actions workflows. If you need a staging deploy now, trigger `t3-nightly` from the Actions tab (Run workflow) instead of running anything on the host.
 5. **Never commit secrets.** `.env` is gitignored; `.env.example` must stay safe to publish. Runtime secrets live outside the repo on kmv8 (`SECRETS_DIR` in the workflows) and in GitHub Environment secrets. If you find a secret in the tree, remove it and rotate it — do not just delete the line.

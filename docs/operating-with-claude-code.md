@@ -205,10 +205,11 @@ this way in September 2026. Rule 6 is the mitigation.
 **e2e has never run at all.** Not "is flaky" — has never once executed. The browser tests sit
 behind a step that fails first every time, so they have never reported anything about anything.
 
-**`develop` has no branch protection.** Nothing mechanically stops a red or out-of-date PR from
-being merged, so rule 1 is the only thing standing there. Turning protection on is a small
-change in Settings → Branches and would make rule 1 automatic. It is strongly recommended and
-tracked in `TODOS.md`.
+**`develop` is protected as of 2026-09-09**, so rule 1 is now enforced by GitHub rather than by
+you remembering it: a PR cannot merge unless `unit`, `build` and `build-image` have passed and
+the branch is up to date. Keep asking the rule 1 question anyway — `enforce_admins` is `false`,
+so an admin account can still click through, and the checks tell you *why* something is red
+before you go looking.
 
 **Dependabot PRs are the highest-risk merges here.** They are opened automatically, they are
 never rebased, and they touch the lockfile — the one file that breaks *everything* when it
