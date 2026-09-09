@@ -5,7 +5,7 @@ status: APPROVED
 owner: tetracilin
 derives_from: docs/designs/t3-company-os-ssot.md
 targets: [backlog.md, roadmap.md]
-updated: 2026-09-05
+updated: 2026-09-07
 ---
 
 # T3 — Slice 1 feature decomposition (agent-implementable)
@@ -37,6 +37,23 @@ only the pure markdown grammar module — there was still no persistence layer, 
 `issue_documents` row for key `dossier` ever created, until PR #81. **Read B.1's Status column
 first** — it is the fastest way to see what is actually shipped in Lane A. Treat any claim in this
 table as provisional until you have grepped for it yourself; this table drifts.
+
+**"SHIPPED" means merged to `develop`. It does not always mean deployed.** As of 2026-09-07
+the staging stack at `:33130` is still serving `c3c03e81` (2026-09-03): `t3-nightly`'s deploy
+job has failed since the 2026-09-04 run on two secret files that were never created on kmv8.
+So the table splits in two:
+
+- **Deployed and running on staging** — everything up to and including `c3c03e81`. That
+  covers PR #40 (the PC-001 evidence gate) and PR #75 (`issue_evidence_links`, PC-011
+  provenance, `wp0-phrases`, `doc/WP0-OPERATIONS.md`); `git merge-base --is-ancestor`
+  confirms both are ancestors of the deployed sha.
+- **Merged but never deployed** — the 11 commits in `c3c03e81..origin/develop`: PRs #78,
+  #68, #79, #80, #81, #83, #84, #82, #85, #87, #88. That includes every evidence *provider*
+  (minio/git/nas), the dossier persistence layer, and the WP-close export bundle. They have
+  passed `t3-ci` but have never run on staging or production.
+
+Re-derive the split rather than trusting this paragraph:
+`git log --oneline c3c03e81..origin/develop`. See `CICD/PLAN_CICD.md` §0.
 
 | Claim | Verified | Evidence |
 |---|---|---|
