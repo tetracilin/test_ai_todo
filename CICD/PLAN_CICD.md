@@ -18,7 +18,7 @@ Everything marked **ASSUMPTION** must be verified against the repo before implem
 
 ---
 
-## 0. Status (as of 2026-09-07)
+## 0. Status (as of 2026-09-08)
 
 Phase 1 is landed. Every item that was open on 2026-09-02 is now closed:
 - `develop` created; staging/production environments configured (§2.3)
@@ -32,14 +32,16 @@ Open:
   `build-image`; `GET /repos/tetracilin/test_ai_todo/branches/develop/protection` returns
   404 "Branch not protected". The "never push directly to `develop`" rule is convention
   only, not enforced (§2.1).
-- **`t3-nightly` has failed on all seven runs it has ever had** — five scheduled nightlies
-  (2026-09-02 through 2026-09-06) and two `workflow_dispatch` runs on 2026-09-02. Two
-  independent jobs fail for unrelated reasons:
-  - The deploy job has been blocked since the 2026-09-04 nightly —
+- **`t3-nightly` has never produced a fully green run** — nine runs to date. Its two jobs are
+  independent and fail for unrelated reasons, so read the job, not the run: as of 2026-09-08
+  the deploy half is fixed and `slow-tests` is not, which means every run still reads red while
+  staging is current:
+  - The deploy job was blocked from the 2026-09-04 nightly until 2026-09-08 —
     `/etc/t3/secrets/nightly/paperclip_artifacts_access_key` and `..._secret_key` were made
-    mandatory by PR #78 but never created on kmv8. It also failed in both 2026-09-02 manual
-    runs, for the pre-#78 reasons. Its only two successes are the 2026-09-02 and 2026-09-03
-    scheduled runs, so staging is pinned at `c3c03e81`.
+    mandatory by PR #78 but never created on kmv8. **Resolved 2026-09-08:** the operator
+    created both files and the 01:24 dispatch (run `34176567198`) deployed successfully;
+    staging now runs `41c64c62`, verified by the workflow's own health check. Staging was
+    pinned at `c3c03e81` for five days.
   - `slow-tests` has never been green, and its cause changed mid-window. On 2026-09-02 and
     2026-09-03 it failed on `cli-invocation-safety.test.ts` alone. From 2026-09-04 two real
     regressions took over: a `@paperclipai/db` mock missing `externalObjects` (**PR #80** —
