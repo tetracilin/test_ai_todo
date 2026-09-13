@@ -152,6 +152,24 @@ describe("IssueDossierPanel", () => {
     expect(container.textContent).toContain("discord message 1279344401920000512");
   });
 
+  it("reports the collapsed count as a lower bound when a section did not fully parse", () => {
+    // The badge is the whole panel until someone expands it, and an undercount reads as "this
+    // card has less evidence than it does" — the one wrong answer the evidence gate and the
+    // wedge metric cannot tolerate. Two evidence lines, one of them unparseable, must never
+    // render as a flat "1 evidence".
+    const body = FIXTURE_BODY.replace(
+      "- 2026-09-02T01:55:00Z · minio · `evidence/T3-142/bao-gia.pdf` — Báo giá đã gửi khách",
+      "- gỡ liên kết nhầm thẻ, đã chuyển sang T3-143",
+    );
+    render(<IssueDossierPanel document={dossierDocument(body)} />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("1+ evidence");
+    expect(text).not.toContain("1 evidence");
+    // The section that DID parse cleanly still reports an exact count.
+    expect(text).toContain("1 scope change");
+    expect(text).not.toContain("1+ scope change");
+  });
+
   it("falls back to raw markdown for a section it cannot fully parse", () => {
     // One unparseable line must not turn into one missing evidence item.
     const body = FIXTURE_BODY.replace(

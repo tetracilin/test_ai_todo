@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { DossierView, DossierViewSection, IssueDocument } from "@paperclipai/shared";
+import type { DossierView, DossierViewEntryList, DossierViewSection, IssueDocument } from "@paperclipai/shared";
 import { ISSUE_DOSSIER_TITLE, parseDossierView } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,42 @@ function SectionFrame({ heading, children }: { heading: string; children: ReactN
       </h3>
       {children}
     </section>
+  );
+}
+
+/**
+ * A collapsed count, which is the whole panel until someone expands it.
+ *
+ * When the section did not fully parse, the count is a LOWER BOUND and says so ("2+"), never a
+ * total. The expanded view already refuses to show a list that is one item short; a badge that
+ * quietly reported the same short number would undo that, and it would understate exactly the
+ * quantity the evidence gate and the wedge metric are both counting. An undercount here reads
+ * as "this card has less evidence than it does", which is the one wrong answer that matters.
+ */
+function CountBadge<T>({
+  list,
+  singular,
+  plural,
+}: {
+  list: DossierViewEntryList<T>;
+  singular: string;
+  plural: string;
+}) {
+  const count = list.entries.length;
+  const label = count === 1 ? singular : plural;
+  return (
+    <Badge
+      variant="secondary"
+      className="text-(length:--text-nano)"
+      title={
+        list.complete
+          ? undefined
+          : "Some lines in this section are not in a recognized format. Expand the dossier to read them all."
+      }
+    >
+      {count}
+      {list.complete ? "" : "+"} {label}
+    </Badge>
   );
 }
 
@@ -195,12 +231,8 @@ export function IssueDossierPanel({ document, externalReferences }: IssueDossier
                 CTO's replanning-latency question are both asking about. */}
             {view ? (
               <>
-                <Badge variant="secondary" className="text-(length:--text-nano)">
-                  {view.evidence.entries.length} evidence
-                </Badge>
-                <Badge variant="secondary" className="text-(length:--text-nano)">
-                  {view.scopeChanges.entries.length} scope {view.scopeChanges.entries.length === 1 ? "change" : "changes"}
-                </Badge>
+                <CountBadge list={view.evidence} singular="evidence" plural="evidence" />
+                <CountBadge list={view.scopeChanges} singular="scope change" plural="scope changes" />
               </>
             ) : null}
           </div>
