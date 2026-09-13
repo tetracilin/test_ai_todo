@@ -168,6 +168,25 @@ jobs:
         shell: bash
         run: deploy/scripts/healthcheck.sh "$HEALTH_URL" "${{ steps.tag.outputs.full }}" 30 5
 
+      - name: Seed the persistent staging tester account
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        env:
+          # Staging is login-gated, so QA needs a known account. Re-asserted on
+          # every deploy rather than created by hand once, because a volume reset
+          # would otherwise silently take the shared login away.
+          #
+          # The password lives in the `staging` GitHub Environment, never in the
+          # repo -- it grants instance_admin on a live stack. The job already
+          # declares `environment: staging` above, which is what makes this
+          # secret resolvable here.
+          SEED_TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
+          SEED_TESTER_PASSWORD: ${{ secrets.STAGING_TESTER_PASSWORD }}
+          SEED_TESTER_NAME: Staging Tester
+        # HEALTH_URL minus /api/health: the seed must post from a trusted origin,
+        # and PAPERCLIP_PUBLIC_URL above is what makes that host one.
+        run: deploy/scripts/seed-staging-tester.sh "${HEALTH_URL%/api/health}" "$COMPOSE_PROJECT"
+
       - name: Record deployed sha
         if: steps.guard.outputs.skip == 'false'
         shell: bash
