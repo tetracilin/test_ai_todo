@@ -547,7 +547,7 @@ phrase** from the F-VERB-0 table. The English API message stays for API callers.
 
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
-| ~~F-010-1~~ | ~~Teable REST client (shared service module)~~ **SHIPPED — PR #TBD** (`server/src/services/teable-client.ts`; fixture-verified, not live-verified) | — | human: 2d / CC: 2h |
+| ~~F-010-1~~ | ~~Teable REST client (shared service module)~~ **SHIPPED — PR #102** (`server/src/services/teable-client.ts`; fixture-verified, not live-verified) | — | human: 2d / CC: 2h |
 | F-010-2 | Append-only agent write + link + attribution | F-010-1, F-007-1, F-002-2 | human: 2d / CC: 2h |
 | F-010-3 | Teable read verb (no write scope) | F-010-1 | human: 1d / CC: 1h |
 | F-005-1 | Card → Teable mirror cron | F-010-1 | human: 3d / CC: 3h |
