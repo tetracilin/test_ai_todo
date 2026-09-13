@@ -134,6 +134,20 @@ jobs:
           # browser can use either; loopback stays for anything still on the host.
           # See t3-release.yml for the same guard on production.
           PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,hostinger-kvm8-host.tail9831b.ts.net,localhost,127.0.0.1
+          # The only value that can put the PUBLISHED host port into Better
+          # Auth's trusted origins. deriveAuthTrustedOrigins (server/src/auth/
+          # better-auth.ts) expands PAPERCLIP_ALLOWED_HOSTNAMES using the
+          # container's INTERNAL listen port (3100, per deploy/compose.yaml),
+          # so it can only ever produce http://100.103.41.112:3100 -- never
+          # :33130, which is what a browser actually sends. The remaining
+          # source of trusted origins is config.auth.publicBaseUrl, which
+          # deploy/scripts/container-entrypoint.sh writes from this variable
+          # with baseUrlMode=explicit. Left unset, compose defaults it to
+          # http://127.0.0.1:33100 (wrong host AND wrong port), so every
+          # browser sign-in got 403 INVALID_ORIGIN. t3-release.yml sets the
+          # prod equivalent; this is the fifth value that must move with a
+          # bind change, not the fourth.
+          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33130
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `staging` GitHub Environment to override this default.
