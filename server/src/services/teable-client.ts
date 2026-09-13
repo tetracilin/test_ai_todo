@@ -71,8 +71,23 @@ export const TEABLE_DEFAULT_BASE_URL = "http://teable:3000";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
-const MAX_RETRY_DELAY_MS = 2_000;
+/**
+ * The longest this client will block inside one call. A `Retry-After` longer
+ * than this is NOT truncated and slept through -- that would return to a server
+ * that asked for a longer pause, and would also stall the caller. The request
+ * is abandoned instead and `retryAfterSeconds` is handed back, which is the
+ * repo's normal shape: the caller reschedules (`external-objects.ts:834`).
+ */
+const MAX_IN_REQUEST_RETRY_DELAY_MS = 2_000;
 const BASE_RETRY_DELAY_MS = 250;
+
+/**
+ * `take` is always sent, so a full page is an honest "there may be more".
+ * Omitting it would let Teable apply its own default limit while this client
+ * reported `hasMore: false`, silently hiding the rest of the table. 100 is the
+ * documented recommended page size and is valid on cloud and self-hosted alike.
+ */
+export const TEABLE_DEFAULT_PAGE_SIZE = 100;
 
 /** Teable ids (`tbl...`, `rec...`, `bse...`) are opaque; only their shape is checked. */
 const TEABLE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -192,9 +207,13 @@ export type TeableRecordPage = {
   records: TeableRecord[];
   /**
    * The list endpoint returns no total, so "there may be more" is inferred from
-   * a full page. Only meaningful when `take` was supplied.
+   * a full page. `take` is always sent (defaulting to TEABLE_DEFAULT_PAGE_SIZE),
+   * so this is always a real answer rather than a guess about Teable's own
+   * default limit.
    */
   hasMore: boolean;
+  /** The page size actually requested -- pass it back as `skip` arithmetic. */
+  pageSize: number;
 };
 
 export type TeableField = {
@@ -549,9 +568,17 @@ const defaultSleep = (ms: number) =>
     timer.unref?.();
   });
 
-function retryDelayMs(attempt: number, retryAfterSeconds: number | null): number {
-  if (retryAfterSeconds !== null) return Math.min(retryAfterSeconds * 1000, MAX_RETRY_DELAY_MS);
-  const ceiling = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
+/**
+ * Returns the delay to wait before the next attempt, or `null` when the server
+ * asked for longer than this client may block. `null` means "stop retrying and
+ * let the caller reschedule" -- never "wait a shorter time instead".
+ */
+export function retryDelayMs(attempt: number, retryAfterSeconds: number | null): number | null {
+  if (retryAfterSeconds !== null) {
+    const requested = retryAfterSeconds * 1000;
+    return requested > MAX_IN_REQUEST_RETRY_DELAY_MS ? null : requested;
+  }
+  const ceiling = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), MAX_IN_REQUEST_RETRY_DELAY_MS);
   return Math.round(ceiling / 2 + Math.random() * (ceiling / 2));
 }
 
@@ -683,8 +710,11 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
       } catch {
         lastError = teableError("teable_unreachable", { attempts: attempt });
         if (attempt < maxAttempts) {
-          await sleep(retryDelayMs(attempt, null));
-          continue;
+          const delay = retryDelayMs(attempt, null);
+          if (delay !== null) {
+            await sleep(delay);
+            continue;
+          }
         }
         return { ok: false, error: lastError };
       } finally {
@@ -701,8 +731,14 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
           ...(retryAfterSeconds === null ? {} : { retryAfterSeconds }),
         });
         if (lastError.retryable && attempt < maxAttempts) {
-          await sleep(retryDelayMs(attempt, retryAfterSeconds));
-          continue;
+          const delay = retryDelayMs(attempt, retryAfterSeconds);
+          // A `Retry-After` longer than this client may block ends the attempt
+          // loop rather than being truncated: the caller reschedules on
+          // `retryAfterSeconds` instead of returning early to a busy server.
+          if (delay !== null) {
+            await sleep(delay);
+            continue;
+          }
         }
         return { ok: false, error: lastError };
       }
@@ -726,11 +762,12 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
   return {
     async listRecords(input) {
       assertTeableId("table id", input.tableId);
+      const pageSize = input.take ?? TEABLE_DEFAULT_PAGE_SIZE;
       const url = buildTeableUrl(
         config.baseUrl,
         `/table/${encodeURIComponent(input.tableId)}/record`,
         {
-          take: input.take,
+          take: pageSize,
           skip: input.skip,
           viewId: input.viewId,
           fieldKeyType: input.fieldKeyType ?? "name",
@@ -751,7 +788,8 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
           if (!records) return null;
           return {
             records,
-            hasMore: input.take !== undefined && records.length === input.take,
+            hasMore: records.length >= pageSize,
+            pageSize,
           } satisfies TeableRecordPage;
         },
       });

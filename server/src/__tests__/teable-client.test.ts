@@ -7,7 +7,9 @@ import {
   parseTeableErrorEnvelope,
   parseTeableRecord,
   resolveTeableConfigFromEnv,
+  retryDelayMs,
   TEABLE_DEFAULT_BASE_URL,
+  TEABLE_DEFAULT_PAGE_SIZE,
   TEABLE_DEFAULT_RETRY_AFTER_SECONDS,
   type TeableClientOptions,
 } from "../services/teable-client.js";
@@ -361,6 +363,31 @@ describe("teable retry policy", () => {
     expect(sleeps).toEqual([1000]);
   });
 
+  it("stops instead of truncating a Retry-After longer than it may block for", async () => {
+    // The fixture asks for 42s. Sleeping 2s and returning would ignore what the
+    // server asked for; the caller reschedules on retryAfterSeconds instead.
+    const rateLimited = exchange("list-records-429");
+    const fetch = vi.fn(async () =>
+      response(rateLimited.response.body, { status: 429, headers: rateLimited.response.headers }),
+    );
+    const { instance, sleeps } = client({ fetch });
+
+    const result = await instance.listRecords({ companyId: "company-1", tableId: "tblSlice1Pilot" });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sleeps).toEqual([]);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "teable_rate_limited", retryAfterSeconds: 42, attempts: 1 },
+    });
+  });
+
+  it("hands a long Retry-After back rather than waiting it out", () => {
+    expect(retryDelayMs(1, 1)).toBe(1000);
+    expect(retryDelayMs(1, 2)).toBe(2000);
+    expect(retryDelayMs(1, 42)).toBeNull();
+  });
+
   it("gives up after maxAttempts and reports how many it made", async () => {
     const fetch = vi.fn(async () => response({ message: "boom", status: 500 }, { status: 500 }));
     const { instance, sleeps } = client({ fetch });
@@ -446,18 +473,37 @@ describe("teable record parsing", () => {
     expect(parseTeableRecord({ id: "rec1", fields: {} })?.modifiedAt).toBeNull();
   });
 
-  it("reports hasMore only when a full page was requested and returned", async () => {
+  it("reports hasMore against the page size that was actually requested", async () => {
     const body = exchange("list-records-ok").response.body;
     const fetch = vi.fn(async () => response(body));
     const { instance } = client({ fetch });
 
     const full = await instance.listRecords({ companyId: "c", tableId: "tblSlice1Pilot", take: 2 });
     const partial = await instance.listRecords({ companyId: "c", tableId: "tblSlice1Pilot", take: 50 });
-    const untaken = await instance.listRecords({ companyId: "c", tableId: "tblSlice1Pilot" });
 
-    expect(full.ok && full.data.hasMore).toBe(true);
-    expect(partial.ok && partial.data.hasMore).toBe(false);
-    expect(untaken.ok && untaken.data.hasMore).toBe(false);
+    expect(full.ok && full.data).toMatchObject({ hasMore: true, pageSize: 2 });
+    expect(partial.ok && partial.data).toMatchObject({ hasMore: false, pageSize: 50 });
+  });
+
+  it("always sends an explicit take, so hasMore never guesses at Teable's own limit", async () => {
+    // A caller that omits `take` still has to learn there is a second page.
+    // Reporting hasMore:false here would silently hide the rest of the table.
+    const fullPage = {
+      records: Array.from({ length: TEABLE_DEFAULT_PAGE_SIZE }, (_, index) => ({
+        id: `rec${index}`,
+        fields: {},
+      })),
+    };
+    const fetch = vi.fn(async () => response(fullPage));
+    const { instance } = client({ fetch });
+
+    const result = await instance.listRecords({ companyId: "c", tableId: "tblSlice1Pilot" });
+
+    expect(String(fetch.mock.calls[0]![0])).toContain(`take=${TEABLE_DEFAULT_PAGE_SIZE}`);
+    expect(result.ok && result.data).toMatchObject({
+      hasMore: true,
+      pageSize: TEABLE_DEFAULT_PAGE_SIZE,
+    });
   });
 });
 
