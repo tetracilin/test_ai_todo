@@ -2662,3 +2662,22 @@ export {
   type Wp0VerbId,
   type Wp0VerbPhrase,
 } from "./wp0-phrases.js";
+
+// Dossier read model (PC-002 / F-002-5). The writer stays server-side; this is the shape the
+// card UI and the server's own fixture test both read, so neither can drift from the other.
+export {
+  DOSSIER_SECTION_HEADINGS,
+  ISSUE_DOSSIER_DOCUMENT_KEY,
+  ISSUE_DOSSIER_TITLE,
+  parseDossierChatCorrelationLine,
+  parseDossierEvidenceLine,
+  parseDossierScopeChangeLine,
+  parseDossierView,
+  type DossierSectionHeading,
+  type DossierView,
+  type DossierViewChatCorrelation,
+  type DossierViewEntryList,
+  type DossierViewEvidenceEntry,
+  type DossierViewScopeChangeEntry,
+  type DossierViewSection,
+} from "./dossier-view.js";
