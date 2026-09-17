@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq, ne } from "drizzle-orm";
+import { eq, isNull, ne, or } from "drizzle-orm";
 import {
   activityLog,
   agents,
@@ -884,14 +884,14 @@ describeEmbeddedPostgres("status card routes", () => {
     expect(queryWrite.status).toBe(403);
     expect(summaryWrite.status).toBe(403);
     expect(await db.select().from(statusCardUpdates)).toEqual([]);
-    // The generation issue's intake dossier seed is a legitimate revision (PC-002 AC1); only a
-    // status-card document revision would mean the cancelled write got through.
+    // The generation issue's intake dossier seed is a legitimate revision (PC-002 AC1). Status-card
+    // summary documents have no issue_documents link, so left-join and exclude only dossier revisions.
     expect(
       await db
         .select({ id: documentRevisions.id })
         .from(documentRevisions)
-        .innerJoin(issueDocuments, eq(issueDocuments.documentId, documentRevisions.documentId))
-        .where(ne(issueDocuments.key, ISSUE_DOSSIER_DOCUMENT_KEY)),
+        .leftJoin(issueDocuments, eq(issueDocuments.documentId, documentRevisions.documentId))
+        .where(or(isNull(issueDocuments.key), ne(issueDocuments.key, ISSUE_DOSSIER_DOCUMENT_KEY))),
     ).toEqual([]);
     expect(await db.select().from(statusCards).then((rows) => rows[0])).toMatchObject({ queryVersion: 0, documentId: null });
   });
