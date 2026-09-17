@@ -1,0 +1,154 @@
+{
+  "provenance": "HAND-BUILT from the published Teable documentation (help.teable.ai: api-doc/overview, api-doc/error-code, api-doc/record/get, api-doc/record/create, and the OpenAPI fragments on api-reference/record/list-records, api-reference/field/list-fields, api-reference/table/list-tables). NOT captured from a live instance. Production Teable is self-hosted on the app host; re-record this file from that instance's real responses once a staging endpoint exists, keeping the assertions in teable-client.test.ts unchanged. That is the point of the file: it turns every documented assumption into a test that fails when the real API disagrees.",
+  "recordedAt": null,
+  "exchanges": [
+    {
+      "name": "list-records-ok",
+      "request": {
+        "method": "GET",
+        "path": "/api/table/tblSlice1Pilot/record",
+        "query": { "take": "2", "skip": "0", "fieldKeyType": "name" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "records": [
+            {
+              "id": "recEvidence01",
+              "name": "WP-1 evidence",
+              "fields": {
+                "Ten cong viec": "Lap rap phan co khi",
+                "Trang thai": "in_progress",
+                "So bang chung": 3
+              },
+              "autoNumber": 17,
+              "createdTime": "2026-09-10T02:14:05.000Z",
+              "lastModifiedTime": "2026-09-12T08:31:44.000Z",
+              "createdBy": "Paperclip Bot",
+              "lastModifiedBy": "Nguyen Van A"
+            },
+            {
+              "id": "recEvidence02",
+              "name": "WP-1 wiring",
+              "fields": { "Ten cong viec": "Di day", "Trang thai": "todo" },
+              "autoNumber": 18,
+              "createdTime": "2026-09-11T01:00:00.000Z",
+              "lastModifiedTime": null,
+              "createdBy": "Paperclip Bot",
+              "lastModifiedBy": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "create-records-ok",
+      "request": {
+        "method": "POST",
+        "path": "/api/table/tblSlice1Pilot/record",
+        "query": {}
+      },
+      "response": {
+        "status": 201,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "records": [
+            {
+              "id": "recEvidence03",
+              "name": "OEM row",
+              "fields": { "Ten cong viec": "Tim OEM", "Trang thai": "todo" },
+              "autoNumber": 19,
+              "createdTime": "2026-09-13T09:05:00.000Z",
+              "lastModifiedTime": null,
+              "createdBy": "Paperclip Bot",
+              "lastModifiedBy": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "list-records-403-restricted",
+      "request": {
+        "method": "GET",
+        "path": "/api/table/tblNotMine/record",
+        "query": { "fieldKeyType": "name" }
+      },
+      "response": {
+        "status": 403,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "message": "not allowed to operate table|read on tblNotMine",
+          "status": 403,
+          "code": "restricted_resource"
+        }
+      }
+    },
+    {
+      "name": "list-records-429",
+      "request": {
+        "method": "GET",
+        "path": "/api/table/tblSlice1Pilot/record",
+        "query": { "fieldKeyType": "name" }
+      },
+      "response": {
+        "status": 429,
+        "headers": { "content-type": "application/json", "retry-after": "42" },
+        "body": { "message": "Too many requests", "status": 429, "code": "too_many_requests" }
+      }
+    },
+    {
+      "name": "list-fields-ok",
+      "request": {
+        "method": "GET",
+        "path": "/api/table/tblSlice1Pilot/field",
+        "query": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": [
+          {
+            "id": "fldTenCongViec",
+            "name": "Ten cong viec",
+            "type": "singleLineText",
+            "dbFieldName": "ten_cong_viec",
+            "isPrimary": true,
+            "options": {}
+          },
+          {
+            "id": "fldTrangThai",
+            "name": "Trang thai",
+            "type": "singleSelect",
+            "dbFieldName": "trang_thai",
+            "options": { "choices": [{ "name": "todo" }, { "name": "in_progress" }] }
+          }
+        ]
+      }
+    },
+    {
+      "name": "list-tables-ok",
+      "request": {
+        "method": "GET",
+        "path": "/api/base/bseTecotecCN/table",
+        "query": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": [
+          {
+            "id": "tblSlice1Pilot",
+            "name": "Tecotec CN",
+            "dbTableName": "tecotec_cn",
+            "description": "Slice 1 pilot mirror target",
+            "order": 1,
+            "lastModifiedTime": "2026-09-12T08:31:44.000Z",
+            "defaultViewId": "viwDefault01"
+          }
+        ]
+      }
+    }
+  ]
+}
