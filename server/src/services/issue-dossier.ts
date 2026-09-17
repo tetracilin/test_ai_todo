@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { documents, issueDocuments, issues } from "@paperclipai/db";
+import {
+  DOSSIER_SECTION_HEADINGS,
+  ISSUE_DOSSIER_DOCUMENT_KEY,
+  ISSUE_DOSSIER_TITLE,
+  type DossierSectionHeading,
+} from "@paperclipai/shared";
 import { HttpError, notFound, unprocessable } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
 import { documentService } from "./documents.js";
@@ -31,18 +37,16 @@ import { documentService } from "./documents.js";
  *     a section heading are escaped reversibly (see `escapeSectionBody`) instead of being
  *     rejected or, worse, re-parsed as a sixth section.
  */
-export const ISSUE_DOSSIER_DOCUMENT_KEY = "dossier" as const;
-export const ISSUE_DOSSIER_TITLE = "Dossier";
-
-/** PC-002 AC1, in the order they must appear in the body. */
-export const DOSSIER_SECTION_HEADINGS = [
-  "Job order",
-  "Clarifications",
-  "Evidence log",
-  "Scope changes",
-  "Related Teable rows",
-] as const;
-export type DossierSectionHeading = (typeof DOSSIER_SECTION_HEADINGS)[number];
+/**
+ * The document key, its title, and the PC-002 AC1 section headings are DEFINED in
+ * `@paperclipai/shared` (`dossier-view.ts`) and re-exported here so this module stays the one
+ * import site a server consumer needs. They moved there when the card UI became a reader of
+ * the same document (F-002-5): a heading list the writer and the renderer each declared for
+ * themselves is a drift waiting to happen, and the drift shows up as a blank card, not an
+ * error.
+ */
+export { DOSSIER_SECTION_HEADINGS, ISSUE_DOSSIER_DOCUMENT_KEY, ISSUE_DOSSIER_TITLE };
+export type { DossierSectionHeading };
 
 export type DossierDocument = {
   /** The H1 line, without its `# ` prefix. Card identifier + job-order title. */

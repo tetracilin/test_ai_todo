@@ -213,7 +213,9 @@ vi.mock("@paperclipai/db", () => ({
   authUsers: {},
   companies: {},
   companyMemberships: {},
+  externalObjects: {},
   instanceUserRoles: {},
+  issueEvidenceLinks: {},
 }));
 
 vi.mock("../app.js", () => ({

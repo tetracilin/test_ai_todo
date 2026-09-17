@@ -17,8 +17,8 @@ feature/<topic>  →  PR  →  develop  →  nightly deploy to staging (:33130)
 
 ## Hard rules
 
-1. **Never push directly to `develop` or `main`.** Open a PR. (Enforcement is currently uneven: `main` requires the three t3-ci checks, but as of 2026-09-07 `develop` has no branch protection record at all, so nothing stops a direct push except this rule. Treat it as binding anyway; see `PLAN_CICD.md` §0.)
-2. **Never force-push a shared branch.** `git push --force` is allowed only on your own `feature/*` branch, and only before anyone else has based work on it. (As of 2026-09-07 `main` has `allow_force_pushes: true` and `develop` has no protection at all, so nothing enforces this. It is still binding.)
+1. **Never push directly to `develop` or `main`.** Open a PR. Both branches are protected as of 2026-09-09: each requires the three t3-ci checks (`unit`, `build`, `build-image`) and a pull request, and `develop` additionally requires the branch to be **up to date** before merging. `enforce_admins` is `false` on both, so an admin can still bypass; do not.
+2. **Never force-push a shared branch.** `git push --force` is allowed only on your own `feature/*` branch, and only before anyone else has based work on it. `develop` blocks force pushes and deletions as of 2026-09-09; `main` still has `allow_force_pushes: true`, so there it is convention only.
 3. **Never edit `/root/projects/t3-paperclip-Aitodo` in place.** That path belongs to the agent team's automation. For any manual work on kmv8 use `git worktree add ../t3-<purpose> <branch>` or a fresh clone.
 4. **Never deploy by hand.** No `docker build` / `docker compose up` against `t3-nightly` or `t3-prod` outside the GitHub Actions workflows. If you need a staging deploy now, trigger `t3-nightly` from the Actions tab (Run workflow) instead of running anything on the host.
 5. **Never commit secrets.** `.env` is gitignored; `.env.example` must stay safe to publish. Runtime secrets live outside the repo on kmv8 (`SECRETS_DIR` in the workflows) and in GitHub Environment secrets. If you find a secret in the tree, remove it and rotate it — do not just delete the line.
@@ -48,7 +48,7 @@ feature/<topic>  →  PR  →  develop  →  nightly deploy to staging (:33130)
 | Health endpoint | `GET /api/health` → 200, JSON with `"commit": "<sha>"` | Deploy workflows verify the deployed sha here; if it stops reporting the commit, every deploy fails |
 | Build args | `PAPERCLIP_BUILD_COMMIT`, `PAPERCLIP_BUILD_VERSION` | Dockerfile must keep consuming them and surfacing them in `/api/health` |
 | Compose image var | `PAPERCLIP_IMAGE` | `deploy/compose.yaml` must read the image from this env var |
-| Port vars | `NIGHTLY_PORT` (33130), `PROD_PORT` (33100) | Compose must bind to these; nightly stays on `127.0.0.1`, prod on the tailnet IP |
+| Port vars | `NIGHTLY_PORT` (33130), `PROD_PORT` (33100) | Compose must bind to these. Both stacks bind the tailnet IP `100.103.41.112` (nightly :33130, prod :33100). Changing a bind address means also moving that workflow's `HEALTH_URL` and adding the new host to `PAPERCLIP_ALLOWED_HOSTNAMES`, or the private-hostname guard 403s the health check before the route runs |
 | Compose projects | `t3-nightly`, `t3-prod` | Separate DB/volumes. A change that merges or renames them is a migration, not a tweak |
 | Secrets files | `postgres_password`, `better_auth_secret`, `paperclip_artifacts_access_key`, `paperclip_artifacts_secret_key` in `SECRETS_DIR` | Workflows hard-fail if any is missing/empty. Adding a name to this list is a **host-side prerequisite**: create the file on kmv8 in both `/etc/t3/secrets/{nightly,prod}` *before* merging the workflow change, or every deploy stops. The two artifact keys were added by PR #78 without that step and nightly has been red since 2026-09-04 |
 
@@ -76,7 +76,7 @@ Branch `fix/<topic>` from `main`, PR into `main`, tag, release as above. Then op
 ## Staging / nightly
 
 - `develop` deploys to `t3-nightly` at 22:00 UTC if it has changed since the last run, or on demand via Run workflow.
-- Nightly is bound to `127.0.0.1:33130` on kmv8 — reachable only from the host (`ssh kmv8 curl 127.0.0.1:33130/api/health`) or via an SSH tunnel. It is not on the tailnet by design.
+- Nightly is bound to `100.103.41.112:33130` on kmv8, reachable from anywhere on the tailnet as `http://100.103.41.112:33130` or `http://hostinger-kvm8-host.tail9831b.ts.net:33130`, so a remote monitoring host can poll it. It stays login-gated (`deploy/compose.yaml` sets `PAPERCLIP_DEPLOYMENT_MODE=authenticated`), the same posture as production. **`127.0.0.1:33130` is no longer bound** — compose publishes one address, so an SSH tunnel to loopback no longer reaches it.
 - The `slow-tests` job does **not** run against `:33130`, and does not wait for the deploy. It runs on a GitHub-hosted runner and Playwright bootstraps its own instance, deliberately (`t3-nightly.yml` job comment, ASSUMPTION A6), so a skipped or failed deploy does not silently skip the tests.
 - **e2e has never actually executed.** `Install Chromium` and `E2E` follow the vitest step in the same job with no `if: always()`, and the vitest step has failed on every run to date, so the job always aborts first. There is currently zero e2e signal.
 - A failed deploy or e2e is *meant* to be reported to Discord with a link to the run — but as of 2026-09-07 `DISCORD_WEBHOOK_URL` is unset, so **no alert is ever sent**. The deploy job logs `DISCORD_WEBHOOK_URL not set; skipping`; the `slow-tests` report step exits silently. Until that is fixed, check the Actions tab yourself; do not read silence as success. Whoever's PR most recently landed on `develop` investigates first.
@@ -101,3 +101,5 @@ Branch `fix/<topic>` from `main`, PR into `main`, tag, release as above. Then op
 | Compose | `deploy/compose.yaml` |
 | Run logs | GitHub → Actions; Discord channel `1534836487772704800` for summaries |
 | Runner | kmv8, user `ghrunner`, label `kmv8`, systemd service |
+| Operator guide (how to drive PRs and deploys safely) | `docs/operating-with-claude-code.md` |
+| What runs on kmv8, and what depends on it | `docs/deploy/kmv8-stack-inventory.md` |

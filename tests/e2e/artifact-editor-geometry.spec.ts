@@ -36,18 +36,40 @@ async function createArtifactEditorSeed(request: APIRequestContext): Promise<See
   };
 }
 
+// Uploaded artifacts are listed only in the chat-style task view's "Artifacts" tab, and that
+// view is behind an experimental flag that is off by default. Enable it for this spec and put
+// the previous value back afterwards, because every spec shares one server.
+let restoreTaskChatRedesign: (() => Promise<void>) | null = null;
+
+test.afterEach(async () => {
+  await restoreTaskChatRedesign?.();
+  restoreTaskChatRedesign = null;
+});
+
+async function enableTaskChatRedesign(request: APIRequestContext) {
+  const current = await expectOk(await request.get("/api/instance/settings/experimental")) as unknown as {
+    enableTaskChatRedesign?: boolean;
+    enableClassicTaskInterface?: boolean;
+  };
+  const previous = {
+    enableTaskChatRedesign: current.enableTaskChatRedesign === true,
+    enableClassicTaskInterface: current.enableClassicTaskInterface === true,
+  };
+  await expectOk(await request.patch("/api/instance/settings/experimental", {
+    data: { enableTaskChatRedesign: true, enableClassicTaskInterface: false },
+  }));
+  restoreTaskChatRedesign = async () => {
+    await expectOk(await request.patch("/api/instance/settings/experimental", { data: previous }));
+  };
+}
+
 test("artifact OpenOffice editor keeps a 1200x800 primary DOM area at 1700x1100", async ({ page }) => {
   await page.setViewportSize({ width: 1700, height: 1100 });
+  await enableTaskChatRedesign(page.request);
   const seed = await createArtifactEditorSeed(page.request);
 
   await page.goto(`/${seed.prefix}/issues/${seed.issueId}`);
-  // Chat-style tasks render uploads in the properties pane's "Artifacts" tab.
-  // Classic tasks retain the inline attachments section, so only switch tabs
-  // when the chat-style shell is active.
-  const artifactsTab = page.getByRole("tab", { name: "Artifacts" });
-  if (await artifactsTab.count() > 0) {
-    await artifactsTab.click();
-  }
+  await page.getByRole("tab", { name: "Artifacts" }).click();
   const artifactRow = page.getByText("geometry.docx", { exact: true }).locator("xpath=../..");
   await expect(artifactRow).toBeVisible({ timeout: 30_000 });
   await artifactRow.getByRole("button", { name: "Open editor" }).click();

@@ -104,6 +104,7 @@ import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescrip
 import { useTaskChatRedesignEnabled } from "../hooks/useTaskChatRedesignEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
 import { IssueContinuationHandoff } from "../components/IssueContinuationHandoff";
+import { IssueDossierPanel } from "../components/IssueDossierPanel";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
@@ -212,6 +213,7 @@ import {
   deriveOriginatingActor,
   isClosedIsolatedExecutionWorkspace,
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
+  ISSUE_DOSSIER_DOCUMENT_KEY,
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
   type AskUserQuestionsAnswer,
   type AskUserQuestionsInteraction,
@@ -1488,6 +1490,23 @@ function IssueDetailActivityTab({
       issueId,
     ),
   });
+  // PC-002 / F-002-5: most cards have no dossier (only the chat-intake path seeds one), so a
+  // 404 is the ordinary case and resolves to null rather than an error state.
+  const { data: dossierDocument } = useQuery({
+    queryKey: queryKeys.issues.document(issueId, ISSUE_DOSSIER_DOCUMENT_KEY),
+    queryFn: async () => {
+      try {
+        return await issuesApi.getDocument(issueId, ISSUE_DOSSIER_DOCUMENT_KEY);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    retry: false,
+    placeholderData: keepPreviousDataForSameQueryTail<Awaited<ReturnType<typeof issuesApi.getDocument>> | null>(
+      issueId,
+    ),
+  });
   const { data: issueTreeCostSummary } = useQuery({
     queryKey: queryKeys.issues.costSummary(issueId),
     queryFn: () => issuesApi.getCostSummary(issueId),
@@ -1682,6 +1701,7 @@ function IssueDetailActivityTab({
         focusSignal={handoffFocusSignal}
         externalReferences={externalReferences}
       />
+      <IssueDossierPanel document={dossierDocument} externalReferences={externalReferences} />
       {linkedApprovals && linkedApprovals.length > 0 && (
         <div className="mb-3 space-y-3">
           {linkedApprovals.map((approval) => (

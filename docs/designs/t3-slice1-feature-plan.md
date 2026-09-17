@@ -67,9 +67,9 @@ Re-derive the split rather than trusting this paragraph:
 | Dossier persistence + hooks | **SHIPPED** — PR #81 | `issueDossierService(db)` in `server/src/services/issue-dossier.ts`, built on `documentService` (the same generic keyed-`issue_documents` mechanism `issue-continuation-summary.ts` uses). Create-on-intake (best-effort hook on `issueService(db).create()`), evidence-log hook (covers **both** `issue_evidence_links` and `issue_attachments` — product decision, wider than AC5's literal wording), clarification-answer hook, and a new agent-facing `POST /issues/:id/dossier/scope-changes` route (not best-effort) that mirrors as an issue comment. |
 | Scope-change timestamp query | **SHIPPED** — PR #81 | `queryScopeChangeTimestamps` in `issue-dossier.ts`. Function + tests only, no route; superseded as a timeline consumer by the WP-close export bundle below. |
 | WP-close export bundle (F-006-1, partial F-006-3) | **SHIPPED** — PR #84 | `server/src/services/wp-close-export.ts` — a parent issue carrying a company-scoped label named `WP` (`WORK_PACKAGE_LABEL_NAME`, K6 rule: no `work_packages` table) refuses to close while a child is neither `done` nor `cancelled` (same commit-point choke as the PC-001 gate, inside `issueService.update()`), and on success renders/persists a markdown bundle (dossier, evidence index, scope-change timeline, wedge ratio) as the WP's own `wp-close-export` document, best-effort and post-commit. One checked-in example fixture (`server/src/__tests__/fixtures/wp-close-export-example.md`) satisfies F-006-3's fixture half; **F-006-2 (commit to `Tecotec-JSc/T3-wiki` + CTO chat notification) is still unbuilt.** |
-| Dossier renders in card UI (F-002-5) | **NOT SHIPPED** | The only remaining Lane A/D read-surface unit. The generic `GET /issues/:id/documents/:key` route already serves both the dossier's and the WP-close export's raw content; this is the UI page/panel work. |
+| Dossier renders in card UI (F-002-5) | **SHIPPED** — PR #100 | `ui/src/components/IssueDossierPanel.tsx`, rendered in the card's Activity tab next to `IssueContinuationHandoff`, reading the existing `GET /issues/:id/documents/dossier` route. The dossier's key, its PC-002 AC1 headings, and a read-only parser moved to `packages/shared/src/dossier-view.ts` so the writer and the renderer cannot declare the grammar separately; `server/src/__tests__/issue-dossier-view.test.ts` runs both parsers over the checked-in fixture and fails on any disagreement. Evidence log and Scope changes render as structured lists, the other three sections stay markdown (no closed server grammar exists for them), and a section the reader cannot fully parse falls back to raw markdown rather than dropping a line. |
 | Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
-| Teable client | **still does not exist** | No module under `server/src/services/`. Lane B (F-010-*, F-005-1) is entirely unstarted. |
+| Teable client | **F-010-1 SHIPPED** (this PR); F-010-2/-3 and F-005-1 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. |
 | `doc/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
 | Vietnamese phrase table (F-VERB-0) | **SHIPPED** — PR #75 | `packages/shared/src/wp0-phrases.ts` + test. The branch-name auto-link matcher for F-007-3 (`matchesIssueBranch`) is shipped as a pure function only — nothing wires it to a live "watch for pushes" trigger yet. |
 | F-001-1 / F-001-2 (gate residue) | **SHIPPED** — already present when checked 2026-09-04, exact PR unclear (predates this session's PRs) | See PC-001 tests row above; `EVIDENCE_GATE_REJECTION_CODE`/`acceptedEvidenceTypes`/`chatPhraseKey` in `server/src/services/issues.ts` |
@@ -84,6 +84,26 @@ Re-derive the split rather than trusting this paragraph:
   rather than asserting fully done, since no route consumes it yet.
 - ~~AC6~~ — **closed**. `issue-evidence-gate.test.ts` now exercises the comment-decision
   auto-approval path (F-001-1, shipped).
+
+**Next unblocked unit (refreshed 2026-09-13, after F-010-1).** F-002-5 shipped in PR #100, so
+**Lane A is complete** — there is no server-substrate or read-surface work left in it. Lane B
+then opened with F-010-1, the Teable client. Where the remaining candidates stand:
+
+- **Lane B — F-010 Teable client.** ~~Nothing is built.~~ **F-010-1 is now shipped** (see the
+  `Teable client` row above); **F-010-3** (read verb) and **F-010-2** (append-only agent write)
+  are the next units and are unblocked, both building directly on the shipped client.
+  Owner constraint recorded 2026-09-13: production Teable is a **self-hosted container on the
+  app host**, and the hosted Teable API must **never** be called from this repo — build from
+  published documentation, and verify against the staging endpoint the owner supplies.
+- **Lane D — F-402 pilot card gate.** `backlog.md`'s own **OQ-4 is still open** ("Is a
+  flowchart mandatory for every SW card?") — the brief-linkage mechanism AC1 needs is
+  undefined. Get OQ-4 answered before starting this one, or it will need a throwaway design
+  decision re-litigated later.
+- **Lane C — Discord DM/capture verbs (F-DM-2 onward).** Blocked on gate **G-2** (external
+  Discord privileged-intent approval), not something an agent can unblock.
+- **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
+  direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
+  most dev environments will not have configured — confirm access before picking it up.
 
 ---
 
@@ -273,7 +293,7 @@ it after those writes exist means touching each of them twice.
 
 **Status column added 2026-09-04, verified against code on `origin/develop` (not assumed from
 this table, which had gone stale twice already — see the dated addendum after the Current
-state table above).** Only F-002-5 (UI) remains unshipped in this lane.
+state table above).** **Lane A is complete as of PR #100** — F-002-5, the last unit, shipped.
 
 | ID | Feature | Depends on | Effort | Status |
 |---|---|---|---|---|
@@ -291,7 +311,7 @@ state table above).** Only F-002-5 (UI) remains unshipped in this lane.
 | F-002-2 | Dossier append hooks + scope-change mirror | F-002-1, F-007-1 | human: 1d / CC: 1h | ✅ shipped — PR #81: evidence-link hook covers both `issue_evidence_links` and `issue_attachments` (product decision, broader than AC5's literal "linkage" wording), plus a clarification-answer hook and a new agent-facing `POST /issues/:id/dossier/scope-changes` route |
 | F-002-3 | Scope-change timestamp query | F-002-2 | human: 4h / CC: 30m | ✅ shipped — PR #81 (`queryScopeChangeTimestamps`); function + tests only, no route, matching F-011-3's precedent |
 | F-002-4 | Dossier markdown export + fixture | F-002-1 | human: 1d / CC: 45m | ✅ shipped — PR #75 |
-| F-002-5 | Dossier renders in card UI | F-002-1 | human: 1d / CC: 1h | ⬜ **not started** — the only remaining unit in this lane. The generic `GET /issues/:id/documents/:key` route already serves the dossier's content (it is deliberately not a system document key); this unit is the UI page/panel work. |
+| F-002-5 | Dossier renders in card UI | F-002-1 | human: 1d / CC: 1h | ✅ shipped — PR #100 (`ui/src/components/IssueDossierPanel.tsx` + `packages/shared/src/dossier-view.ts`). **Lane A is now complete.** |
 | F-001-1 | Comment-decision done-path gate test | — | human: 3h / CC: 20m | ✅ shipped — already present when checked 2026-09-04, `issue-evidence-gate.test.ts` ("POST /api/issues/:id/comments surfaces the same 422 when an approval comment auto-closes" + the auto-closes-once-evidence-linked case) |
 | F-001-2 | Machine-relayable gate rejection payload | F-VERB-0 | human: 4h / CC: 30m | ✅ shipped — already present when checked 2026-09-04 (`EVIDENCE_GATE_REJECTION_CODE`, `acceptedEvidenceTypes`, `chatPhraseKey` in `server/src/services/issues.ts`) |
 
@@ -527,7 +547,7 @@ phrase** from the F-VERB-0 table. The English API message stays for API callers.
 
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
-| F-010-1 | Teable REST client (shared service module) | — | human: 2d / CC: 2h |
+| ~~F-010-1~~ | ~~Teable REST client (shared service module)~~ **SHIPPED — PR #102** (`server/src/services/teable-client.ts`; fixture-verified, not live-verified) | — | human: 2d / CC: 2h |
 | F-010-2 | Append-only agent write + link + attribution | F-010-1, F-007-1, F-002-2 | human: 2d / CC: 2h |
 | F-010-3 | Teable read verb (no write scope) | F-010-1 | human: 1d / CC: 1h |
 | F-005-1 | Card → Teable mirror cron | F-010-1 | human: 3d / CC: 3h |
