@@ -54,6 +54,9 @@ jobs:
         # Cheap guard: the last deployed sha is recorded in a marker file on the host.
         id: guard
         shell: bash
+        env:
+          # Read-only: only the compare endpoint below is called with it.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ref="${{ github.event.inputs.ref || 'develop' }}"
@@ -63,6 +66,41 @@ jobs:
           head=$(git ls-remote --quiet "https://github.com/${{ github.repository }}.git" "refs/heads/$ref" | cut -f1)
           [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
           echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          # Change list for the Discord report: the first line of every commit
+          # landed between the last deployed sha and this head (squash merges
+          # carry the PR title and number). Two small API calls instead of a
+          # paged compare: the compare gives the commit count, the commits
+          # endpoint gives the newest 15 titles from head, so the newest
+          # changes are never lost behind a page boundary. The shallow
+          # checkout below needs no history. Best effort on purpose: a failed
+          # lookup yields an empty list and a named status, never a failed
+          # deploy. `compare` is one of: ok, same_commit, no_marker, lookup_failed.
+          changes=""
+          compare="lookup_failed"
+          if [[ "$last" == none ]]; then
+            compare="no_marker"
+          elif [[ "$last" == "$head" ]]; then
+            compare="same_commit"
+          else
+            api="${{ github.api_url }}/repos/${{ github.repository }}"
+            auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+            if total=$(curl -fsS "${auth[@]}" "$api/compare/$last...$head?per_page=1" | jq -r '.total_commits') \
+               && [[ "$total" =~ ^[0-9]+$ ]] \
+               && changes=$(curl -fsS "${auth[@]}" "$api/commits?sha=$head&per_page=15" \
+                    | jq -r --argjson total "$total" '
+                        [.[:$total][] | .commit.message | split("\n")[0]
+                         | select(test("^Merge (pull request|branch)") | not)]
+                        | reverse
+                        | (if $total > 15 then ["… \($total - 15) earlier commits"] + . else . end)
+                        | .[] | "• " + .'); then
+              compare="ok"
+            else
+              changes=""
+            fi
+          fi
+          echo "compare=$compare" >> "$GITHUB_OUTPUT"
+          { echo "changes<<EOF"; echo "$changes"; echo "EOF"; } >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "schedule" && "$last" == "$head" ]]; then
             echo "no changes on $ref since last deploy ($last) — skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -214,20 +252,49 @@ jobs:
           # output must reach bash as data, never be interpolated into the
           # script source where a quote or $( ) span would be evaluated.
           DRIFT: ${{ steps.drift.outputs.report }}
+          # Same rule for the commit list: PR titles are free text.
+          CHANGES: ${{ steps.guard.outputs.changes }}
+          COMPARE: ${{ steps.guard.outputs.compare }}
+          LAST_SHA: ${{ steps.guard.outputs.last }}
+          HEAD_SHA: ${{ steps.guard.outputs.head }}
+          # Same default as the seed step above, so the message names the
+          # account that really exists on staging. Never the password.
+          TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
         run: |
           set -euo pipefail
           [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
           status="${{ job.status }}"
+          test_url="${HEALTH_URL%/api/health}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
             emoji="⏭️"; line="nightly: no changes on develop, skipped"
           elif [[ "$status" == "success" ]]; then
-            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to :33130"
+            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to staging"
           else
-            emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
+            emoji="❌"; line="nightly: **$status** at ref ${HEAD_SHA:0:8}"
           fi
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${DRIFT:-(no drift report)}")
-          jq -n --arg c "$content" '{content: $c}' \
+          # One sentence per compare state, so a reader diagnosing a run is
+          # never told "redeployed" when the guard simply did not finish.
+          case "$COMPARE" in
+            ok)
+              if [[ -n "$CHANGES" ]]; then
+                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}):"$'\n'"$CHANGES"
+              else
+                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}): merge commits only"
+              fi ;;
+            same_commit)   changes="Changes since last deploy: none, ${HEAD_SHA:0:8} is already deployed" ;;
+            no_marker)     changes="Changes since last deploy: unavailable, no previous deploy recorded on this runner" ;;
+            lookup_failed) changes="Changes since last deploy: unavailable, GitHub compare lookup failed (see run log)" ;;
+            *)             changes="Changes since last deploy: unavailable, guard step did not finish" ;;
+          esac
+          drift="${DRIFT:-(no drift report)}"
+          content=$(printf '%s %s\nTest it: %s (login: %s)\nRun: <%s>\n%s\n```\n%s\n```' \
+            "$emoji" "$line" "$test_url" "$TESTER_EMAIL" "$run_url" "$changes" "${drift:0:600}")
+          # Discord rejects messages over 2000 characters.
+          if (( ${#content} > 1990 )); then content="${content:0:1980}"$'\n…'; fi
+          # PR titles are contributor text: never let them ping @everyone,
+          # @here, a user, or a role.
+          jq -n --arg c "$content" '{content: $c, allowed_mentions: {parse: []}}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
 
   # Slow suites salvaged from upstream pr.yml (general_tests, verify_serialized_server,
