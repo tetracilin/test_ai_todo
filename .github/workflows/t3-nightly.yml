@@ -54,6 +54,9 @@ jobs:
         # Cheap guard: the last deployed sha is recorded in a marker file on the host.
         id: guard
         shell: bash
+        env:
+          # Read-only: only the compare endpoint below is called with it.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ref="${{ github.event.inputs.ref || 'develop' }}"
@@ -63,6 +66,25 @@ jobs:
           head=$(git ls-remote --quiet "https://github.com/${{ github.repository }}.git" "refs/heads/$ref" | cut -f1)
           [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
           echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          # Change list for the Discord report: the first line of every commit
+          # landed between the last deployed sha and this head (squash merges
+          # carry the PR title and number). Read from the compare API so the
+          # shallow checkout below needs no history. Best effort on purpose: a
+          # failed lookup yields an empty list, never a failed deploy.
+          changes=""
+          if [[ "$last" != none && "$last" != "$head" ]]; then
+            changes=$(curl -fsS \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/compare/$last...$head?per_page=100" \
+              | jq -r '
+                  [.commits[] | .commit.message | split("\n")[0]
+                   | select(test("^Merge (pull request|branch)") | not)]
+                  | (if length > 15 then ["… \(length - 15) earlier commits"] + .[-15:] else . end)
+                  | .[] | "• " + .' 2>/dev/null || true)
+          fi
+          { echo "changes<<EOF"; echo "$changes"; echo "EOF"; } >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "schedule" && "$last" == "$head" ]]; then
             echo "no changes on $ref since last deploy ($last) — skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -214,19 +236,38 @@ jobs:
           # output must reach bash as data, never be interpolated into the
           # script source where a quote or $( ) span would be evaluated.
           DRIFT: ${{ steps.drift.outputs.report }}
+          # Same rule for the commit list: PR titles are free text.
+          CHANGES: ${{ steps.guard.outputs.changes }}
+          LAST_SHA: ${{ steps.guard.outputs.last }}
+          HEAD_SHA: ${{ steps.guard.outputs.head }}
+          # Same default as the seed step above, so the message names the
+          # account that really exists on staging. Never the password.
+          TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
         run: |
           set -euo pipefail
           [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
           status="${{ job.status }}"
+          test_url="${HEALTH_URL%/api/health}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
             emoji="⏭️"; line="nightly: no changes on develop, skipped"
           elif [[ "$status" == "success" ]]; then
-            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to :33130"
+            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to staging"
           else
-            emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
+            emoji="❌"; line="nightly: **$status** at ref ${HEAD_SHA:0:8}"
           fi
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${DRIFT:-(no drift report)}")
+          if [[ -n "$CHANGES" ]]; then
+            changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}):"$'\n'"$CHANGES"
+          elif [[ "$LAST_SHA" == "$HEAD_SHA" ]]; then
+            changes="Changes since last deploy: none (same commit redeployed)"
+          else
+            changes="Changes since last deploy: unavailable (no previous deploy recorded)"
+          fi
+          drift="${DRIFT:-(no drift report)}"
+          content=$(printf '%s %s\nTest it: %s (login: %s)\nRun: <%s>\n%s\n```\n%s\n```' \
+            "$emoji" "$line" "$test_url" "$TESTER_EMAIL" "$run_url" "$changes" "${drift:0:600}")
+          # Discord rejects messages over 2000 characters.
+          if (( ${#content} > 1990 )); then content="${content:0:1980}"$'\n…'; fi
           jq -n --arg c "$content" '{content: $c}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
 
