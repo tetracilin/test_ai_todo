@@ -15,6 +15,7 @@ import {
   pipelineCases,
 } from "@paperclipai/db";
 import {
+  ISSUE_DOSSIER_DOCUMENT_KEY,
   SYSTEM_ISSUE_DOCUMENT_KEYS,
   type PipelineCaseOutputItem,
   type PipelineCaseOutputContextSummary,
@@ -345,7 +346,9 @@ export function pipelineCaseOutputsService(db: Db) {
           .where(and(
             eq(issueDocuments.companyId, companyId),
             inArray(issueDocuments.issueId, sourceIssueIds),
-            notInArray(issueDocuments.key, [...SYSTEM_ISSUE_DOCUMENT_KEYS]),
+            // The dossier is an internal per-issue record (PC-002), not a deliverable. On an
+            // automation issue it only restates the agent prompt, so keep it out of item outputs.
+            notInArray(issueDocuments.key, [...SYSTEM_ISSUE_DOCUMENT_KEYS, ISSUE_DOSSIER_DOCUMENT_KEY]),
           ));
 
         for (const row of documentRows) {
