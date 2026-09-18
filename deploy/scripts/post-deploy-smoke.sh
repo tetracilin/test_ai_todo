@@ -30,7 +30,12 @@ cleanup() { rm -f "$cookie_jar" "$companies_out"; }
 trap cleanup EXIT
 
 echo "==> Signing in as $SEED_TESTER_EMAIL to capture a session"
-signin_body="{\"email\":\"${SEED_TESTER_EMAIL}\",\"password\":\"${SEED_TESTER_PASSWORD}\"}"
+# jq-encoded, not raw string interpolation: a password containing a quote or
+# backslash would otherwise produce a malformed request body and fail this
+# check on an otherwise-healthy deploy (seed-staging-tester.sh's own
+# json_escape does the same for its sign-up/sign-in bodies).
+signin_body="$(jq -cn --arg email "$SEED_TESTER_EMAIL" --arg password "$SEED_TESTER_PASSWORD" \
+  '{email: $email, password: $password}')"
 signin_status="$(
   printf '%s' "$signin_body" | curl -sS -o /dev/null -w '%{http_code}' \
     -c "$cookie_jar" \
