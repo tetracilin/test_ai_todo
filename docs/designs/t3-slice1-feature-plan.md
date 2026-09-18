@@ -69,7 +69,7 @@ Re-derive the split rather than trusting this paragraph:
 | WP-close export bundle (F-006-1, partial F-006-3) | **SHIPPED** — PR #84 | `server/src/services/wp-close-export.ts` — a parent issue carrying a company-scoped label named `WP` (`WORK_PACKAGE_LABEL_NAME`, K6 rule: no `work_packages` table) refuses to close while a child is neither `done` nor `cancelled` (same commit-point choke as the PC-001 gate, inside `issueService.update()`), and on success renders/persists a markdown bundle (dossier, evidence index, scope-change timeline, wedge ratio) as the WP's own `wp-close-export` document, best-effort and post-commit. One checked-in example fixture (`server/src/__tests__/fixtures/wp-close-export-example.md`) satisfies F-006-3's fixture half; **F-006-2 (commit to `Tecotec-JSc/T3-wiki` + CTO chat notification) is still unbuilt.** |
 | Dossier renders in card UI (F-002-5) | **SHIPPED** — PR #100 | `ui/src/components/IssueDossierPanel.tsx`, rendered in the card's Activity tab next to `IssueContinuationHandoff`, reading the existing `GET /issues/:id/documents/dossier` route. The dossier's key, its PC-002 AC1 headings, and a read-only parser moved to `packages/shared/src/dossier-view.ts` so the writer and the renderer cannot declare the grammar separately; `server/src/__tests__/issue-dossier-view.test.ts` runs both parsers over the checked-in fixture and fails on any disagreement. Evidence log and Scope changes render as structured lists, the other three sections stay markdown (no closed server grammar exists for them), and a section the reader cannot fully parse falls back to raw markdown rather than dropping a line. |
 | Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
-| Teable client | **F-010-1 SHIPPED** — PR #102; **F-010-2 SHIPPED** (this PR); F-010-3 and F-005-1 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. F-010-2 (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`) adds the append-only agent write: one allowlisted table (per-company secret `TEABLE_WRITE_TABLE_ID`), the created row linked on the card + one dossier Evidence-log line, and a bot-account attribution marker (`TEABLE_BOT_ACCOUNT_NAME`, checked via the exported `isPaperclipBotAuthored` predicate) so F-005-1's future conflict flagging skips the bot's own rows. Fixture-verified, not live-verified, same as F-010-1. |
+| Teable client | **F-010-1 SHIPPED** — PR #102; **F-010-2 SHIPPED**; **F-005-1 SHIPPED** (this PR); F-010-3 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create/update records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row; `updateRecord`, added for F-005-1, is single-attempt for the same reason). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. F-010-2 (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`) adds the append-only agent write: one allowlisted table (per-company secret `TEABLE_WRITE_TABLE_ID`), the created row linked on the card + one dossier Evidence-log line, and a bot-account attribution marker (`TEABLE_BOT_ACCOUNT_NAME`, checked via the exported `isPaperclipBotAuthored` predicate) so F-005-1's conflict flagging skips the bot's own rows. F-005-1 (`server/src/services/teable-mirror.ts`) is the consumer: a heartbeat-scheduler sweep (same convention as `evidence-storage-reaper.ts`) that mirrors card create/status/assignee onto one `external_objects(provider=teable, objectType="issue_mirror")` row per issue via `createRecords`/`updateRecord`, flags a Teable-side edit as a conflict (reusing `isPaperclipBotAuthored`, scoped to `lastModifiedBy`) instead of overwriting it, and reuses `activity_log` itself as the retry-backoff state. Fixture/embedded-Postgres-verified, not live-verified, same as F-010-1/F-010-2. |
 | `doc/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
 | Vietnamese phrase table (F-VERB-0) | **SHIPPED** — PR #75 | `packages/shared/src/wp0-phrases.ts` + test. The branch-name auto-link matcher for F-007-3 (`matchesIssueBranch`) is shipped as a pure function only — nothing wires it to a live "watch for pushes" trigger yet. |
 | F-001-1 / F-001-2 (gate residue) | **SHIPPED** — already present when checked 2026-09-04, exact PR unclear (predates this session's PRs) | See PC-001 tests row above; `EVIDENCE_GATE_REJECTION_CODE`/`acceptedEvidenceTypes`/`chatPhraseKey` in `server/src/services/issues.ts` |
@@ -85,18 +85,18 @@ Re-derive the split rather than trusting this paragraph:
 - ~~AC6~~ — **closed**. `issue-evidence-gate.test.ts` now exercises the comment-decision
   auto-approval path (F-001-1, shipped).
 
-**Next unblocked unit (refreshed 2026-09-18, after F-010-2).** F-002-5 shipped in PR #100, so
+**Next unblocked unit (refreshed 2026-09-18, after F-005-1).** F-002-5 shipped in PR #100, so
 **Lane A is complete** — there is no server-substrate or read-surface work left in it. Lane B
-opened with F-010-1, the Teable client, and F-010-2 (append-only agent write) now ships on top
-of it. Where the remaining candidates stand:
+opened with F-010-1, and F-010-2 and F-005-1 (append-only agent write, and the card mirror
+cron that consumes its `isPaperclipBotAuthored` export) now ship on top of it. Where the
+remaining candidates stand:
 
-- **Lane B — F-010 Teable client.** **F-010-1 shipped** (PR #102) and **F-010-2 shipped** (see
-  the `Teable client` row above). **F-010-3** (read verb, no write scope) and **F-005-1** (card
-  → Teable mirror cron, which consumes F-010-2's `isPaperclipBotAuthored` export to skip the
-  bot's own rows) are the next units and are unblocked, both building directly on the shipped
-  client. Owner constraint recorded 2026-09-13: production Teable is a **self-hosted container
-  on the app host**, and the hosted Teable API must **never** be called from this repo — build
-  from published documentation, and verify against the staging endpoint the owner supplies.
+- **Lane B — F-010 Teable client.** **F-010-1**, **F-010-2**, and **F-005-1** are all shipped
+  (see the `Teable client` row above). **F-010-3** (read verb, no write scope) is the one
+  remaining unit, unblocked, building directly on the shipped client. Owner constraint recorded
+  2026-09-13: production Teable is a **self-hosted container on the app host**, and the hosted
+  Teable API must **never** be called from this repo — build from published documentation, and
+  verify against the staging endpoint the owner supplies.
 - **Lane D — F-402 pilot card gate.** `backlog.md`'s own **OQ-4 is still open** ("Is a
   flowchart mandatory for every SW card?") — the brief-linkage mechanism AC1 needs is
   undefined. Get OQ-4 answered before starting this one, or it will need a throwaway design
@@ -552,7 +552,7 @@ phrase** from the F-VERB-0 table. The English API message stays for API callers.
 | ~~F-010-1~~ | ~~Teable REST client (shared service module)~~ **SHIPPED — PR #102** (`server/src/services/teable-client.ts`; fixture-verified, not live-verified) | — | human: 2d / CC: 2h |
 | ~~F-010-2~~ | ~~Append-only agent write + link + attribution~~ **SHIPPED** (this PR) (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`; fixture-verified, not live-verified) | F-010-1, F-007-1, F-002-2 | human: 2d / CC: 2h |
 | F-010-3 | Teable read verb (no write scope) | F-010-1 | human: 1d / CC: 1h |
-| F-005-1 | Card → Teable mirror cron | F-010-1 | human: 3d / CC: 3h |
+| ~~F-005-1~~ | ~~Card → Teable mirror cron~~ **SHIPPED** (this PR) (`server/src/services/teable-mirror.ts`, wired into the heartbeat scheduler in `server/src/index.ts`; fixture/embedded-Postgres-verified, not live-verified) | F-010-1 | human: 3d / CC: 3h |
 
 **F-010-1** — `server/src/services/teable-client.ts`, credentials via the existing secrets
 service (named refs, never inline), retry with backoff, typed responses. **A shared module,
@@ -575,12 +575,31 @@ flagging must never fire on the bot's own writes.
 
 **F-010-3** — reads answer "what's in table X for Y" in chat; read scope grants no write.
 
-**F-005-1** — card create/status/assignee → base "Tecotec CN" within 5 minutes
-(`pc005_teable_mirror_latency_minutes`). Direction Paperclip → Teable only; Teable-side edits
-are flagged as conflicts and never overwritten; failures surface in `activity_log` and retry
-with backoff.
-- Tests: latency budget asserted against a clock-frozen fixture; a Teable-side edit produces a
-  conflict flag, not an overwrite; a row carrying the F-010-2 attribution marker is skipped.
+**F-005-1 — SHIPPED (this PR).** `server/src/services/teable-mirror.ts`, swept on the
+existing heartbeat-scheduler interval (`server/src/index.ts`, same reaper convention as
+`evidence-storage-reaper.ts`) -- no new cron mechanism, no new table. Card create/status/
+assignee → base "Tecotec CN" within 5 minutes (comfortably inside the sweep cadence). Owns
+exactly one `external_objects(provider=teable, objectType="issue_mirror")` row per issue,
+linked via the existing `issue_evidence_links` service with `source: "system"` (F-011-1's
+third provenance value), created via `teable-client.ts`'s `createRecords` and updated in
+place via a new `updateRecord` method added to that client. Teable-side edits are detected by
+re-reading the row and comparing `lastModifiedTime`/`lastModifiedBy` (reusing
+`teable-append.ts`'s exported `isPaperclipBotAuthored` predicate, scoped to `lastModifiedBy`
+only -- see the module docblock for why `createdBy` alone would make a mirror's own rows
+permanently immune to conflict detection) and are flagged, never overwritten, sticky until a
+human resolves them out of band (Eng-8's accepted pilot-scale race window). Retry-with-backoff
+and the failure surface both reuse `activity_log` directly: the backoff state IS the
+consecutive `issue.teable_mirror_failed` streak, no counter column needed.
+- Deferred/simplified for Slice 1: the field mapping (`defaultMirrorFieldMapper`) targets
+  placeholder Teable column names pending the real "Tecotec CN" base schema (no live instance
+  reachable from this repo, same constraint as F-010-1/F-010-2) -- isolated behind an
+  injectable `mapFields` option so matching the real base is a one-line change, not a
+  re-verified against staging like every other documented Teable assumption in this repo.
+- Tests: `server/src/__tests__/teable-mirror.test.ts` (embedded Postgres) -- create-then-update
+  on the same row, a Teable-side edit produces a conflict flag and never calls `updateRecord`,
+  a bot-authored edit is excluded from that check, retry-with-backoff withholds a retry until
+  the window elapses and resumes after, an `activity_log` entry is written on failure. Plus two
+  new `updateRecord` cases in `server/src/__tests__/teable-client.test.ts`.
 
 ### B.3 Lane C — conversational verb pipeline (Discord DM surface)
 

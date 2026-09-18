@@ -177,6 +177,48 @@ describe("teable request shape", () => {
     ).rejects.toThrow(/Invalid Teable base id/);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("PATCHes exactly the documented single-record update body (F-005-1)", async () => {
+    const fetch = vi.fn(async () => response(exchange("update-record-ok").response.body));
+    const { instance } = client({ fetch });
+
+    const result = await instance.updateRecord({
+      companyId: "company-1",
+      tableId: "tblSlice1Pilot",
+      recordId: "recEvidence01",
+      fields: { "Trang thai": "done" },
+    });
+
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/api/table/tblSlice1Pilot/record/recEvidence01`);
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      fieldKeyType: "name",
+      typecast: false,
+      record: { fields: { "Trang thai": "done" } },
+    });
+    expect(result).toEqual({
+      ok: true,
+      data: expect.objectContaining({ id: "recEvidence01", lastModifiedTime: "2026-09-14T03:00:00.000Z" }),
+    });
+  });
+
+  it("never retries a failed update -- exactly one PATCH attempt even on a retryable error", async () => {
+    const fetch = vi.fn(async () =>
+      response({ message: "Too many requests", status: 429, code: "too_many_requests" }, { status: 429 }),
+    );
+    const { instance } = client({ fetch });
+
+    const result = await instance.updateRecord({
+      companyId: "company-1",
+      tableId: "tblSlice1Pilot",
+      recordId: "recEvidence01",
+      fields: { "Trang thai": "done" },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("teable credentials", () => {
