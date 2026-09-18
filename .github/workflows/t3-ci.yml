@@ -127,7 +127,10 @@ jobs:
   server_tests:
     name: server-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # The two suites alone measured ~32min combined on a real run (t3-nightly
+    # slow-tests before it was sharded, PR #109). 35min left too little margin
+    # over that plus checkout/install/preflight overhead on a relevant PR.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
         with:
@@ -155,7 +158,13 @@ jobs:
              && [[ "$base_sha" != "0000000000000000000000000000000000000000" ]] \
              && git cat-file -e "$base_sha" 2>/dev/null; then
             changed="$(git diff --name-only "$base_sha"...HEAD)"
-            if [[ -n "$changed" ]] && ! printf '%s\n' "$changed" | grep -qE '^(server/|packages/db/|packages/shared/|pnpm-lock\.yaml$)'; then
+            # server/'s own package.json depends on every one of these as a
+            # workspace package (87 server/src files import from them), and
+            # the two scripts/config entries are what actually select and run
+            # the suites below -- a change confined to any of them could break
+            # a server suite exactly like a server/ change could, so they must
+            # mark this job relevant too, not just server/db/shared/lockfile.
+            if [[ -n "$changed" ]] && ! printf '%s\n' "$changed" | grep -qE '^(server/|packages/db/|packages/shared/|packages/adapters/|packages/adapter-utils/|packages/plugins/sdk/|packages/skills-catalog/|packages/teams-catalog/|pnpm-lock\.yaml$|vitest\.config\.ts$|scripts/run-vitest-stable\.mjs$|scripts/general-server-shard\.mjs$)'; then
               relevant="false"
             fi
           fi
@@ -163,7 +172,7 @@ jobs:
           if [[ "$relevant" == "true" ]]; then
             echo "server-tests: relevant paths changed (or could not determine base) — running"
           else
-            echo "server-tests: no server/db/shared/lockfile changes — skipping, job still reports success"
+            echo "server-tests: no server-tested paths changed — skipping, job still reports success"
           fi
 
       - uses: pnpm/action-setup@v6
