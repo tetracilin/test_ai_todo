@@ -622,6 +622,22 @@ export const appendTeableRowSchema = z.object({
 
 export type AppendTeableRow = z.infer<typeof appendTeableRowSchema>;
 
+// F-010-3 (PC-010 AC5, Slice-1 read-only subset): the agent-facing read verb for WP-0's fourth
+// verb -- "what's in table X for Y" -- against the same one allowlisted table F-010-2 writes to.
+// A GET carries no body, so this validates `req.query` via `.safeParse` (the
+// `companySearchQuerySchema` convention), never `validate()`'s body-only middleware. `tableId`
+// matches the same shape `teable-client.ts` checks server-side before any allowlist check.
+// `take` is capped at 100 -- `teable-client.ts`'s `TEABLE_DEFAULT_PAGE_SIZE` -- so a single chat
+// query can never page-scan an entire table.
+export const queryTeableRowsSchema = z.object({
+  tableId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid Teable table id"),
+  search: z.string().trim().min(1).max(200).optional(),
+  take: z.coerce.number().int().min(1).max(100).optional(),
+  skip: z.coerce.number().int().min(0).optional(),
+}).strict();
+
+export type QueryTeableRows = z.infer<typeof queryTeableRowsSchema>;
+
 const commentMetadataLabelSchema = z.string().trim().min(1).max(120);
 const commentMetadataTextSchema = z.string().trim().min(1).max(2000);
 
