@@ -85,6 +85,7 @@ import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig, createExternalStorageProviderFromConfig } from "./storage/index.js";
 import { createStorageService } from "./storage/service.js";
 import { createEvidenceStorageReaper, type EvidenceStorageReapResult } from "./services/evidence-storage-reaper.js";
+import { teableMirrorService, type TeableMirrorSweepSummary } from "./services/teable-mirror.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -1224,6 +1225,27 @@ export async function startServer(): Promise<StartedServer> {
         }));
     };
 
+    // F-005-1: mirrors card create/status/assignee changes into each
+    // company's allowlisted Teable "Tecotec CN" table. A no-op per company
+    // until that company's TEABLE_MIRROR_TABLE_ID secret is configured -- see
+    // teable-mirror.ts's own docblock for why this needs no separate
+    // experimental flag.
+    const teableMirror = teableMirrorService(db as any);
+    const logTeableMirrorSweepResult = (result: { companies: number } & TeableMirrorSweepSummary) => {
+      if (result.created > 0 || result.updated > 0 || result.conflicts > 0 || result.failed > 0) {
+        logger.info(result, "teable mirror sweep synced card changes");
+      }
+    };
+    const scheduleTeableMirrorSweep = () => {
+      if (heartbeatSchedulerStopped) return;
+      trackHeartbeatSchedulerWork(teableMirror
+        .sweepActiveCompanies()
+        .then(logTeableMirrorSweepResult)
+        .catch((err) => {
+          logger.error({ err }, "teable mirror sweep failed");
+        }));
+    };
+
     const tools = toolAccessService(db as any, {
       deploymentMode: config.deploymentMode,
       deploymentExposure: config.deploymentExposure,
@@ -1445,6 +1467,7 @@ export async function startServer(): Promise<StartedServer> {
         scheduleSetupTokenReaperSweep();
         scheduleEvidenceStorageReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
+        scheduleTeableMirrorSweep();
 
         if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork(routines
