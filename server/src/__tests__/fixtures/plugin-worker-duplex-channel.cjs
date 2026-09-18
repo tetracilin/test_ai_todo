@@ -22,7 +22,24 @@
 //     scripted data and exit in one stdout write. The host then reads the open
 //     reply and the notifications in one batch, so a test proves the host holds
 //     and replays a frame that arrives before the route binds.
+//   - `deferDataUntilTrigger`: when true, the fixture does NOT emit the scripted
+//     data/exit frames after the open reply at all. It holds them until the host
+//     sends one `duplexChannelWrite` whose `data` is exactly EMIT_TRIGGER (below),
+//     then emits them and replies to that write normally. A test whose assertion
+//     depends on a listener being attached before the scripted frames arrive should
+//     use this instead of any fixed delay: a delay only narrows the race (the open
+//     reply and the immediately-following frames can still land in the same
+//     underlying stdout read on the host side under enough CPU contention, so the
+//     host processes them in one synchronous burst before any caller code gets a
+//     turn to run — no timeout is provably long enough). This makes it physically
+//     impossible for the frames to be written before the test calls `session.write
+//     (EMIT_TRIGGER)`, which it does only after `onData` is attached.
 const readline = require("node:readline");
+
+// Sentinel `duplexChannelWrite` payload that releases frames held back by
+// `deferDataUntilTrigger`. Not a real callback payload, so it can't collide
+// with anything a test would plausibly write.
+const EMIT_TRIGGER = "__test_emit_deferred_frames__";
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -93,12 +110,16 @@ rl.on("line", (line) => {
     const mode = directive.mode ?? "normal";
     const workerSessionId = directive.workerSessionId ?? "ws-1";
     const closeMode = directive.closeMode ?? "ack";
-    routes.set(params.hostRouteId, {
+    const routeEntry = {
       workerSessionId,
       closeMode,
       echoInput: directive.echoInput === true,
       noWriteReply: mode === "no-write-reply",
-    });
+      // Set below when deferDataUntilTrigger is requested; holds the scripted
+      // frames until an EMIT_TRIGGER write releases them.
+      pendingScriptedFrames: null,
+    };
+    routes.set(params.hostRouteId, routeEntry);
 
     if (mode === "no-open-reply") {
       // Never reply, so the host open call times out.
@@ -131,6 +152,14 @@ rl.on("line", (line) => {
       reply();
     }
 
+    if (directive.deferDataUntilTrigger === true) {
+      // Hold the frames. Only an EMIT_TRIGGER duplexChannelWrite (below)
+      // releases them -- see the directive doc comment above for why this
+      // replaces a fixed delay rather than just widening it.
+      routeEntry.pendingScriptedFrames = scriptedFrameLines(directive, workerSessionId);
+      return;
+    }
+
     // Emit the scripted data and the exit after the open reply, so the host
     // binds the route first.
     setImmediate(() => {
@@ -143,6 +172,15 @@ rl.on("line", (line) => {
     const entry = [...routes.values()].find(
       (route) => route.workerSessionId === params.workerSessionId,
     );
+    if (entry && params.data === EMIT_TRIGGER && entry.pendingScriptedFrames !== null) {
+      // Release the frames held by deferDataUntilTrigger, then reply to this
+      // write like any other -- the caller does not need to distinguish it.
+      const frames = entry.pendingScriptedFrames;
+      entry.pendingScriptedFrames = null;
+      process.stdout.write(frames);
+      send({ jsonrpc: "2.0", id: message.id, result: null });
+      return;
+    }
     if (entry && entry.noWriteReply) {
       // Never reply, so the host write call stays pending. The test proves the
       // host ends the route on the pending-request bound.
