@@ -606,6 +606,22 @@ export const recordIssueScopeChangeSchema = z.object({
 
 export type RecordIssueScopeChange = z.infer<typeof recordIssueScopeChangeSchema>;
 
+// F-010-2 (PC-010 AC1/AC4/AC6, Slice 1 append-only subset): the agent-facing write verb for
+// WP-0's fourth verb. `tableId` matches the Teable id shape `teable-client.ts` validates
+// server-side (`/^[A-Za-z0-9_-]{1,64}$/`) before any allowlist check. `caption` is captured
+// content and stays verbatim Vietnamese, so it is bounded but never transformed here -- see
+// `formatEvidenceLine`'s single-line requirement in `issue-dossier.ts`. No `source`: PC-011
+// AC2 provenance is decided server-side, exactly like `linkIssueEvidenceSchema` above.
+export const appendTeableRowSchema = z.object({
+  tableId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid Teable table id"),
+  fields: z.record(z.string(), z.unknown()).refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  }),
+  caption: z.string().trim().min(1).max(200),
+}).strict();
+
+export type AppendTeableRow = z.infer<typeof appendTeableRowSchema>;
+
 const commentMetadataLabelSchema = z.string().trim().min(1).max(120);
 const commentMetadataTextSchema = z.string().trim().min(1).max(2000);
 
