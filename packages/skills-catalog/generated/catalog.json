@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "packageName": "@paperclipai/skills-catalog",
   "packageVersion": "0.3.1",
-  "generatedAt": "2026-08-07T20:30:29.973Z",
+  "generatedAt": "2026-09-17T10:17:42.267Z",
   "skills": [
     {
       "id": "paperclipai:bundled:docs:doc-maintenance",
@@ -414,6 +414,39 @@
         }
       ],
       "contentHash": "sha256:90f278c89aa0711be150c1cd2456ca25620d02f36995b113ca9837d756a37f6c"
+    },
+    {
+      "id": "paperclipai:bundled:software-development:t3-pr-loop",
+      "key": "paperclipai/bundled/software-development/t3-pr-loop",
+      "kind": "bundled",
+      "category": "software-development",
+      "slug": "t3-pr-loop",
+      "name": "t3-pr-loop",
+      "description": "Open or update a PR to develop on tetracilin/test_ai_todo from a Paperclip execution workspace, run the repo's preflight and readiness scripts, drive t3-ci and Greptile to green, then hand the PR to a human for merge.",
+      "path": "catalog/bundled/software-development/t3-pr-loop",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "engineer"
+      ],
+      "requires": [],
+      "tags": [
+        "github",
+        "pull-requests",
+        "code-review",
+        "ci"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 11526,
+          "sha256": "56a1bf7a13a5a246dddf3560a77775dd1ef19ca1776262867fd1da31137a739f"
+        }
+      ],
+      "contentHash": "sha256:a5d37f18020cba8f4b14f90b07f7201ba474c937046b2798fed171ffeeabcbf6"
     },
     {
       "id": "paperclipai:optional:browser:agent-browser",
