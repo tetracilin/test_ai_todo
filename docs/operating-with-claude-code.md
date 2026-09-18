@@ -202,8 +202,12 @@ does not slow you down.
 The server suites run in the nightly build, *after* merge. Two regressions reached `develop`
 this way in September 2026. Rule 6 is the mitigation.
 
-**e2e has never run at all.** Not "is flaky" — has never once executed. The browser tests sit
-behind a step that fails first every time, so they have never reported anything about anything.
+**e2e now runs, and has passed twice.** It was true through 2026-09-13 that it had never run
+at all — the browser tests sat behind a step that failed first every time. PR #98 (2026-09-13)
+gave e2e its own job so a failing vitest step can no longer hide it, and PR #104 (2026-09-17)
+fixed the two specs that then failed. `slow-tests` is the job that still fails routinely, now
+on one different timing-sensitive server test per night rather than a named regression — read
+which test, not just the red X.
 
 **`develop` is protected as of 2026-09-09**, so rule 1 is now enforced by GitHub rather than by
 you remembering it: a PR cannot merge unless `unit`, `build` and `build-image` have passed and
@@ -216,8 +220,16 @@ never rebased, and they touch the lockfile — the one file that breaks *everyth
 disagrees with the rest of the project. Seven were open as of 2026-09-08, the oldest from
 2026-08-30. Land them **one at a time**, each rebased, each green, checking `develop` between.
 
-**Failure alerts do not reach Discord.** The `DISCORD_WEBHOOK_URL` secret does not exist, so
-those steps silently do nothing. Do not read silence as success; check the Actions tab.
+**Failure alerts now reach Discord.** `DISCORD_WEBHOOK_URL` was unset through 2026-09-16, so
+those steps silently did nothing and no failure was ever announced. It was set as a repo
+secret on 2026-09-17. If you still see silence after a failed run, that is now itself worth
+investigating rather than assuming.
+
+**A separate, legacy nightly build still runs on the host.** The Hermes cron that predates
+this pipeline (`CICD/PLAN_CICD.md` §4 says to retire it; nobody has) still fires at 22:00 UTC
+against a shared checkout on kmv8 and can email "T3 nightly build — FAILED". That email is not
+from GitHub Actions — check the Actions tab for the real pipeline's state regardless of what
+that email says. See `CICD/PLAN_AI_FACTORY.md` §0.1.
 
 **Several stacks run on the host and only one is kept current by CI.** See the inventory.
 

@@ -228,7 +228,7 @@ Open PR develop → main. CI must be green. One human reviews.
 Merge (merge commit, not squash, so main keeps develop's history). Note: main currently has required_linear_history: true, which contradicts this step. enforce_admins is false, so an admin reviewer merges through it; a non-admin cannot. See CICD/PLAN_CICD.md 2.1.
 Tag on main: git tag -a vX.Y.Z -m "<one line>" && git push origin vX.Y.Z. SemVer: patch for fixes, minor for features, major for breaking API/schema.
 The t3-release workflow builds, then waits on the production environment gate. A human approves in the Actions UI. Agents do not approve production deploys.
-Confirm 100.103.41.112:33100/api/health shows the new sha. The Discord message will not arrive until DISCORD_WEBHOOK_URL is set (see Staging / nightly below); check the Actions run directly instead.
+Confirm 100.103.41.112:33100/api/health shows the new sha. The t3-release Discord report reuses the repo-level DISCORD_WEBHOOK_URL secret (set 2026-09-17); check the Actions run directly if no message arrives.
 
 Rollback: re-run the t3-release workflow for the previous tag and approve. Then open a fix/* PR against develop for the actual fix — do not fix forward on main.
 
@@ -241,9 +241,9 @@ develop deploys to t3-nightly at 22:00 UTC if it has changed since the last run,
 Nightly is bound to 100.103.41.112:33130 on kmv8, reachable from anywhere on the tailnet as http://100.103.41.112:33130 or http://hostinger-kvm8-host.tail9831b.ts.net:33130, so a remote monitoring host can poll it. It stays login-gated (deploy/compose.yaml sets PAPERCLIP_DEPLOYMENT_MODE=authenticated), the same posture as production. Note 127.0.0.1:33130 is NOT bound any more: compose publishes one address, so an SSH tunnel to loopback no longer reaches it.
 The slow-tests job does not run against :33130, and does not wait for the deploy. It runs on a GitHub-hosted runner and Playwright bootstraps its own instance, deliberately (t3-nightly.yml job comment, ASSUMPTION A6), so a skipped or failed deploy does not silently skip the tests.
 
-e2e has never actually executed. Install Chromium and E2E follow the vitest step in the same job with no if: always(), and the vitest step has failed on every run to date, so the job always aborts first. There is currently zero e2e signal.
+e2e is its own job (PR #98, 2026-09-13) and has run and passed since PR #104 fixed two stale specs (2026-09-17). Before that it never executed: Install Chromium and E2E followed the vitest step in the same job with no if: always(), and vitest failed on every run, so the job always aborted first.
 
-A failed deploy or e2e is meant to be reported to Discord with a link to the run — but as of 2026-09-07 DISCORD_WEBHOOK_URL is unset, so no alert is ever sent. The deploy job logs "DISCORD_WEBHOOK_URL not set; skipping"; the slow-tests report step exits silently. Until that is fixed, check the Actions tab yourself; do not read silence as success. Whoever's PR most recently landed on develop investigates first.
+DISCORD_WEBHOOK_URL is set as a repo-level secret since 2026-09-17. A failed deploy, e2e run, or slow-tests run is reported to Discord with a link to the run. The one job that is still routinely red is slow-tests, usually on one timing-sensitive server test out of ~4,800 (see CICD/PLAN_AI_FACTORY.md §0.2) — read the failing test named in the Discord message, not just the red run.
 Nightly data is disposable and separate from prod. Do not rely on anything stored there.
 For agents specifically
 Before starting a task: git fetch origin && git checkout -b feature/<topic> origin/develop.
@@ -254,6 +254,7 @@ When you touch the shared checkout by mistake, say so in the PR. Silent recovery
 Where things live
 Item	Location
 CI/CD plan and assumptions	CICD/PLAN_CICD.md
+AI-factory CI/CD upgrade plan (current work, phased)	CICD/PLAN_AI_FACTORY.md
 Fork origin and cherry-pick policy	doc/ORIGIN.md
 Workflows	.github/workflows/t3-{ci,nightly,release}.yml — the only workflows that should exist
 Deploy scripts	deploy/scripts/{healthcheck,image-retention,version-drift}.sh
