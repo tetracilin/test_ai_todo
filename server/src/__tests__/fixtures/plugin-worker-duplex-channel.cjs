@@ -22,6 +22,17 @@
 //     scripted data and exit in one stdout write. The host then reads the open
 //     reply and the notifications in one batch, so a test proves the host holds
 //     and replays a frame that arrives before the route binds.
+//   - `dataDelayMs`: when set, the fixture waits this many milliseconds (via
+//     `setTimeout`) before writing the scripted data/exit frames, instead of the
+//     default `setImmediate`. The default gap is enough under normal load for the
+//     host to resolve the open call and let its caller attach a listener before
+//     the frames are written, but under heavy CPU contention (e.g. the full
+//     nightly suite running many files' worth of child processes at once) the
+//     open reply and the immediately-following frames can still land in the same
+//     underlying stdout read on the host side, so the host processes them in one
+//     synchronous burst before any caller code gets a turn to run. A test whose
+//     assertion depends on a listener being attached before the scripted frames
+//     arrive should set a real delay (tens of ms) to keep that margin under load.
 const readline = require("node:readline");
 
 function send(message) {
@@ -132,10 +143,17 @@ rl.on("line", (line) => {
     }
 
     // Emit the scripted data and the exit after the open reply, so the host
-    // binds the route first.
-    setImmediate(() => {
+    // binds the route first. `dataDelayMs` widens that gap for a test whose
+    // assertion needs the host's caller to have a real chance to attach a
+    // listener first (see the directive doc comment above).
+    const emitScriptedFrames = () => {
       process.stdout.write(scriptedFrameLines(directive, workerSessionId));
-    });
+    };
+    if (typeof directive.dataDelayMs === "number" && directive.dataDelayMs > 0) {
+      setTimeout(emitScriptedFrames, directive.dataDelayMs);
+    } else {
+      setImmediate(emitScriptedFrames);
+    }
     return;
   }
 

@@ -352,6 +352,18 @@ describe("plugin worker manager duplex channel route", () => {
       const session = await handle.openDuplexChannel(
         duplexOpenInput({
           workerSessionId: "ws-A",
+          // The host enforces the total-byte cap on arrival, whether or not a
+          // listener has attached yet (plugin-worker-manager.ts:
+          // routeDuplexChannelData), and a cap breach discards the pre-listener
+          // buffer. Without a real gap here, the fixture's default `setImmediate`
+          // write of these frames can land in the same host-side stdout read as
+          // the open reply under heavy CPU contention, so the cap-breaching third
+          // chunk gets processed — and the buffer discarded — before this test's
+          // `onData` below ever gets a turn to run, deterministically emptying
+          // `chunks` no matter how quickly it is called. `dataDelayMs` keeps a
+          // real scheduling gap between the open reply and the frames so the
+          // listener is always attached first (see the fixture's doc comment).
+          dataDelayMs: 50,
           data: [
             { chunk: "aaaaa" }, // total 5 → deliver
             { chunk: "bbbbb" }, // total 10 → deliver
