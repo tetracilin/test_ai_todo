@@ -135,6 +135,7 @@
     "server/src/__tests__/teams-catalog-routes.test.ts": 3463,
     "server/src/__tests__/user-profile-routes.test.ts": 6441,
     "server/src/__tests__/workspace-runtime-routes-authz.test.ts": 3296,
-    "server/src/__tests__/workspace-runtime-service-authz.test.ts": 6251
+    "server/src/__tests__/workspace-runtime-service-authz.test.ts": 6251,
+    "server/src/__tests__/workspace-runtime.test.ts": 37401
   }
 }

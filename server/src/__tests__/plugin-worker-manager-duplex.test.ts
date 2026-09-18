@@ -352,6 +352,19 @@ describe("plugin worker manager duplex channel route", () => {
       const session = await handle.openDuplexChannel(
         duplexOpenInput({
           workerSessionId: "ws-A",
+          // The host enforces the total-byte cap on arrival, whether or not a
+          // listener has attached yet (plugin-worker-manager.ts:
+          // routeDuplexChannelData), and a cap breach discards the pre-listener
+          // buffer. A fixed delay before the fixture writes these frames only
+          // narrows that race, it does not remove it: under enough CPU
+          // contention the open reply and the frames can still land in the
+          // same host-side stdout read, processed in one synchronous burst
+          // before this test's `onData` below ever gets a turn to run, no
+          // matter how short the delay. deferDataUntilTrigger makes the
+          // fixture hold the frames until the EMIT_TRIGGER write below, which
+          // this test only sends after `onData` is attached — so the frames
+          // physically cannot arrive early (see the fixture's doc comment).
+          deferDataUntilTrigger: true,
           data: [
             { chunk: "aaaaa" }, // total 5 → deliver
             { chunk: "bbbbb" }, // total 10 → deliver
@@ -361,6 +374,10 @@ describe("plugin worker manager duplex channel route", () => {
       );
       const chunks: string[] = [];
       session.onData((chunk) => chunks.push(chunk));
+      // Must match EMIT_TRIGGER in fixtures/plugin-worker-duplex-channel.cjs
+      // exactly. Releasing the frames only now, after onData is attached, is
+      // what makes this test deterministic rather than merely unlikely to flake.
+      session.write("__test_emit_deferred_frames__");
       // A listener is bound, so the host forwards each chunk until the cumulative
       // bytes pass the cap. The third chunk passes the cap, so the host drops it
       // and ends the route. The listener never receives data past the cap.
