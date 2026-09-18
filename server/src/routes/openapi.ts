@@ -30,6 +30,7 @@ import {
   createIssueLabelSchema,
   addIssueCommentSchema,
   checkoutIssueSchema,
+  appendTeableRowSchema,
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
@@ -6226,6 +6227,31 @@ registry.registerPath({
     403: r.forbidden,
     404: r.notFound,
     422: r.unprocessable,
+  },
+});
+
+// F-010-2 (PC-010 AC1/AC4/AC6, Slice-1 append-only subset): creates one row in the company's
+// single allowlisted Teable table, links it on the card, and appends a dossier Evidence-log
+// line. 422 is the allowlist/not-configured refusal; 502/503 are upstream Teable failures.
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/teable-rows",
+  tags: ["issues"],
+  summary: "Append a row to the company's allowlisted Teable table and link it to an issue",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(appendTeableRowSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+    502: r.serverError,
+    503: r.serverError,
   },
 });
 
