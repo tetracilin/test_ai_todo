@@ -278,7 +278,6 @@
     "server/src/__tests__/work-products.test.ts": 521,
     "server/src/__tests__/work-timeline-service.test.ts": 5712,
     "server/src/__tests__/workspace-instance-cleanup.test.ts": 265,
-    "server/src/__tests__/workspace-runtime.test.ts": 37401,
     "server/src/__tests__/worktree-config.test.ts": 280,
     "server/src/__tests__/write-path-membership.test.ts": 736
   }

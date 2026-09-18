@@ -58,6 +58,16 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/project-routes-env.test.ts",
   "server/src/__tests__/redaction.test.ts",
   "server/src/__tests__/routines-e2e.test.ts",
+  // Spawns and health-probes several real local-service child processes with a
+  // 2s-per-attempt HTTP timeout (workspace-runtime.ts's adoption health check).
+  // In the general-server lane this file's async work interleaves with every
+  // other concurrently-running file's spawned processes, and under nightly's
+  // heavy CPU contention that occasionally starves both of the two allotted
+  // probe attempts past 2s each, failing "adopted: 0" instead of "1" (observed
+  // 2026-09-17/18, a different single test each night — see
+  // CICD/PLAN_AI_FACTORY.md §0.2). Serialized, this file runs alone with no
+  // sibling file's child processes competing for CPU.
+  "server/src/__tests__/workspace-runtime.test.ts",
 ]);
 let invocationIndex = 0;
 const serializedModeName = "serialized";
