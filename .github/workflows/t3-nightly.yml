@@ -1,11 +1,14 @@
 # t3-nightly — builds `develop`, deploys it to the t3-nightly stack on kmv8, then runs
-# the slow test suite (salvaged from upstream pr.yml) against the deployed stack.
-# Replaces /root/.hermes/scripts/t3-nightly-build.sh + Hermes cron 8b51805f9dc5.
+# the server test suites and e2e against the deployed stack, sharded, then posts one
+# summary. See CICD/PLAN_AI_FACTORY.md §0.2/Phase 1 for why this is shaped the way it is.
 #
 # Triggers: 22:00 UTC daily, or on demand (Run workflow). Optionally also on every
 # push to develop — uncomment the `push:` block if you want continuous staging.
 #
-# Runs on the self-hosted runner (label: kmv8). Only `develop` is ever deployed here.
+# `deploy` runs on the self-hosted runner (label: kmv8). Only `develop` is ever deployed
+# there. Every test job runs on a GitHub-hosted runner and does not `needs: deploy` —
+# see the e2e job's comment for why — so a skipped or failed deploy never silently skips
+# the tests, and a test failure never blocks a healthy deploy from being recorded.
 
 name: t3-nightly
 
@@ -41,10 +44,20 @@ jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
-    # No `outputs:` here on purpose. slow-tests deliberately does NOT `needs:`
-    # this job (ASSUMPTION A6): Playwright bootstraps its own instance, so the
-    # suite runs on a GitHub-hosted runner even when the deploy guard skips.
-    # Coupling them would make a skipped deploy silently skip the tests too.
+    # Every value another job (chiefly `summary`) needs after this job finishes,
+    # so those jobs can report accurately without needing `environment: staging`
+    # or the deploy secrets themselves. `tester_email` is computed in its own
+    # always-run step below because the seed step it used to live next to is
+    # skipped when the guard skips the deploy.
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+      compare: ${{ steps.guard.outputs.compare }}
+      last_sha: ${{ steps.guard.outputs.last }}
+      head_sha: ${{ steps.guard.outputs.head }}
+      changes: ${{ steps.guard.outputs.changes }}
+      image: ${{ steps.tag.outputs.image }}
+      drift: ${{ steps.drift.outputs.report }}
+      tester_email: ${{ steps.report.outputs.tester_email }}
     environment:
       name: staging
       url: http://100.103.41.112:33130
@@ -67,15 +80,15 @@ jobs:
           [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "last=$last" >> "$GITHUB_OUTPUT"
-          # Change list for the Discord report: the first line of every commit
-          # landed between the last deployed sha and this head (squash merges
-          # carry the PR title and number). Two small API calls instead of a
-          # paged compare: the compare gives the commit count, the commits
-          # endpoint gives the newest 15 titles from head, so the newest
-          # changes are never lost behind a page boundary. The shallow
-          # checkout below needs no history. Best effort on purpose: a failed
-          # lookup yields an empty list and a named status, never a failed
-          # deploy. `compare` is one of: ok, same_commit, no_marker, lookup_failed.
+          # Change list for the summary: the first line of every commit landed
+          # between the last deployed sha and this head (squash merges carry the
+          # PR title and number). Two small API calls instead of a paged compare:
+          # the compare gives the commit count, the commits endpoint gives the
+          # newest 15 titles from head, so the newest changes are never lost
+          # behind a page boundary. The shallow checkout below needs no history.
+          # Best effort on purpose: a failed lookup yields an empty list and a
+          # named status, never a failed deploy. `compare` is one of: ok,
+          # same_commit, no_marker, lookup_failed.
           changes=""
           compare="lookup_failed"
           if [[ "$last" == none ]]; then
@@ -107,6 +120,14 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Resolve reporting values
+        # Independent of the skip guard, so `summary` always has a tester email
+        # to show even on a skipped or failed deploy.
+        id: report
+        shell: bash
+        run: |
+          echo "tester_email=${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         if: steps.guard.outputs.skip == 'false'
@@ -218,12 +239,21 @@ jobs:
           # repo -- it grants instance_admin on a live stack. The job already
           # declares `environment: staging` above, which is what makes this
           # secret resolvable here.
-          SEED_TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
+          SEED_TESTER_EMAIL: ${{ steps.report.outputs.tester_email }}
           SEED_TESTER_PASSWORD: ${{ secrets.STAGING_TESTER_PASSWORD }}
           SEED_TESTER_NAME: Staging Tester
         # HEALTH_URL minus /api/health: the seed must post from a trusted origin,
         # and PAPERCLIP_PUBLIC_URL above is what makes that host one.
         run: deploy/scripts/seed-staging-tester.sh "${HEALTH_URL%/api/health}" "$COMPOSE_PROJECT"
+
+      - name: Post-deploy smoke check (authenticated request, not just health/sign-in)
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        env:
+          # Same credentials the seed step just asserted. Read-only from here on.
+          SEED_TESTER_EMAIL: ${{ steps.report.outputs.tester_email }}
+          SEED_TESTER_PASSWORD: ${{ secrets.STAGING_TESTER_PASSWORD }}
+        run: deploy/scripts/post-deploy-smoke.sh "${HEALTH_URL%/api/health}"
 
       - name: Record deployed sha
         if: steps.guard.outputs.skip == 'false'
@@ -243,89 +273,29 @@ jobs:
           out=$(deploy/scripts/version-drift.sh 2>&1 || true)
           { echo "report<<EOF"; echo "$out"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
-      - name: Discord report
-        if: always()
-        shell: bash
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          # Host-derived, multi-line, and not ours to trust: version-drift.sh
-          # output must reach bash as data, never be interpolated into the
-          # script source where a quote or $( ) span would be evaluated.
-          DRIFT: ${{ steps.drift.outputs.report }}
-          # Same rule for the commit list: PR titles are free text.
-          CHANGES: ${{ steps.guard.outputs.changes }}
-          COMPARE: ${{ steps.guard.outputs.compare }}
-          LAST_SHA: ${{ steps.guard.outputs.last }}
-          HEAD_SHA: ${{ steps.guard.outputs.head }}
-          # Same default as the seed step above, so the message names the
-          # account that really exists on staging. Never the password.
-          TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
-        run: |
-          set -euo pipefail
-          [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
-          status="${{ job.status }}"
-          test_url="${HEALTH_URL%/api/health}"
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
-            emoji="⏭️"; line="nightly: no changes on develop, skipped"
-          elif [[ "$status" == "success" ]]; then
-            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to staging"
-          else
-            emoji="❌"; line="nightly: **$status** at ref ${HEAD_SHA:0:8}"
-          fi
-          # One sentence per compare state, so a reader diagnosing a run is
-          # never told "redeployed" when the guard simply did not finish.
-          case "$COMPARE" in
-            ok)
-              if [[ -n "$CHANGES" ]]; then
-                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}):"$'\n'"$CHANGES"
-              else
-                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}): merge commits only"
-              fi ;;
-            same_commit)   changes="Changes since last deploy: none, ${HEAD_SHA:0:8} is already deployed" ;;
-            no_marker)     changes="Changes since last deploy: unavailable, no previous deploy recorded on this runner" ;;
-            lookup_failed) changes="Changes since last deploy: unavailable, GitHub compare lookup failed (see run log)" ;;
-            *)             changes="Changes since last deploy: unavailable, guard step did not finish" ;;
-          esac
-          drift="${DRIFT:-(no drift report)}"
-          content=$(printf '%s %s\nTest it: %s (login: %s)\nRun: <%s>\n%s\n```\n%s\n```' \
-            "$emoji" "$line" "$test_url" "$TESTER_EMAIL" "$run_url" "$changes" "${drift:0:600}")
-          # Discord rejects messages over 2000 characters.
-          if (( ${#content} > 1990 )); then content="${content:0:1980}"$'\n…'; fi
-          # PR titles are contributor text: never let them ping @everyone,
-          # @here, a user, or a role.
-          jq -n --arg c "$content" '{content: $c, allowed_mentions: {parse: []}}' \
-            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
-
   # Slow suites salvaged from upstream pr.yml (general_tests, verify_serialized_server,
   # e2e_shards). See PLAN_CICD.md §1.2.
   #
   # ASSUMPTION A6 CORRECTED (2026-09-02): the e2e suite does NOT accept an external base
   # URL. tests/e2e/playwright.config.ts declares a `webServer:` block that bootstraps a
   # throwaway instance on 127.0.0.1:$PORT and waits on its own /api/health. Pointing it at
-  # the deployed :33130 stack is impossible, so per the plan's own fallback this job runs
-  # independently of `deploy` — and therefore on a GitHub-hosted runner, which keeps the
-  # suite off kmv8 and lets it run even when the deploy guard skips.
+  # the deployed :33130 stack is impossible, so per the plan's own fallback every test job
+  # in this file runs independently of `deploy` — and therefore on a GitHub-hosted runner,
+  # which keeps the suites off kmv8 and lets them run even when the deploy guard skips.
   #
-  # pr.yml sharded these across a matrix purely for PR latency. Nightly has no latency
-  # budget, so it uses the repo's own stable runner (scripts/run-vitest-stable.mjs), which
-  # already serializes the suites that contend over embedded Postgres.
-  # e2e is its OWN job, deliberately, not a tail of slow-tests.
-  #
-  # It used to be three steps after the vitest step in that job. Steps run in
-  # order and the job aborts at the first failure, and vitest failed on every
-  # run this workflow ever had -- so `Install Chromium` and `E2E` were skipped
-  # every single time. e2e has never executed once. A separate job cannot be
-  # hidden by an unrelated red suite, reports its own status, and runs in
-  # parallel instead of queueing behind a 20-minute vitest run.
-  #
-  # It does not `needs:` deploy for the same reason slow-tests does not
-  # (ASSUMPTION A6 above): playwright.config.ts bootstraps its own throwaway
-  # instance on 127.0.0.1 and cannot be pointed at the deployed :33130 stack.
+  # Sharded across 2 GitHub-hosted runners via scripts/e2e-shard.mjs (already built and
+  # unit-tested by t3-ci's "Test e2e shard partition" step, previously unused by any
+  # workflow). One spec (smoke-lab) is ~40% of the lane's wall clock on its own
+  # (scripts/e2e-shard.mjs's own comment), so sharding buys real parallelism even though
+  # the unsharded lane already finishes in under 10 minutes.
   e2e:
-    name: e2e
+    name: e2e (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -359,14 +329,18 @@ jobs:
         # not move when the runner image bumps Chrome.
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: E2E (Playwright bootstraps its own instance)
-        run: pnpm test:e2e
+      - name: E2E shard ${{ matrix.shard }} (Playwright bootstraps its own instance)
+        run: |
+          set -euo pipefail
+          specs="$(node scripts/e2e-shard.mjs --shard-index ${{ matrix.shard }} --shard-count 2)"
+          echo "Running: $specs"
+          pnpm exec playwright test --config tests/e2e/playwright.config.ts $specs
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-nightly
+          name: playwright-report-nightly-shard-${{ matrix.shard }}
           # test-results/ carries the failure screenshots and first-retry
           # traces (playwright.config.ts). Without it an unattended 22:00 UTC
           # failure arrives with nothing to triage from the next morning.
@@ -376,23 +350,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Discord report (e2e)
-        if: failure()
-        shell: bash
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          set -euo pipefail
-          [[ -n "$WEBHOOK" ]] || exit 0
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          msg=$(printf 'nightly e2e FAILED on develop\n<%s>' "$run_url")
-          jq -n --arg c "$msg" '{content: $c}' \
-            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
-
-  slow-tests:
-    name: slow-tests
+  # server-tests + workspaces below replace the single "slow-tests" job (Full vitest
+  # suite, general + serialized, one process). Sharded per CICD/PLAN_AI_FACTORY.md
+  # Phase 1.2 to cut nightly wall clock and — more importantly — to stop many
+  # concurrently-running server-suite files from starving each other's event loops
+  # under CPU contention, which is what made a handful of timing-sensitive server
+  # tests flake a different one each night (see PLAN_AI_FACTORY.md §0.2, and the
+  # de-flaking already done for two of them in PR #108). general-server and
+  # serialized are the two contention-sensitive groups; workspaces-a/b are fast,
+  # non-server suites and stay unsharded.
+  server_tests_general:
+    name: server-tests (general-server, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -408,22 +382,180 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: Full vitest suite (general + serialized)
-        # pnpm test:run (bare) skips the plugin-sdk build step that
-        # test:run:general / test:run:serialized include, so
-        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
-        # test file that imports it (ERR_MODULE_NOT_FOUND).
-        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+      # test:run:general already runs preflight:workspace-links and the
+      # plugin-sdk prebuild -- no separate "ensure-build-deps" step needed here.
+      - name: general-server shard ${{ matrix.shard }}/3
+        run: pnpm run test:run:general --group general-server --shard-index ${{ matrix.shard }} --shard-count 3
 
+  server_tests_serialized:
+    name: server-tests (serialized, shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
 
-      - name: Discord report (vitest)
-        if: failure()
+      - name: serialized shard ${{ matrix.shard }}/2
+        run: pnpm run test:run:serialized --shard-index ${{ matrix.shard }} --shard-count 2
+
+  workspaces_a:
+    name: server-tests (workspaces-a — ui, cli)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run test:run:general --group general-workspaces-a
+
+  workspaces_b:
+    name: server-tests (workspaces-b — shared, db, adapters, plugin-sdk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run test:run:general --group general-workspaces-b
+
+  # Single report for the whole run, replacing the three separate Discord steps
+  # (deploy's, e2e's, slow-tests') this job's jobs used to carry independently.
+  # `needs:` every job so `if: always()` still fires when one of them fails, but
+  # this job itself never blocks anything -- it only reports.
+  summary:
+    name: nightly-summary
+    needs: [deploy, e2e, server_tests_general, server_tests_serialized, workspaces_a, workspaces_b]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post one Discord report and job summary
         shell: bash
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STAGING_URL: http://100.103.41.112:33130
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          DEPLOY_SKIP: ${{ needs.deploy.outputs.skip }}
+          DEPLOY_IMAGE: ${{ needs.deploy.outputs.image }}
+          DEPLOY_COMPARE: ${{ needs.deploy.outputs.compare }}
+          DEPLOY_LAST_SHA: ${{ needs.deploy.outputs.last_sha }}
+          DEPLOY_HEAD_SHA: ${{ needs.deploy.outputs.head_sha }}
+          DEPLOY_CHANGES: ${{ needs.deploy.outputs.changes }}
+          DEPLOY_DRIFT: ${{ needs.deploy.outputs.drift }}
+          TESTER_EMAIL: ${{ needs.deploy.outputs.tester_email }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          SERVER_GENERAL_RESULT: ${{ needs.server_tests_general.result }}
+          SERVER_SERIALIZED_RESULT: ${{ needs.server_tests_serialized.result }}
+          WORKSPACES_A_RESULT: ${{ needs.workspaces_a.result }}
+          WORKSPACES_B_RESULT: ${{ needs.workspaces_b.result }}
         run: |
           set -euo pipefail
-          [[ -n "$WEBHOOK" ]] || exit 0
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          jq -n --arg c "$(printf '⚠️ nightly slow-tests FAILED on develop\n<%s>' "$run_url")" '{content: $c}' \
+
+          fmt_result() {
+            case "$1" in
+              success) echo "✅ success" ;;
+              skipped) echo "⏭️ skipped" ;;
+              cancelled) echo "🚫 cancelled" ;;
+              *) echo "❌ $1" ;;
+            esac
+          }
+
+          if [[ "$DEPLOY_SKIP" == "true" ]]; then
+            deploy_line="deploy: ⏭️ skipped (no changes on develop since last deploy)"
+          elif [[ "$DEPLOY_RESULT" == "success" ]]; then
+            deploy_line="deploy: ✅ deployed ${DEPLOY_IMAGE:-develop} to staging"
+          else
+            deploy_line="deploy: $(fmt_result "$DEPLOY_RESULT") at ${DEPLOY_HEAD_SHA:0:8}"
+          fi
+
+          overall="success"
+          for r in "$DEPLOY_RESULT" "$E2E_RESULT" "$SERVER_GENERAL_RESULT" "$SERVER_SERIALIZED_RESULT" "$WORKSPACES_A_RESULT" "$WORKSPACES_B_RESULT"; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then overall="failure"; fi
+          done
+          top_emoji="✅"; [[ "$overall" == "failure" ]] && top_emoji="❌"
+
+          # One sentence per compare state, so a reader diagnosing a run is never
+          # told "redeployed" when the guard simply did not finish.
+          case "$DEPLOY_COMPARE" in
+            ok)
+              if [[ -n "$DEPLOY_CHANGES" ]]; then
+                changes="Changes since last deploy (${DEPLOY_LAST_SHA:0:8} → ${DEPLOY_HEAD_SHA:0:8}):"$'\n'"$DEPLOY_CHANGES"
+              else
+                changes="Changes since last deploy (${DEPLOY_LAST_SHA:0:8} → ${DEPLOY_HEAD_SHA:0:8}): merge commits only"
+              fi ;;
+            same_commit)   changes="Changes since last deploy: none, ${DEPLOY_HEAD_SHA:0:8} is already deployed" ;;
+            no_marker)     changes="Changes since last deploy: unavailable, no previous deploy recorded on this runner" ;;
+            lookup_failed) changes="Changes since last deploy: unavailable, GitHub compare lookup failed (see run log)" ;;
+            *)             changes="Changes since last deploy: unavailable, guard step did not finish" ;;
+          esac
+
+          # Built with printf, not a heredoc: this whole step is itself a YAML
+          # block scalar, and a heredoc's closing delimiter has to sit at
+          # column 0 with no indentation, which a YAML-indented heredoc body
+          # can't produce without `<<-` and literal tabs.
+          body="$(printf 'e2e (2 shards): %s\nserver-tests general-server (3 shards): %s\nserver-tests serialized (2 shards): %s\nworkspaces-a: %s\nworkspaces-b: %s' \
+            "$(fmt_result "$E2E_RESULT")" "$(fmt_result "$SERVER_GENERAL_RESULT")" "$(fmt_result "$SERVER_SERIALIZED_RESULT")" \
+            "$(fmt_result "$WORKSPACES_A_RESULT")" "$(fmt_result "$WORKSPACES_B_RESULT")")"
+
+          {
+            echo "## t3-nightly summary"
+            echo
+            echo "$deploy_line"
+            echo
+            printf '%s\n' "$body" | sed 's/^/- /'
+            echo
+            echo "$changes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -z "$WEBHOOK" ]]; then
+            echo "DISCORD_WEBHOOK_URL not set; skipping Discord post"
+            exit 0
+          fi
+
+          drift="${DEPLOY_DRIFT:-(no drift report)}"
+          content=$(printf '%s nightly t3-nightly\nStaging: %s (login: %s)\nRun: <%s>\n%s\n%s\n%s\n```\n%s\n```' \
+            "$top_emoji" "$STAGING_URL" "$TESTER_EMAIL" "$RUN_URL" "$deploy_line" "$body" "$changes" "${drift:0:500}")
+          # Discord rejects messages over 2000 characters.
+          if (( ${#content} > 1990 )); then content="${content:0:1980}"$'\n…'; fi
+          # PR titles are contributor text: never let them ping @everyone,
+          # @here, a user, or a role.
+          jq -n --arg c "$content" '{content: $c, allowed_mentions: {parse: []}}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
