@@ -301,10 +301,14 @@ Marks verified against the repo and the Actions API on 2026-09-07.
   `allow_force_pushes` and `required_linear_history` remain open; see §2.1.
 - [x] Environments verified; `DISCORD_WEBHOOK_URL` set; fork-PR approval on
   — **`DISCORD_WEBHOOK_URL` set 2026-09-17.** Confirmed via the Actions API (see §0 above).
-- [x] Runner `kmv8` idle as `ghrunner`, secrets under `/etc/t3/secrets`
+- [x] Runner `kmv8` idle as `ghrunner`; **nightly** secrets under `/etc/t3/secrets/nightly/`
   — **done.** `build-and-deploy-nightly` has been green on every run since 2026-09-08; all
-  four required secret files exist under `nightly/`. `prod/` is still unverified — see
-  `CICD/PLAN_AI_FACTORY.md` §8 open question 2.
+  four required secret files exist under `nightly/`.
+- [ ] **prod** secrets under `/etc/t3/secrets/prod/`
+  — **still unverified as of 2026-09-18.** `t3-release.yml` has never run, so whether all
+  four required files exist there is unconfirmed; see `CICD/PLAN_AI_FACTORY.md` §8 open
+  question 2. Do not mark this done until a run (or a direct `ls` on kmv8) confirms it —
+  the release workflow fails early if any is missing/empty.
 - [x] `t3-ci` green on a test PR
 - [x] `t3-nightly` manual run: deploy + health + e2e green
   — **done, as of run `35201279125` (2026-09-17) and later.** Deploy + health have been
