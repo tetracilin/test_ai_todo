@@ -121,6 +121,57 @@ Two shapes of change are forbidden and Claude Code should refuse them:
 - **Anything from upstream.** This repo is a hard fork of `paperclipai/paperclip`. No upstream
   remote, no merges from upstream, no restoring upstream's workflows.
 
+### Ship a change with /pr-loop
+
+This is the recipe above, automated. Once the change is made on a branch, type this in Claude
+Code:
+
+```
+/pr-loop
+```
+
+It does, in order: runs the local gates (branch name, rebased on `develop`, no pipeline files
+mixed with app code, no secrets, no lockfile, the server tests if `server/` changed, the UI
+token gates, typecheck), commits, pushes, opens the PR (or reuses the one that exists), then
+waits for CI and Greptile. If CI goes red or Greptile leaves a finding, it reads the failure,
+fixes it, commits again, pushes again, and waits again — at most three rounds. When it is done
+it posts one comment on the PR and prints the same text here. The last sentence of that comment
+is always *"Ready for your merge in the GitHub UI. I do not merge."*
+
+If you want to look for yourself, the two scripts it runs are ordinary commands. Type them with
+the `!` prefix so they run in your shell:
+
+```
+!node .claude/skills/pr-loop/scripts/pr-preflight.mjs
+```
+
+The last line is what matters. **`preflight: PASS`** means every local gate passed. Anything
+else prints one `FAIL` line per problem with what to do about it — paste those back and ask for
+them to be fixed. Never open a PR on a `FAIL`.
+
+```
+!node .claude/skills/pr-loop/scripts/pr-readiness.mjs
+```
+
+This one reads the open PR for the current branch. The last line is the verdict.
+**`verdict: ready_for_human_merge`** means the three required checks and the Greptile Review
+check are green on the current commit, no Greptile thread is left open, and the branch is up to
+date with `develop`. Any other verdict names what is still wrong: `wait` (checks still running),
+`fix_ci`, `fix_review`, `rebase`, or `blocked:...`. Add `--wait` and it polls until the checks
+finish:
+
+```
+!node .claude/skills/pr-loop/scripts/pr-readiness.mjs --wait
+```
+
+**Then you merge.** Open the PR in the GitHub web page and click **Squash and merge**. That
+click is yours alone; `/pr-loop` will not do it, and nothing it prints is permission to skip
+rule 1. If the verdict is anything other than `ready_for_human_merge`, do not merge.
+
+Two things it will *not* fix on its own: a check that was already red on `develop` before your
+change (it reports that and stops), and a pipeline-only PR (it labels it `ci` and leaves it
+for a human to review).
+
 ### Claude Code gave me a command to run on the server
 
 Before pasting anything:
@@ -244,6 +295,11 @@ Knowing the boundary saves you from waiting on something that will never happen.
   `develop`" is something you can simply ask for. An earlier version of this guide claimed
   otherwise and was wrong.
 - **Trigger a workflow**, including a staging deploy, with `gh workflow run`.
+- **Fix its own red CI and Greptile findings.** With `/pr-loop` it reads the failed log or the
+  review thread, fixes the cause, commits, pushes, and waits again, up to three rounds, then
+  hands the PR back to you with a comment. What it still never does is merge — the
+  **Squash and merge** click stays yours, and its "ready" report is not permission to skip
+  rule 1.
 
 There is an approved design (`docs/designs/t3-agent-host-access.md`) to give it a narrow,
 audited way to run a fixed menu of operations on kmv8 through GitHub Actions. Until that ships,
