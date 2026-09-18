@@ -31,6 +31,7 @@ import {
   addIssueCommentSchema,
   checkoutIssueSchema,
   appendTeableRowSchema,
+  queryTeableRowsSchema,
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
@@ -6245,6 +6246,30 @@ registry.registerPath({
   responses: {
     200: r.ok(),
     201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+    502: r.serverError,
+    503: r.serverError,
+  },
+});
+
+// F-010-3 (PC-010 AC5, Slice-1 read-only subset): queries the SAME single allowlisted Teable
+// table F-010-2 writes to, without granting write scope. 422 is the allowlist/not-configured
+// refusal; 502/503 are upstream Teable failures, matching the write route above.
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/teable-rows",
+  tags: ["issues"],
+  summary: "Query rows from the company's allowlisted Teable table (read-only)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: queryTeableRowsSchema,
+  },
+  responses: {
+    200: r.ok(),
     400: r.badRequest,
     401: r.unauthorized,
     403: r.forbidden,

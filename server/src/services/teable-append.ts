@@ -79,8 +79,11 @@ function resolvePublicBaseUrl(env: NodeJS.ProcessEnv): string | null {
  * `error.message` is already safe to show a user (`teable-client.ts` guarantees it never carries
  * a token or row data), so it is forwarded verbatim. `details.retryAfterSeconds` lets the route
  * set a `Retry-After` header on the 503 without this module touching `Response` directly.
+ *
+ * Exported so `teable-read.ts` (F-010-3) reuses the exact same mapping rather than a second,
+ * driftable copy -- the read and write verbs talk to the same client and must fail the same way.
  */
-function httpErrorForTeableError(error: TeableError): HttpError {
+export function httpErrorForTeableError(error: TeableError): HttpError {
   if (error.code === "teable_not_configured") {
     return unprocessable(error.message);
   }
