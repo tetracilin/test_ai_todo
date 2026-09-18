@@ -104,6 +104,93 @@ jobs:
         working-directory: discord-bridge
         run: npm ci && npm test
 
+  # Runs the server-dependent vitest suites (general-server + serialized) on
+  # every PR that touches server-tested paths. Closes the gap CICD/PLAN_CICD.md
+  # documents at length: `unit` above runs only the non-server vitest groups,
+  # so a PR could (and twice did — #80, #81) merge green while breaking a
+  # server suite that only t3-nightly, after merge, would ever run.
+  #
+  # This job ALWAYS RUNS, even when nothing relevant changed — it just skips
+  # its own later steps via `if:` on each one, so the job still reports a real
+  # `success` conclusion for every commit. A job-level `if:` that sometimes
+  # makes the job not run at all would make this check adjective (PLAN_CICD.md
+  # §2.1's own warning): "branch protection then waits forever for a context
+  # that never reports". A required check must always report.
+  #
+  # Deliberately unsharded, unlike t3-nightly.yml's server_tests_general/
+  # server_tests_serialized: keeping this to one job name keeps it simple to
+  # add as a required check without also re-editing branch protection every
+  # time the nightly shard count changes. If PR latency from this job becomes
+  # a real complaint, shard it the same way nightly does and gate on a small
+  # "server-tests" summary job the same way t3-nightly's `summary` gates on
+  # its matrixes — not before.
+  server_tests:
+    name: server-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: the relevance check below diffs against the PR's
+          # base sha (or the previous push sha), which a shallow checkout
+          # would not have locally.
+          fetch-depth: 0
+
+      - name: Determine whether this change touches server-tested paths
+        id: relevant
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request) base_sha="${{ github.event.pull_request.base.sha }}" ;;
+            push) base_sha="${{ github.event.before }}" ;;
+            *) base_sha="" ;;
+          esac
+          # Fail safe to "relevant": an unknown event, a missing base sha, or
+          # a base sha this shallow-of-nothing... checkout doesn't have (e.g.
+          # `push`'s "before" on a brand-new branch is all zeros) all run the
+          # suite rather than silently skip it.
+          relevant="true"
+          if [[ -n "$base_sha" ]] \
+             && [[ "$base_sha" != "0000000000000000000000000000000000000000" ]] \
+             && git cat-file -e "$base_sha" 2>/dev/null; then
+            changed="$(git diff --name-only "$base_sha"...HEAD)"
+            if [[ -n "$changed" ]] && ! printf '%s\n' "$changed" | grep -qE '^(server/|packages/db/|packages/shared/|pnpm-lock\.yaml$)'; then
+              relevant="false"
+            fi
+          fi
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+          if [[ "$relevant" == "true" ]]; then
+            echo "server-tests: relevant paths changed (or could not determine base) — running"
+          else
+            echo "server-tests: no server/db/shared/lockfile changes — skipping, job still reports success"
+          fi
+
+      - uses: pnpm/action-setup@v6
+        if: steps.relevant.outputs.relevant == 'true'
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        if: steps.relevant.outputs.relevant == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        if: steps.relevant.outputs.relevant == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # Both package scripts already run preflight:workspace-links and the
+      # plugin-sdk prebuild (see package.json) — no separate ensure-build-deps
+      # step needed here, unlike the old bare `pnpm test:run` t3-nightly.yml's
+      # slow-tests job used to call.
+      - name: general-server suite
+        if: steps.relevant.outputs.relevant == 'true'
+        run: pnpm run test:run:general --group general-server
+      - name: serialized (route/authz) suite
+        if: steps.relevant.outputs.relevant == 'true'
+        run: pnpm run test:run:serialized
+
   # Salvaged wholesale from pr.yml `build`. The client-bundle scan and the
   # no-google network guard are security gates and must block a merge, so this
   # is a required check rather than nightly-only.
