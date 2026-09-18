@@ -71,8 +71,9 @@ jobs:
           # landed between the last deployed sha and this head (squash merges
           # carry the PR title and number). Two small API calls instead of a
           # paged compare: the compare gives the commit count, the commits
-          # endpoint gives the newest 15 titles from head, so the newest
-          # changes are never lost behind a page boundary. The shallow
+          # endpoint gives the newest 100 commits from head; merge commits are
+          # dropped first and then the newest 15 titles are kept, so neither a
+          # page boundary nor a merge commit can hide a PR title. The shallow
           # checkout below needs no history. Best effort on purpose: a failed
           # lookup yields an empty list and a named status, never a failed
           # deploy. `compare` is one of: ok, same_commit, no_marker, lookup_failed.
@@ -87,12 +88,14 @@ jobs:
             auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
             if total=$(curl -fsS "${auth[@]}" "$api/compare/$last...$head?per_page=1" | jq -r '.total_commits') \
                && [[ "$total" =~ ^[0-9]+$ ]] \
-               && changes=$(curl -fsS "${auth[@]}" "$api/commits?sha=$head&per_page=15" \
+               && changes=$(curl -fsS "${auth[@]}" "$api/commits?sha=$head&per_page=100" \
                     | jq -r --argjson total "$total" '
                         [.[:$total][] | .commit.message | split("\n")[0]
                          | select(test("^Merge (pull request|branch)") | not)]
-                        | reverse
-                        | (if $total > 15 then ["… \($total - 15) earlier commits"] + . else . end)
+                        | . as $titles
+                        | ($titles[:15] | reverse)
+                        | (if ($titles | length) > 15 then ["… \(($titles | length) - 15) earlier commits"] + . else . end)
+                        | (if $total > 100 then ["… only the newest 100 commits were inspected"] + . else . end)
                         | .[] | "• " + .'); then
               compare="ok"
             else
