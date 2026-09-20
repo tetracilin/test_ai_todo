@@ -197,8 +197,13 @@ its `.id` as `<threadId>` (a GraphQL node id, starts with `PRRT_`) and its `.com
 
 4. Not valid: reply with a one-sentence reason (same `replies` call), resolve the thread the same
    way, and list it under "disputed" in your report.
-5. Push (round +1). Then wait up to 5 minutes for a new `Greptile Review` check-run on the new
-   head:
+5. If you made **no commit** (every thread was disputed), there is no new head and Greptile will
+   not re-run on its own. Do not wait for a new-head review. Comment **once**
+   (`gh pr comment <n> --body "@greptile review"`) to request a rerun on the current head, then
+   run `node .claude/skills/pr-loop/scripts/pr-readiness.mjs <n> --wait` (default timeout). If
+   Greptile still reports non-success with all threads resolved, it is a real block: go to step 6b.
+   Otherwise (you did commit): push (round +1). Then wait up to 5 minutes for a new
+   `Greptile Review` check-run on the new head:
 
    ```sh
    node .claude/skills/pr-loop/scripts/pr-readiness.mjs <n> --wait --timeout 5

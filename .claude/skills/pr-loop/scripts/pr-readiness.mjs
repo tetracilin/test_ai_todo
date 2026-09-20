@@ -12,10 +12,10 @@
 // blocked:local_head_not_pushed, blocked:draft, blocked:merge_conflict, wait, fix_ci,
 // fix_review, rebase, ready_for_human_merge (plus blocked:timeout_waiting_for_checks
 // from --wait).
-import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { spawnNoShell } from "./spawn-safe.mjs";
 import { parseArgs } from "../../../../.agents/skills/pr-gardening/scripts/lib.mjs";
 
 export const DEFAULT_REPOSITORY = "tetracilin/test_ai_todo";
@@ -24,21 +24,20 @@ export const GREPTILE_CHECK_NAME = "Greptile Review";
 export const GREPTILE_APP_SLUG = "greptile-apps";
 export const GREPTILE_LOGIN = "greptile-apps";
 const GREEN_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
-const GREPTILE_CLEAN_CONCLUSIONS = new Set(["success", "neutral"]);
+const GREPTILE_CLEAN_CONCLUSIONS = new Set(["success"]);
 const FAILED_LOG_LINE = /FAIL|Error|error TS|×|✕|##\[error\]|Test Files|Tests  |ELIFECYCLE/;
 const FAILED_LOG_MAX_LINES = 200;
 const THREAD_TEXT_LIMIT = 300;
 const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
-// Process helpers (every external command goes through spawnSync with shell on
-// Windows, because git/gh/pnpm are .cmd shims there).
+// Process helpers (every external command goes through spawnNoShell: no shell ever
+// parses an argument value; see spawn-safe.mjs for the Windows .cmd shim handling).
 // ---------------------------------------------------------------------------
 
 export function runCommand(cmd, args, { input } = {}) {
-  const result = spawnSync(cmd, args, {
+  const result = spawnNoShell(cmd, args, {
     encoding: "utf8",
-    shell: process.platform === "win32",
     maxBuffer: MAX_BUFFER_BYTES,
     input,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
@@ -257,10 +256,11 @@ export function formatAssessment(assessment) {
 
 const PR_FIELDS = "number,url,state,isDraft,headRefOid,headRefName,baseRefName,mergeable,mergeStateStatus,reviewDecision";
 
-const REVIEW_THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){
+const REVIEW_THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){
-      reviewThreads(first:100){
+      reviewThreads(first:100,after:$cursor){
+        pageInfo{ hasNextPage endCursor }
         nodes{ id isResolved isOutdated path line comments(first:1){ nodes{ author{ login } body databaseId } } }
       }
     }
@@ -347,13 +347,22 @@ function fetchBehindBy(repository, baseRefName, headSha) {
 
 function fetchReviewThreads(repository, number) {
   const [owner, name] = repository.split("/");
-  // The query travels over stdin (-F query=@-) so no shell quoting is needed on Windows.
-  const response = ghJsonSafe(
-    ["api", "graphql", "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`, "-F", "query=@-"],
-    { input: REVIEW_THREADS_QUERY },
-  );
-  if (response.errors?.length) throw new Error(`graphql: ${response.errors.map((entry) => entry.message).join("; ")}`);
-  return response.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+  const threads = [];
+  let cursor = null;
+  // Follow every page: an unresolved thread past the first 100 must not be invisible.
+  for (let page = 0; page < 100; page += 1) {
+    // The query travels over stdin (-F query=@-) so no shell quoting is needed on Windows.
+    const args = ["api", "graphql", "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`];
+    if (cursor) args.push("-F", `cursor=${cursor}`);
+    args.push("-F", "query=@-");
+    const response = ghJsonSafe(args, { input: REVIEW_THREADS_QUERY });
+    if (response.errors?.length) throw new Error(`graphql: ${response.errors.map((entry) => entry.message).join("; ")}`);
+    const connection = response.data?.repository?.pullRequest?.reviewThreads;
+    threads.push(...(connection?.nodes ?? []));
+    if (!connection?.pageInfo?.hasNextPage) return threads;
+    cursor = connection.pageInfo.endCursor;
+  }
+  throw new Error("review threads exceed the pagination limit; refusing to assess a partial list");
 }
 
 export function assessPr(repository, number) {

@@ -7,10 +7,10 @@
 //   node .claude/skills/pr-loop/scripts/pr-preflight.mjs [--base origin/develop]
 //     [--body-file <path>] [--title "<pr title>"] [--json] [--allow-lockfile]
 //     [--skip-server-tests "<reason>"] [--no-fetch]
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { spawnNoShell } from "./spawn-safe.mjs";
 import { parseArgs } from "../../../../.agents/skills/pr-gardening/scripts/lib.mjs";
 
 export const DEFAULT_BASE = "origin/develop";
@@ -516,9 +516,8 @@ export function renderJson(checks) {
 // ---------------------------------------------------------------------------
 
 export function run(cmd, args, { cwd } = {}) {
-  const result = spawnSync(cmd, args, {
+  const result = spawnNoShell(cmd, args, {
     encoding: "utf8",
-    shell: process.platform === "win32",
     cwd,
     maxBuffer: SPAWN_MAX_BUFFER_BYTES,
     stdio: ["ignore", "pipe", "pipe"],
@@ -657,7 +656,6 @@ export function collectPreflight(options, { log = () => {} } = {}) {
   const committedPaths = baseTip ? gitLines(["diff", "--name-only", `${base}...HEAD`], repoRoot) : [];
   const status = parsePorcelainStatus(git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], repoRoot).stdout);
   const classified = classifyPaths([...committedPaths, ...status.paths]);
-  const existing = classified.all.filter((entry) => existsSync(path.join(repoRoot, entry)));
 
   // scope_pipeline_mix
   checks.push(checkPipelineMix(classified));
@@ -671,8 +669,13 @@ export function collectPreflight(options, { log = () => {} } = {}) {
 
   // server_tests
   const skipReason = options.skip_server_tests === true ? "" : options.skip_server_tests;
-  const selection = classified.server.length > 0 && skipReason === undefined
-    ? selectServerTests({ changedPaths: existing, testFiles: loadServerTestFiles(repoRoot) })
+  // Deleted modules stay in the input so their surviving sibling/importing tests are still
+  // selected; only test files that no longer exist on disk are dropped from the result.
+  const rawSelection = classified.server.length > 0 && skipReason === undefined
+    ? selectServerTests({ changedPaths: classified.all, testFiles: loadServerTestFiles(repoRoot) })
+    : null;
+  const selection = rawSelection
+    ? { ...rawSelection, files: rawSelection.files.filter((file) => existsSync(path.join(repoRoot, file))) }
     : null;
   const plan = serverTestsPlan({ classified, skipReason, selection });
   if (plan.check) checks.push(plan.check);

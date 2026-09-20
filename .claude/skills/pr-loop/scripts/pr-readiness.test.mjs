@@ -119,6 +119,11 @@ describe("assessGreptile", () => {
     assert.equal(result.threads.unresolvedItems[0].text.startsWith("**Newest commits can disappear**"), true);
   });
 
+  it("does not treat a neutral Greptile conclusion as clean", () => {
+    const result = assessGreptile([checkRun("Greptile Review", { conclusion: "neutral" })], []);
+    assert.equal(result.check.clean, false);
+  });
+
   it("reports a missing Greptile check when no run exists", () => {
     const result = assessGreptile([checkRun("unit")], []);
     assert.equal(result.check.present, false);

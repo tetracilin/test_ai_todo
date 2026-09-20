@@ -33,7 +33,7 @@ Autonomy is fixed by the repo owner: fix and push, at most 3 review rounds, neve
 Both scripts need only Node 20+, but the gates they run (server tests via `npx vitest`, `pnpm check:token-gates`, `pnpm --filter <workspace> typecheck`) need the workspace installed: run `pnpm install` in the worktree once before step 1 if `node_modules` is missing, otherwise those checks report FAIL for a missing binary rather than a real test or type error. Run both from the repo root of your execution workspace, using the repo-root path exactly as written.
 
 ```bash
-node .claude/skills/pr-loop/scripts/pr-preflight.mjs [--base origin/develop] [--body-file <path>] [--title "<pr title>"] [--json] [--allow-lockfile] [--allow-ci-files] [--skip-server-tests "<reason>"] [--no-fetch]
+node .claude/skills/pr-loop/scripts/pr-preflight.mjs [--base origin/develop] [--body-file <path>] [--title "<pr title>"] [--json] [--allow-lockfile] [--skip-server-tests "<reason>"] [--no-fetch]
 node .claude/skills/pr-loop/scripts/pr-readiness.mjs [<pr-number>] [--json] [--wait] [--timeout <minutes>] [--interval <seconds>]
 ```
 
@@ -49,7 +49,7 @@ A green t3-ci is not proof the server tests pass: the `unit` job runs only the n
 
 - `gh auth status` succeeds and `gh repo view --json nameWithOwner` reports `tetracilin/test_ai_todo`.
 - You are inside the issue's execution workspace, not a shared checkout. Never edit `/root/projects/t3-paperclip-Aitodo` in place.
-- You are on a `feature/`, `fix/`, `chore/`, or `docs/` branch. If you are on `develop` or `main`, create one: `git fetch origin && git checkout -b feature/<topic> origin/develop`.
+- You are on a `feature/`, `fix/`, or `chore/` branch. If you are on `develop` or `main`, create one: `git fetch origin && git checkout -b feature/<topic> origin/develop`.
 - Never `--force` push a branch someone else has based work on; never push to `develop` or `main`; never touch `main`.
 
 ### 1. Preflight
