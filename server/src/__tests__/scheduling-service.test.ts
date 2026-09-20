@@ -296,6 +296,26 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(scheduled.items[0]?.scheduledAt).toBe("2026-03-08T13:00:00.000Z");
   });
 
+  it("generates due issues for every company with an active routine, once per day", async () => {
+    const { companyId, svc } = await seedFixture();
+    const active = await svc.createRoutine(companyId, { title: "Daily sweep", recurrenceRule: { kind: "daily" } }, {});
+    const paused = await svc.createRoutine(companyId, { title: "Paused sweep", recurrenceRule: { kind: "daily" } }, {});
+    await svc.updateRoutine(companyId, paused.id, { status: "paused" });
+    const asOf = new Date("2026-08-22T12:00:00Z");
+
+    const first = await svc.generateDueIssuesForActiveCompanies({ asOf });
+    expect(first).toEqual({ companies: 1, created: 1 });
+
+    const repeat = await svc.generateDueIssuesForActiveCompanies({ asOf });
+    expect(repeat.created).toBe(0);
+
+    const generated = await db
+      .select({ originId: issues.originId })
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), eq(issues.originKind, "scheduling_routine_instance")));
+    expect(generated.map((row) => row.originId)).toEqual([active.id]);
+  });
+
   it("creates no duplicate issues under concurrent repeated generation", async () => {
     const { companyId, svc } = await seedFixture();
     const routine = await svc.createRoutine(

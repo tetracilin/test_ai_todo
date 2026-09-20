@@ -65,6 +65,7 @@ import {
   workspaceOperationService,
 } from "./services/index.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
+import { schedulingService } from "./services/scheduling.js";
 import { createSecretProposalsService } from "./services/secret-proposals.js";
 import { environmentRuntimeService } from "./services/environment-runtime.js";
 import { createDbAdapterAuthSessionStore } from "./services/codex-device-login-service.js";
@@ -1019,6 +1020,28 @@ export async function startServer(): Promise<StartedServer> {
     pluginWorkerManager,
     enabled: async () => (await instanceSettingsService(db).getExperimental()).enableExternalObjects === true,
   });
+  // Scheduling routines only create their tasks when something asks them to. Without
+  // this sweep a daily routine never produced a task unless someone pressed "Run".
+  // Throttled: a routine's next task only changes at the routine's local midnight.
+  const SCHEDULING_ROUTINE_SWEEP_MIN_INTERVAL_MS = 5 * 60 * 1000;
+  let lastSchedulingRoutineSweepAt = 0;
+  const scheduleSchedulingRoutineSweep = (now = new Date()) => {
+    if (heartbeatSchedulerStopped) return;
+    if (now.getTime() - lastSchedulingRoutineSweepAt < SCHEDULING_ROUTINE_SWEEP_MIN_INTERVAL_MS) return;
+    lastSchedulingRoutineSweepAt = now.getTime();
+    trackHeartbeatSchedulerWork(schedulingService(db)
+      .generateDueIssuesForActiveCompanies({ asOf: now }, (companyId, err) => {
+        logger.error({ err, companyId }, "scheduling-routine sweep failed for company");
+      })
+      .then((result) => {
+        if (result.created > 0) {
+          logger.info({ ...result }, "scheduling-routine sweep created due tasks");
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "scheduling-routine sweep failed");
+      }));
+  };
   const scheduleExternalObjectRefreshSweep = (now = new Date()) => {
     if (heartbeatSchedulerStopped) return;
     trackHeartbeatSchedulerWork(externalObjects
@@ -1459,6 +1482,7 @@ export async function startServer(): Promise<StartedServer> {
 
         if (heartbeatSchedulerStopped) return;
         scheduleExternalObjectRefreshSweep(new Date());
+        scheduleSchedulingRoutineSweep(new Date());
 
         if (heartbeatSchedulerStopped) return;
         scheduleMergedPullRequestConfirmationSweep();
@@ -1612,6 +1636,7 @@ export async function startServer(): Promise<StartedServer> {
     await runEnvironmentLeaseCleanupSweep(0);
     startHeartbeatSchedulerInterval(() => {
       scheduleExternalObjectRefreshSweep(new Date());
+      scheduleSchedulingRoutineSweep(new Date());
       scheduleEnvironmentLeaseCleanupSweep();
     });
   }

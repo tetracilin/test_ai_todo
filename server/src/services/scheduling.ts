@@ -469,6 +469,31 @@ export function schedulingService(db: Db) {
     });
   }
 
+  /**
+   * Generate due issues for every company that has an active routine.
+   * Idempotent: `lastGeneratedForDate` and the per-day idempotency key stop duplicates,
+   * so it is safe to call on a timer. One failing company does not stop the rest.
+   */
+  async function generateDueIssuesForActiveCompanies(
+    options: GenerateSchedulingRoutineIssues = {},
+    onError?: (companyId: string, err: unknown) => void,
+  ): Promise<{ companies: number; created: number }> {
+    const companies = await db
+      .selectDistinct({ companyId: schedulingRoutines.companyId })
+      .from(schedulingRoutines)
+      .where(eq(schedulingRoutines.status, "active"));
+    let created = 0;
+    for (const { companyId } of companies) {
+      try {
+        const results = await generateDueIssues(companyId, options);
+        created += results.reduce((sum, r) => sum + r.createdIssueIds.length, 0);
+      } catch (err) {
+        onError?.(companyId, err);
+      }
+    }
+    return { companies: companies.length, created };
+  }
+
   async function generateDueIssues(
     companyId: string,
     options: GenerateSchedulingRoutineIssues = {},
@@ -496,5 +521,6 @@ export function schedulingService(db: Db) {
     deleteRoutine,
     generateDueIssuesForRoutine,
     generateDueIssues,
+    generateDueIssuesForActiveCompanies,
   };
 }
