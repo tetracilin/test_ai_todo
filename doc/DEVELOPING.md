@@ -54,6 +54,18 @@ The vite dev server serves an unbundled module graph. This is fast to reload on 
 
 The preview server binds `0.0.0.0` and accepts any Host, so a tailnet or LAN address (e.g. `http://<host>.ts.net:3101/`) works out of the box. The `/api` proxy sets `x-forwarded-host` and `x-forwarded-proto`, which the server's board mutation guard uses to trust the browser's Origin — mutations from `:3101` succeed against the API on `:3100` without further configuration. An HTTPS tunnel in front of the preview server (ngrok, tailscale funnel) is also supported: the tunnel's `x-forwarded-proto` header is preserved when set.
 
+## Agent Adapters On A Local Checkout
+
+Agent creation is limited to the adapters in `PAPERCLIP_SELECTABLE_ADAPTER_TYPES`. The default is
+`hermes_gateway,claude_local`. `pnpm dev` therefore offers Claude Code in the onboarding wizard and the
+New Agent dialog, if the `claude` CLI is on your `PATH`. Install it with
+`npm install -g @anthropic-ai/claude-code`, then run `claude` once to sign in.
+
+To offer other adapters, set the variable before `pnpm dev`, for example
+`PAPERCLIP_SELECTABLE_ADAPTER_TYPES=claude_local,codex_local,hermes_local`.
+See [Agent adapters](../docs/deploy/agent-adapters.md) for CLI prerequisites and for connecting to a
+Hermes Gateway.
+
 ## Storybook
 
 The board UI Storybook keeps stories and Storybook config under `ui/storybook/` so component review files stay out of the app source routes.

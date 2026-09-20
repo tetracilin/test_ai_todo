@@ -69,6 +69,8 @@ vi.mock("../adapters", () => ({
 
 vi.mock("../adapters/metadata", () => ({
   isValidAdapterType: (type: string) => type === "hermes_gateway",
+  isSelectableAdapter: (a: { type: string; disabled: boolean; selectable?: boolean }) =>
+    !a.disabled && (typeof a.selectable === "boolean" ? a.selectable : a.type === "hermes_gateway"),
   isVisualAdapterChoice: (type: string) => type !== "openclaw_gateway",
 }));
 
