@@ -173,7 +173,7 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. **Two different defaults, do not conflate them:** unset, the deploy path falls back to `hermes_gateway,claude_local` (`deploy/compose.yaml:53`, `t3-nightly.yml:126`), while the application's own fallback is `hermes_gateway` only (`server/src/adapters/registry.ts:715`). |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. Unset, it falls back to `hermes_gateway,claude_local` everywhere — deploy path (`deploy/compose.yaml:53`, `t3-nightly.yml:192`) and application code (`server/src/adapters/registry.ts:716`) now agree; the two-different-defaults gap this table used to flag was closed in the adapter-selectable-default fix. |
 | `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables

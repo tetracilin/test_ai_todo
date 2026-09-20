@@ -13,9 +13,9 @@ vi.mock("acpx/runtime", () => ({
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
 
-// Agent creation is gateway-only since c1ffeec67 ("enforce Hermes Gateway AI
-// flow"): `listSelectableServerAdapters()` returns just hermes_gateway. Every
-// create/hire in this suite therefore uses a valid hermes_gateway adapter
+// hermes_gateway is always one of the selectable adapters (see
+// listSelectableServerAdapters() default in server/src/adapters/registry.ts),
+// so every create/hire in this suite uses a valid hermes_gateway adapter
 // config (apiBaseUrl + secret-backed apiKey), mirroring the contract tests in
 // agent-adapter-validation-routes.test.ts.
 const GATEWAY_ADAPTER_CONFIG = {
@@ -1447,20 +1447,19 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  // Agent creation is gateway-only since c1ffeec67: only hermes_gateway is
-  // selectable, and the gateway runtime supports the `local` driver only. The
-  // legacy local CLI adapters (codex, claude, gemini, opencode, cursor, pi) are
-  // no longer selectable at creation — pinning that contract here per adapter.
+  // The default selectable set is hermes_gateway + claude_local (registry.ts).
+  // The other legacy local CLI adapters (codex, opencode, cursor, pi) are not
+  // selectable at creation unless PAPERCLIP_SELECTABLE_ADAPTER_TYPES names them —
+  // pinning that contract here per adapter.
   const nonSelectableAdapterCases = [
     { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
-    { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
     { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
     { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
     { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },
   ];
 
   for (const adapterCase of nonSelectableAdapterCases) {
-    it(`rejects creating an ${adapterCase.adapterType} agent because Hermes Gateway is sole`, async () => {
+    it(`rejects creating an ${adapterCase.adapterType} agent because it is not in the default selectable set`, async () => {
       const environmentId = "33333333-3333-4333-8333-333333333333";
       mockEnvironmentService.getById.mockResolvedValue({
         id: environmentId,
