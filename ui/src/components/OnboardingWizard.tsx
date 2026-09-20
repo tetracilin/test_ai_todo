@@ -284,9 +284,16 @@ export function OnboardingWizard() {
   // it is itself gated on `effectiveOnboardingOpen`, so a mounted-but-closed
   // wizard writes nothing. If the wizard is open the customer is onboarding
   // right now, which supersedes the draft anyway.
-  if (rawBlob !== undefined && companiesQuery.isFetching) {
+  //
+  // Only before the first mount. `saved` is read once by the inner wizard, so
+  // once it is up a later fetch has nothing to decide. The wizard's own company
+  // creation invalidates this query; gating on that refetch unmounted the inner
+  // wizard mid-flow and restarted it from the stale draft at step 1.
+  const innerMountedRef = useRef(false);
+  if (!innerMountedRef.current && rawBlob !== undefined && companiesQuery.isFetching) {
     return null;
   }
+  innerMountedRef.current = true;
 
   return <OnboardingWizardInner saved={saved} />;
 }
