@@ -697,22 +697,31 @@ export function listServerAdapters(): ServerAdapterModule[] {
 /**
  * Adapters an operator may pick when creating an agent.
  *
- * The default stays hermes_gateway only, as commit c1ffeec6 ("enforce Hermes
- * Gateway AI flow") established. PAPERCLIP_SELECTABLE_ADAPTER_TYPES widens it
- * for one instance without changing that default anywhere else.
+ * Default is hermes_gateway,claude_local — matching the fallback every deploy
+ * config already bakes in (deploy/compose.yaml, t3-nightly.yml, t3-release.yml)
+ * per CICD/PLAN_CICD.md §2.2. Commit c1ffeec6 ("enforce Hermes Gateway AI flow")
+ * originally hardcoded hermes_gateway only; PR #73 introduced
+ * PAPERCLIP_SELECTABLE_ADAPTER_TYPES and widened the deploy-level default to
+ * include claude_local ("the app needs Claude Code to function") but left this
+ * code fallback narrower to avoid changing already-deployed instances. Since
+ * every real deployment path already sets the env var explicitly (so this
+ * fallback never applies there), this only ever affected checkouts that don't
+ * go through those configs — chiefly local `pnpm dev` — where agent creation
+ * 422s on every adapter the onboarding UI offers. Matching the deploy default
+ * here removes the last place hermes_gateway-only actually bites.
  *
  * The local adapters need their CLI on the host: claude_local needs Claude
- * Code. Registration does not check for it, so an instance that has it must
- * say so. A comma-separated list replaces the default. Unknown or
- * unregistered types are skipped, so a stale entry degrades the list instead
- * of failing the instance.
+ * Code (already installed in the production image, see Dockerfile). A
+ * comma-separated PAPERCLIP_SELECTABLE_ADAPTER_TYPES replaces this default.
+ * Unknown or unregistered types are skipped, so a stale entry degrades the
+ * list instead of failing the instance.
  */
 export function listSelectableServerAdapters(): ServerAdapterModule[] {
   const declared = (process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
-  const types = declared.length > 0 ? declared : ["hermes_gateway"];
+  const types = declared.length > 0 ? declared : ["hermes_gateway", "claude_local"];
   const seen = new Set<string>();
   const selectable: ServerAdapterModule[] = [];
   for (const type of types) {
