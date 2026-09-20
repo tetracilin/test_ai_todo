@@ -179,6 +179,11 @@ When a task produces a user-inspectable deliverable file, follow the artifact up
 `doc/AGENT-ARTIFACTS.md` (prefer `skills/paperclip/scripts/paperclip-upload-artifact.sh`) rather
 than leaving it only as a local workspace path — see `AGENTS.md` §5.6.
 
+To ship a change, use the `/pr-loop` skill (`.claude/skills/pr-loop/SKILL.md`). It runs the
+local gates (`pr-preflight.mjs`), opens or updates the PR to `develop`, and drives CI and
+Greptile to green (`pr-readiness.mjs`, at most 3 fix-and-push rounds). It never merges; the
+hand-off comment it posts is a report, not authorization to merge.
+
 CI/CD rules for this repository
 
 These rules apply to every human and every agent working on tetracilin/test_ai_todo. They are not suggestions. If a task cannot be completed within these rules, stop and ask — do not work around them.
