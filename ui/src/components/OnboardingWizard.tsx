@@ -27,7 +27,7 @@ import {
 import { getUIAdapter } from "../adapters";
 import { listUIAdapters } from "../adapters";
 import { isVisualAdapterChoice } from "../adapters/metadata";
-import { useDisabledAdaptersSync, useAdapterRegistryLoaded } from "../adapters/use-disabled-adapters";
+import { useDisabledAdaptersSync, useAdapterRegistryLoaded, useSelectableAdapterTypes } from "../adapters/use-disabled-adapters";
 import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "./agent-config-defaults";
@@ -350,6 +350,7 @@ function OnboardingWizardInner({
   // mounted globally, including on /auth, where protected adapter routes are
   // expected to reject signed-out browsers.
   const disabledTypes = useDisabledAdaptersSync({ enabled: effectiveOnboardingOpen });
+  const selectableTypes = useSelectableAdapterTypes({ enabled: effectiveOnboardingOpen });
   const adapterRegistryLoaded = useAdapterRegistryLoaded({ enabled: effectiveOnboardingOpen });
 
   const initialStep = effectiveOnboardingOptions.initialStep ?? 0;
@@ -670,6 +671,7 @@ function OnboardingWizardInner({
       .filter((a) =>
         !SYSTEM_ADAPTER_TYPES.has(a.type) &&
         !disabledTypes.has(a.type) &&
+        (selectableTypes === null || selectableTypes.has(a.type)) &&
         isVisualAdapterChoice(a.type)
       )
       .map((a) => ({ ...getAdapterDisplay(a.type), type: a.type }));
@@ -678,7 +680,7 @@ function OnboardingWizardInner({
       recommendedAdapters: all.filter((a) => a.recommended),
       moreAdapters: all.filter((a) => !a.recommended),
     };
-  }, [disabledTypes]);
+  }, [disabledTypes, selectableTypes]);
 
   // The default (or a saved) adapterType can name an adapter the server has
   // since disabled — e.g. a cloud sandbox registry without claude_local. The

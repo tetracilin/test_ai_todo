@@ -42,6 +42,8 @@ export interface AdapterInfo {
   modelsCount: number;
   loaded: boolean;
   disabled: boolean;
+  /** Server allow-list for agent creation (PAPERCLIP_SELECTABLE_ADAPTER_TYPES). Absent on older servers. */
+  selectable?: boolean;
   capabilities: AdapterCapabilities;
   acp?: AcpTargetDescriptor;
   /** Installed version (for external npm adapters) */

@@ -113,6 +113,7 @@ vi.mock("../adapters/use-disabled-adapters", () => ({
   // so every export the component reaches for has to be here — omitting one
   // makes it undefined and the call throws.
   useAdapterRegistryLoaded: () => true,
+  useSelectableAdapterTypes: () => null,
 }));
 vi.mock("../adapters/use-adapter-capabilities", () => ({
   useAdapterCapabilities: () => () => ({
