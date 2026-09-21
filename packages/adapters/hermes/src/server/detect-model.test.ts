@@ -100,8 +100,10 @@ async function withHermesHomeConfig(
 
   await mkdir(hermesDir, { recursive: true });
   await writeFile(configPath, `${configLines.join("\n")}\n`, "utf8");
+  const previousHermesHome = process.env.HERMES_HOME;
   process.env.HOME = tempHome;
   process.env.USERPROFILE = tempHome;
+  delete process.env.HERMES_HOME;
   delete process.env.HOMEDRIVE;
   delete process.env.HOMEPATH;
   for (const key of providerEnvKeys) {
@@ -111,6 +113,8 @@ async function withHermesHomeConfig(
   try {
     await fn();
   } finally {
+    if (previousHermesHome === undefined) delete process.env.HERMES_HOME;
+    else process.env.HERMES_HOME = previousHermesHome;
     await rm(tempHome, { recursive: true, force: true });
   }
 }
