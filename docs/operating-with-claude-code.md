@@ -118,8 +118,10 @@ Two shapes of change are forbidden and Claude Code should refuse them:
 
 - **Pipeline files mixed with app code.** `.github/workflows/`, `deploy/compose.yaml` and
   `deploy/scripts/` get their own PR, labelled `ci`, reviewed by a human.
-- **Anything from upstream.** This repo is a hard fork of `paperclipai/paperclip`. No upstream
-  remote, no merges from upstream, no restoring upstream's workflows.
+- **A general sync from upstream.** This repo is a hard fork of `paperclipai/paperclip`. No
+  upstream remote, no merges from upstream, no restoring upstream's workflows. One exception:
+  Claude Code may download specific upstream files when the current feature requires them. The PR
+  must name the upstream commit and paths (see `doc/ORIGIN.md`).
 
 ### Claude Code gave me a command to run on the server
 

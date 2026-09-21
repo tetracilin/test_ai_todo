@@ -18,6 +18,25 @@ Fork behaviour wins on conflict unless the pick is precisely the point.
 
 Preserve `LICENSE` and `NOTICE` when copying upstream code.
 
+### Feature-driven upstream import (owner decision, 2026-09-21)
+
+An agent may read and download upstream code **only when the feature in the current task
+requires it**, for example the Hermes runtime image and adapter pieces. This is not a sync.
+The rules above (no remote, no merge or rebase, no upstream workflows) still hold.
+
+1. **Fetch read-only.** Use `gh api repos/paperclipai/paperclip/contents/<path>` or a one-off
+   shallow clone into a temp directory outside the repo. Do not add an `upstream` remote.
+2. **Take the minimum.** Copy only the files the feature needs and adapt them. Fork behaviour
+   wins on conflict. No wholesale directories, history or lockfiles.
+3. **Ship it normally.** A `feature/*` or `fix/*` PR from `develop` with the usual gates. Files
+   under `.github/workflows/`, `deploy/compose.yaml` or `deploy/scripts/` go in a separate PR
+   labelled `ci`.
+4. **Record provenance.** The PR body names the upstream commit sha, the file paths and the
+   licence. Keep `LICENSE`, `NOTICE` and file headers. Use `git cherry-pick -x` only for a whole
+   upstream commit; otherwise write "Adapted from paperclipai/paperclip@<sha>:<path>".
+5. **Unchanged.** Upstream release engineering stays removed. Security fixes keep the human
+   cherry-pick path. If the agent is unsure that the feature needs the import, it asks.
+
 ## What was removed at the fork
 
 Upstream's release engineering was deleted on 2026-09-02, because this fork does not publish

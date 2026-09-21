@@ -200,6 +200,12 @@ Never commit secrets. .env is gitignored; .env.example must stay safe to publish
 Never touch .github/workflows/, deploy/compose.yaml, or deploy/scripts/ in the same PR as application code. Pipeline changes get their own PR, labelled ci, reviewed by a human.
 Never resolve a merge conflict by taking one side wholesale. Read both sides. If unsure, rebase onto develop and re-push; the PR will show the real diff.
 This is a hard fork of paperclipai/paperclip. Do not add an upstream remote, merge or rebase from upstream, or restore upstream's workflows (release.yml, pr.yml, refresh-lockfile.yml, canary/beta). Security fixes are cherry-picked by a human via a fix/* PR citing the upstream commit. See doc/ORIGIN.md.
+Feature-driven upstream import (owner decision 2026-09-21). An agent may read and download upstream code, but only when the feature in the current task requires it (for example the Hermes runtime pieces). Never as a general sync. Rules:
+- Fetch read-only: gh api repos/paperclipai/paperclip/contents/<path>, or a one-off shallow clone into a temp directory outside the repo. The repo still has no upstream remote.
+- Take only the files the feature needs. Adapt them to fork behaviour; fork wins on conflict. No wholesale directory, history or lockfile imports.
+- Land it through a normal feature/* or fix/* PR from develop with the usual gates. Anything that touches .github/workflows/, deploy/compose.yaml or deploy/scripts/ goes in a separate ci PR.
+- The PR body must name the upstream commit sha, the file paths taken and the licence. Keep LICENSE, NOTICE and file headers. Use git cherry-pick -x only for a whole upstream commit.
+- Upstream's release engineering and workflows stay out, and security fixes keep the human cherry-pick path above. If unsure that the feature needs the import, ask.
 What a PR must have before merge
 Based on current develop (rebase before opening; rebase again if develop moves).
 The t3-ci checks unit, build and build-image green. (Those are the literal status-check names — GitHub Actions reports the job name, not "t3-ci / unit".) A red CI is never "flaky, merge anyway" — fix it or ask.
