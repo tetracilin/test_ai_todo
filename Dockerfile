@@ -94,6 +94,20 @@ RUN echo "cli-tools-epoch: ${CLI_TOOLS_CACHE_EPOCH}" \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
+# Hermes Agent CLI, for the hermes_local adapter. The version is pinned on purpose: PyPI
+# trails the upstream source releases, and an unpinned pip layer would silently change the
+# agent runtime. Python 3.11 goes in its own venv, because the base image ships 3.13 and
+# Hermes is run on 3.11 elsewhere. The final `hermes --version` fails the build if the
+# install is broken. HERMES_HOME (below) puts config, keys, skills and state on the
+# persistent /paperclip volume.
+ARG HERMES_AGENT_VERSION=0.19.0
+COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /usr/local/bin/uv
+RUN UV_PYTHON_INSTALL_DIR=/opt/uv-python uv venv --python 3.11 /opt/hermes \
+  && uv pip install --no-cache --python /opt/hermes/bin/python "hermes-agent==${HERMES_AGENT_VERSION}" \
+  && ln -s /opt/hermes/bin/hermes /usr/local/bin/hermes \
+  && chmod -R a+rX /opt/hermes /opt/uv-python \
+  && hermes --version
+
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
@@ -105,6 +119,7 @@ ENV NODE_ENV=production \
   PORT=3100 \
   SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \
+  HERMES_HOME=/paperclip/.hermes \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_BUILD_VERSION=${PAPERCLIP_BUILD_VERSION} \
   PAPERCLIP_BUILD_COMMIT=${PAPERCLIP_BUILD_COMMIT} \
