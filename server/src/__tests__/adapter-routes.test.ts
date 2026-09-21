@@ -155,7 +155,7 @@ describe("adapter routes", () => {
       const selectable = res.body
         .filter((a: { selectable: boolean }) => a.selectable)
         .map((a: { type: string }) => a.type);
-      expect(selectable.every((type: string) => ["hermes_gateway", "claude_local"].includes(type))).toBe(true);
+      expect(selectable.every((type: string) => ["hermes_gateway", "claude_local", "hermes_local"].includes(type))).toBe(true);
       const codexLocal = res.body.find((a: { type: string }) => a.type === "codex_local");
       expect(codexLocal.selectable).toBe(false);
       for (const adapter of res.body) expect(typeof adapter.selectable).toBe("boolean");

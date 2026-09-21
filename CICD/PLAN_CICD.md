@@ -173,7 +173,7 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. Unset, the deploy path falls back to `hermes_gateway,claude_local,hermes_local` (`deploy/compose.yaml`, `t3-nightly.yml`, `t3-release.yml`). The application's own fallback (`server/src/adapters/registry.ts`, `listSelectableServerAdapters`) is aligned to the same list in the follow-up app PR; until that merges it is one entry shorter (no `hermes_local`). `hermes_local` needs the `hermes` CLI in the image (Dockerfile, `HERMES_AGENT_VERSION`). |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. Unset, the deploy path falls back to `hermes_gateway,claude_local,hermes_local` (`deploy/compose.yaml`, `t3-nightly.yml`, `t3-release.yml`). The application's own fallback (`server/src/adapters/registry.ts`, `listSelectableServerAdapters`) is the same list. `hermes_local` needs the `hermes` CLI in the image (Dockerfile, `HERMES_AGENT_VERSION`). |
 | `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables

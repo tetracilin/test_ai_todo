@@ -9,7 +9,7 @@ summary: Which adapters can create agents, what each needs on the host, and how 
 wizard, the New Agent dialog and the New Agent page show only adapters where `selectable` is true.
 The server rejects any other adapter with `422 Adapter "<type>" is not available on this instance`.
 
-`selectable` comes from `PAPERCLIP_SELECTABLE_ADAPTER_TYPES`. The default is `hermes_gateway,claude_local`.
+`selectable` comes from `PAPERCLIP_SELECTABLE_ADAPTER_TYPES`. The default is `hermes_gateway,claude_local,hermes_local`.
 The deploy files (`deploy/compose.yaml`, `t3-nightly.yml`, `t3-release.yml`) use the same default.
 
 | Adapter | Needs on the host | Sign-in |
