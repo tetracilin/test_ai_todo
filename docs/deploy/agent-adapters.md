@@ -16,6 +16,7 @@ The deploy files (`deploy/compose.yaml`, `t3-nightly.yml`, `t3-release.yml`) use
 |---|---|---|
 | `claude_local` | `claude` CLI (`@anthropic-ai/claude-code`) on `PATH` | One-time interactive browser login per agent or stored session |
 | `codex_local` | `codex` CLI (`@openai/codex`) on `PATH` | One-time device-code login |
+| `hermes_local` | `hermes` CLI (`pip install hermes-agent`, Python 3.11 or newer) on `PATH` | A model provider key, in the Hermes home `.env` or in the agent's env |
 | `hermes_gateway` | A reachable Hermes API server | `apiBaseUrl` and a secret-backed `apiKey` |
 
 The production Docker image already installs the Claude Code, Codex, OpenCode and Kimi CLIs (see the
@@ -23,6 +24,26 @@ The production Docker image already installs the Claude Code, Codex, OpenCode an
 
 `hermes_gateway` is hidden from the card pickers. It needs an `apiBaseUrl` and an `apiKey` that the pickers
 do not collect. Create it from the agent configuration form or the API.
+
+## Run Hermes on the Paperclip host (`hermes_local`)
+
+`hermes_local` starts the `hermes` CLI as a child process on the machine that runs Paperclip, the same
+way `claude_local` starts `claude`. Use it when Paperclip and Hermes share a trusted host.
+
+Hermes keeps its config, provider keys, skills and sessions in one directory (`HERMES_HOME`).
+Paperclip finds it in this order:
+
+1. `adapterConfig.env.HERMES_HOME`
+2. `adapterConfig.env.HOME`, then `.hermes` inside it
+3. the `HERMES_HOME` variable of the Paperclip server
+4. `~/.hermes` of the user that runs Paperclip
+
+Model detection, the environment check and the skills list all read the same directory that the
+CLI uses. Give each environment its own directory. Do not point it at the home of another Hermes
+process, for example a running gateway. Two programs would then write the same `state.db`, and the
+gateway home holds its messaging tokens.
+
+Check it: create the agent, press **Test now**, and read the `hermes --version`, Python and API-key checks.
 
 ## Connect to a Hermes Gateway securely
 
