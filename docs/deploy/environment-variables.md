@@ -19,7 +19,7 @@ All environment variables that Paperclip uses for server configuration.
 | `PAPERCLIP_DEPLOYMENT_MODE` | `local_trusted` | Runtime mode override |
 | `PAPERCLIP_DEPLOYMENT_EXPOSURE` | `private` | Exposure policy when deployment mode is `authenticated` |
 | `PAPERCLIP_API_URL` | (auto-derived) | Paperclip API base URL. When set externally (e.g., via Kubernetes ConfigMap, load balancer, or reverse proxy), the server preserves the value instead of deriving it from the listen host and port. Useful for deployments where the public-facing URL differs from the local bind address. |
-| `PAPERCLIP_SELECTABLE_ADAPTER_TYPES` | `hermes_gateway,claude_local` | Comma-separated adapter types an operator may pick when creating an agent. A set value replaces the default. Unknown or unregistered types are skipped. See [Agent adapters](/deploy/agent-adapters). |
+| `PAPERCLIP_SELECTABLE_ADAPTER_TYPES` | `hermes_gateway,claude_local,hermes_local` | Comma-separated adapter types an operator may pick when creating an agent. A set value replaces the default. Unknown or unregistered types are skipped. See [Agent adapters](/deploy/agent-adapters). |
 | `HERMES_API_BASE_URL` | (unset) | Deploy-level default Hermes Gateway base URL. Use an `https://` URL for any non-loopback host. |
 | `PAPERCLIP_HIDDEN_SETTINGS` | (unset) | Comma-separated settings surfaces to hide from the UI and floor at the API, for operators hosting Paperclip for others (managed cloud, internal shared server). See [Hiding settings surfaces](#hiding-settings-surfaces). |
 

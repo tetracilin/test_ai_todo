@@ -697,7 +697,7 @@ export function listServerAdapters(): ServerAdapterModule[] {
 /**
  * Adapters an operator may pick when creating an agent.
  *
- * Default is hermes_gateway,claude_local — matching the fallback every deploy
+ * Default is hermes_gateway,claude_local,hermes_local — matching the fallback every deploy
  * config already bakes in (deploy/compose.yaml, t3-nightly.yml, t3-release.yml)
  * per CICD/PLAN_CICD.md §2.2. Commit c1ffeec6 ("enforce Hermes Gateway AI flow")
  * originally hardcoded hermes_gateway only; PR #73 introduced
@@ -711,7 +711,8 @@ export function listServerAdapters(): ServerAdapterModule[] {
  * here removes the last place hermes_gateway-only actually bites.
  *
  * The local adapters need their CLI on the host: claude_local needs Claude
- * Code (already installed in the production image, see Dockerfile). A
+ * Code, and hermes_local needs the hermes CLI. Both are installed in the production image (see
+ * the Dockerfile). A
  * comma-separated PAPERCLIP_SELECTABLE_ADAPTER_TYPES replaces this default.
  * Unknown or unregistered types are skipped, so a stale entry degrades the
  * list instead of failing the instance.
@@ -721,7 +722,7 @@ export function listSelectableServerAdapters(): ServerAdapterModule[] {
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
-  const types = declared.length > 0 ? declared : ["hermes_gateway", "claude_local"];
+  const types = declared.length > 0 ? declared : ["hermes_gateway", "claude_local", "hermes_local"];
   const seen = new Set<string>();
   const selectable: ServerAdapterModule[] = [];
   for (const type of types) {

@@ -67,10 +67,11 @@ describe("server adapter registry", () => {
     expect(findServerAdapter("gemini_local")).toBeNull();
   });
 
-  it("offers Hermes Gateway and Claude Code as the default built-in adapters", () => {
+  it("offers Hermes Gateway, Claude Code and local Hermes as the default built-in adapters", () => {
     expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual([
       "hermes_gateway",
       "claude_local",
+      "hermes_local",
     ]);
   });
 

@@ -57,9 +57,10 @@ The preview server binds `0.0.0.0` and accepts any Host, so a tailnet or LAN add
 ## Agent Adapters On A Local Checkout
 
 Agent creation is limited to the adapters in `PAPERCLIP_SELECTABLE_ADAPTER_TYPES`. The default is
-`hermes_gateway,claude_local`. `pnpm dev` therefore offers Claude Code in the onboarding wizard and the
-New Agent dialog, if the `claude` CLI is on your `PATH`. Install it with
-`npm install -g @anthropic-ai/claude-code`, then run `claude` once to sign in.
+`hermes_gateway,claude_local,hermes_local`. `pnpm dev` therefore offers Claude Code and local Hermes in the
+onboarding wizard and the New Agent dialog, if the CLI is on your `PATH`. Install Claude with
+`npm install -g @anthropic-ai/claude-code`, then run `claude` once to sign in. Install Hermes with
+`pip install hermes-agent` (Python 3.11 or newer).
 
 To offer other adapters, set the variable before `pnpm dev`, for example
 `PAPERCLIP_SELECTABLE_ADAPTER_TYPES=claude_local,codex_local,hermes_local`.
