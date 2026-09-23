@@ -1,28 +1,38 @@
-# 2026-09-22 Hermes/local-adapter session handoff
+# 2026-09-22/23 Hermes/local-adapter session handoff
 
 Read this before picking the work back up. It covers three linked threads from
-2026-09-20 to 2026-09-22: the onboarding-adapter bug, the Hermes Gateway
+2026-09-20 to 2026-09-23: the onboarding-adapter bug, the Hermes Gateway
 network path on kvm8, and the `hermes_local` (in-image Hermes CLI)
-architecture. Written so a fresh session — human or agent — does not have to
-re-derive any of it.
+architecture — plus the first live nightly confirmation. Written so a fresh
+session — human or agent — does not have to re-derive any of it.
 
-## Where things stand right now
+## Where things stand right now (updated 2026-09-23)
 
-- **`develop` has everything merged.** Nothing is stuck in review.
-- **Nothing has deployed yet.** All of it lands on staging at the next
-  `t3-nightly` run (22:00 UTC daily). A one-shot cron check was scheduled for
-  ~06:07 local (≈23:00 UTC, an hour after trigger) to read the deploy and
-  `slow-tests` jobs separately and report back — see "Scheduled follow-up"
-  below. **That cron job is session-only** (in-memory on the Claude session
-  that created it, not on disk) — if that session ended, the check did not
-  fire and #125 needs doing manually.
+- **`develop` has everything merged, through #142.** Nothing from this work
+  is stuck in review.
+- **It has deployed, and is confirmed live.** `t3-nightly` run `35800182658`
+  (triggered 2026-09-23 00:01 UTC — the schedule is written as "22:00 UTC"
+  but actually fires just after midnight UTC) deployed commit `1695a4d3`
+  (the #142 merge, so everything through #142 is on staging). `deploy` and
+  `e2e` jobs were green. See "2026-09-23 nightly check" below for the full
+  result, including a live, non-UI confirmation that `hermes_local` and the
+  `hermes` CLI actually work inside the deployed container.
+- **The scheduled cron check (id `9f284032`) never fired** — the session
+  that created it wasn't asked to continue in the background, and this
+  check ended up done by hand instead, at the user's direct request, the
+  next morning. Don't assume a `CronCreate` job scheduled hours out will
+  fire; it needs the same session alive at fire time. #125 is effectively
+  done now (see below) but is left open pending one more thing: a real
+  UI walkthrough (see #134's status).
 - **hermes_gateway (remote HTTP)** was connected once, by hand, from a
   Paperclip agent on nightly to the Hermes gateway on kvm8 — see "Hermes
   Gateway network path" below for the working config. It is not part of any
   default; nothing here depends on it.
-- **hermes_local (in-image CLI)** is the path now wired into the default
-  adapter set and the production image. It has not been exercised end to end
-  (no real `hermes chat` run inside a deployed container yet) — that is #124.
+- **hermes_local (in-image CLI)** is the path wired into the default
+  adapter set and the production image, and is now confirmed present and
+  working in the deployed nightly container. It has **not** been exercised
+  end to end with a real model call yet (no real `hermes chat` run with a
+  live provider key) — that is still #124.
 
 ## Merged PRs, in order
 
@@ -37,20 +47,86 @@ re-derive any of it.
 | #137 | Production `Dockerfile` installs `hermes-agent==0.19.0` (pinned, PyPI, via `uv`/Python 3.11) and sets `HERMES_HOME=/paperclip/.hermes` | `8d3b5591` |
 | #139 | Deploy default (`compose.yaml`, `t3-nightly.yml`, `t3-release.yml`) widened to `hermes_gateway,claude_local,hermes_local` | `5be8c2b0` |
 | #140 | Server code default matches the deploy default (`hermes_gateway,claude_local,hermes_local`) | `cdf1cb61` |
+| #141 | Adds the first version of this handoff doc | `ce249d1f` |
+| #142 | Documents the issue-driven auto-merge loop as a proposal in `CICD/PLAN_AI_FACTORY.md` §5.6, decision **D10** (not built, not decided) | `1695a4d3` |
 
 Source: `docs/qa/2026-09-20-new-user-onboarding-report.md` (the QA run that
 found the onboarding bug and the routine-sweep bug) and this session's own
-work (#122 investigation → #135–#140).
+work (#122 investigation → #135–#142, then the 2026-09-23 nightly check).
+
+## 2026-09-23 nightly check — what was verified live, and how
+
+Done read-only, on explicit request, without triggering any deploy or merge.
+
+**Run checked:** `35800182658` (`gh run list --workflow=t3-nightly.yml`).
+Read job-by-job, not the overall run color, per this repo's own rule
+(a red run can still mean a green deploy):
+
+| Job | Result |
+|---|---|
+| `build-and-deploy-nightly` | ✅ green |
+| `e2e` | ✅ green |
+| `slow-tests` | ❌ red — see below, unrelated to this work |
+
+**Deployed commit**, from `GET http://100.103.41.112:33130/api/health`:
+`commit: 1695a4d3...` — matches the #142 merge exactly.
+
+**`slow-tests` failure, filed as #143:**
+`server/src/__tests__/server-startup-feedback-export.test.ts` failed with
+`No "heartbeatRuns" export is defined on the "@paperclipai/db" mock`
+(`src/services/successful-run-handoff-state.ts:11` via `src/services/issues.ts:74`).
+408 of 410 server test files passed; this was the only failure, and it's
+unrelated to anything in #136–#142.
+
+**`adapter-registry.test.ts` and `scheduling-service.test.ts`:** confirmed
+passing in the nightly log (18/18 and 12/12 tests). **`adapter-routes.test.ts`
+could not be confirmed** — it does not appear anywhere in the job's log
+(10MB, searched for the file name and for a specific test string added in
+#139/#140), and it isn't the failing file either. Most likely just not
+printed as an individual reporter line, but this wasn't verified — worth a
+follow-up if certainty matters.
+
+**Authenticated check (`GET /api/adapters`) was blocked:** nightly runs in
+`PAPERCLIP_DEPLOYMENT_MODE=authenticated` (same posture as production), and
+`GET /api/adapters` returned `403 Board access required`. **The seeded
+tester's password is not retrievable** — `SEED_TESTER_PASSWORD` lives only
+as a GitHub Environment secret on `staging` (`deploy/scripts/seed-staging-tester.sh`),
+which is write-only; no tool here can read a secret's value. No login was
+attempted, and none should be guessed.
+
+**Live confirmation used instead — no credentials needed, more direct than
+the API would have been:** SSH to kvm8 (`ssh kmv8`, alias for the `ghrunner`
+user) and inspect the running container directly:
+
+```sh
+docker exec t3-nightly-paperclip-1 printenv PAPERCLIP_SELECTABLE_ADAPTER_TYPES
+# → hermes_gateway,claude_local,hermes_local
+docker exec t3-nightly-paperclip-1 hermes --version
+# → Hermes Agent v0.19.0 (2026.7.20), Python 3.11.16, install method pip
+docker exec t3-nightly-paperclip-1 printenv HERMES_HOME
+# → /paperclip/.hermes
+```
+
+This is the pattern to reuse for "is X actually live" questions when there's
+no board session available: read the container's real environment and
+binaries over SSH rather than trying to authenticate through the API. It
+proves more than a `selectable: true` API response would (that the CLI
+binary is actually installed and runs), for less effort.
+
+**Not yet done:** an actual UI walkthrough (create company → see the
+adapter picker → pick Hermes/Claude) on nightly. Everything above proves
+the server side is correct; it doesn't prove the UI experience end to end.
+That's what would let #125 and #134 actually close.
 
 ## Open issues from this work
 
 | # | Labels | What it needs |
 |---|---|---|
-| #117 | bug | Umbrella issue for the original onboarding-adapter bug. Superseded by the merged PRs; close once #125 confirms it live. |
-| #122 | qa | Verify `hermes_gateway` end to end with a real gateway. Partially done by hand this session — see below. Needs the actual agent-run leg (steps 6–8) repeated and written up. |
+| #117 | bug | Umbrella issue for the original onboarding-adapter bug. Superseded by the merged PRs; close once a real UI pass (below) confirms it. |
+| #122 | qa | Verify `hermes_gateway` end to end with a real gateway. Partially done by hand this session — see "Hermes Gateway network path" below. Needs the actual agent-run leg (steps 6–8) repeated and written up. |
 | #123 | qa | Verify a Claude Code agent run on a **non-Windows** host — every run on this Windows dev box fails (`acpx` spawn issue, see #129). |
-| #124 | qa | `hermes_local` has never produced a real model reply. `hermes_local`'s test-suite run used a placeholder key; the OpenRouter test earlier used a key with insufficient credits. |
-| #125 | qa | **Check tonight's `t3-nightly`.** This is the follow-up cron job below. If it didn't fire, do it manually: `gh run list --workflow=t3-nightly.yml`, read both jobs, confirm deployed sha, confirm `GET http://100.103.41.112:33130/api/adapters` lists `hermes_local` as `selectable: true`. |
+| #124 | qa | `hermes_local` has never produced a real model reply. The CLI is confirmed installed and running (2026-09-23 check above); a real provider key as a Paperclip secret, plus an @mention, is still needed. |
+| #125 | qa | Check `t3-nightly` after the adapter/wizard/routine merges. **Done by hand 2026-09-23** (deploy green, commit confirmed, `hermes_local` live) — leave open until a UI pass also confirms it, then close together with #134. |
 | #126 | bug, decision | First real user on an authenticated instance gets "No company access" — needs an owner decision on the bootstrap path. |
 | #127 | bug, decision | Scheduling routines have no timezone control (default UTC) — owner decision on per-routine/company/user. |
 | #128 | enhancement, decision | Reviewer approval needs a comment (422 otherwise) and there's no Approve button — owner decision on UX. |
@@ -59,8 +135,9 @@ work (#122 investigation → #135–#140).
 | #131 | qa | Full real-browser (not headless-only) fresh-account pass on current `develop`. |
 | #132 | bug, qa | Dossier/document comments — owner's original acceptance test flags these as broken; not re-verified since. |
 | #133 | decision | Triage the older, unrelated open PRs #106–#113 (mostly `ci` labelled, need human review). |
-| #134 | — | User-filed, independent report of the same onboarding symptom as #117. Commented with the fix PR list; not closed until #125 confirms live. |
+| #134 | — | User-filed, independent report of the same onboarding symptom as #117. Commented twice with the fix and, 2026-09-23, live confirmation via SSH; still open pending a real UI pass — see #125. |
 | #138 | bug | Flaky UI test `MarkdownEditor.test.tsx` ("applies async..."), unrelated to this work, seen once in PR #136's CI, passed on re-run. |
+| #143 | bug | `server-startup-feedback-export.test.ts` fails on a missing `heartbeatRuns` export in a `@paperclipai/db` mock — found in the 2026-09-23 nightly run, unrelated to #136–#142. |
 
 ## Hermes Gateway network path (kvm8) — what actually works
 
@@ -106,11 +183,12 @@ knowledge about the host.
 ## `hermes_local` architecture — the decision and why
 
 Upstream (`paperclipai/paperclip`, read via `gh api`, not cloned/merged —
-see the new policy in `doc/ORIGIN.md` §"Feature-driven upstream import")
+see the policy in `doc/ORIGIN.md` §"Feature-driven upstream import")
 ships two Hermes adapters:
 
 - `hermes_local` — runs the `hermes` CLI as a **child process on the
-  Paperclip host**. This is what got built out this session.
+  Paperclip host**. This is what got built out this session, and is now
+  confirmed live on nightly (see above).
 - `hermes_gateway` — calls an **already-running** Hermes API server over
   HTTP/SSE. This is the kvm8 path above.
 
@@ -123,15 +201,16 @@ client/server call — and sharing kvm8's live gateway home (`/root/.hermes`)
 was rejected: it's root-owned, holds the gateway's own messaging tokens,
 and two processes writing one SQLite `state.db` is a real risk. Each
 Paperclip-run agent gets its own `HERMES_HOME` instead
-(`/paperclip/.hermes` in the container, on the persistent volume).
+(`/paperclip/.hermes` in the container, on the persistent volume —
+confirmed set on the live nightly container).
 
 **Version note:** kvm8's standalone gateway runs `hermes-agent==0.21.0`,
 installed from a GitHub tag (not on PyPI). PyPI tops out at `0.19.0`. The
-image installs `0.19.0`, pinned via the `HERMES_AGENT_VERSION` Dockerfile
-arg specifically so it can be bumped later without guessing. Not yet
-verified: whether 0.19 behaves identically to 0.21 for the flags/output
-format `hermes_local`'s adapter code parses (`--source tool --yolo`,
-session-id-from-stdout, `--resume`).
+image installs `0.19.0` (confirmed running live), pinned via the
+`HERMES_AGENT_VERSION` Dockerfile arg specifically so it can be bumped
+later without guessing. Not yet verified: whether 0.19 behaves identically
+to 0.21 for the flags/output format `hermes_local`'s adapter code parses
+(`--source tool --yolo`, session-id-from-stdout, `--resume`).
 
 **Still open, not started:**
 - **Credential handoff skill** — upstream ships a `paperclip-task-bridge`
@@ -142,17 +221,11 @@ session-id-from-stdout, `--resume`).
 - **A real end-to-end run** (#124): create a `hermes_local` agent on a
   deployed instance, give it a real provider key as a Paperclip secret,
   @mention it, confirm a real reply.
-
-## Scheduled follow-up
-
-A one-shot cron job (id `9f284032`, fired via `CronCreate`) was scheduled
-for `7 6 23 9 *` (06:07 local / UTC+7 on 2026-09-23, ~1h after the 22:00 UTC
-nightly trigger) to check `t3-nightly`'s deploy and `slow-tests` jobs, the
-deployed sha, and whether `hermes_local` shows up as `selectable` via
-`GET /api/adapters` on staging. **This job is session-scoped** (lives in
-the Claude session's memory, not on disk) — if that session had already
-ended by fire time, nothing ran and this is still open work, tracked as
-#125.
+- **A real UI walkthrough** (#125/#134): create a company, see the adapter
+  picker offer Claude Code and Hermes, pick one, confirm no 422. Needs a
+  board session — either the seeded tester's actual password (ask the
+  owner directly; it isn't recoverable from any tool available here) or a
+  fresh bootstrap on a scratch instance.
 
 ## Reading order for a fresh session
 
@@ -160,8 +233,11 @@ ended by fire time, nothing ran and this is still open work, tracked as
 2. `docs/qa/2026-09-20-new-user-onboarding-report.md` — the QA run that
    started all of this.
 3. `docs/deploy/agent-adapters.md` — adapter prerequisites, the Hermes
-   Gateway HTTPS/tailscale guide, and the new `hermes_local` section.
+   Gateway HTTPS/tailscale guide, and the `hermes_local` section.
 4. `doc/ORIGIN.md` §"Feature-driven upstream import" — the policy that let
    this session read upstream's Hermes design.
-5. `gh issue list --state open` filtered to labels `qa`/`decision` for the
-   punch list above.
+5. `CICD/PLAN_AI_FACTORY.md` §5.6 and decision **D10** — the drafted,
+   undecided proposal for an issue-driven auto-merge loop (#142), in case
+   that's what a fresh session is meant to pick up next.
+6. `gh issue list --state open` filtered to labels `qa`/`decision` for the
+   punch list above, plus #143 for the newly found flake.
