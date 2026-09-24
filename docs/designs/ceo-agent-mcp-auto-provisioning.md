@@ -278,10 +278,17 @@ activity-log, and tool-profile-binding-precedence machinery with no new schema.
    different/narrower/wider set than the default). That edited-and-approved
    case is what "deviation" means here; it is a human override of the default,
    not a second system behavior to build.
-2. **Role→profile naming convention:** how does the lookup map "CTO" (or a
-   teams-catalog role) to a specific `toolProfiles` row (or rows — see
-   Recommended Approach)? Not yet defined — needed before the lookup can be
-   implemented.
+2. **Role→profile naming convention — including normalization (outside-voice
+   finding):** how does the lookup map "CTO" (or a teams-catalog role) to a
+   specific `toolProfiles` row (or rows — see Recommended Approach)? Not yet
+   defined. `agents.role` is unconstrained free text
+   (`role: text("role").notNull().default("general")` — no enum, no catalog
+   binding), so nothing today guarantees "CTO" / "cto" / "Chief Technology
+   Officer" aren't three different values across existing agents. The lookup
+   design must specify a normalization/matching strategy (e.g. case-insensitive
+   match against a canonical catalog role list, with an explicit "no match"
+   fallback — not a silent miss) as part of answering this question, not as a
+   separate follow-up; this question is not complete without it.
 3. **No matching profile for a role, and what "blocked" means operationally:**
    if the lookup finds no profile for the new agent's role, the agent record is
    still created (avoids inventing a new agent-instance MCP schema just to gate
