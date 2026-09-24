@@ -63,24 +63,47 @@ that against the actual code and found it doesn't exist for most installs:
 creates an approval record at all (`server/src/routes/agents.ts:3139-3359`) — there
 is no approval event to attach to in the default configuration.
 
-**Corrected hook point: agent creation, not hire approval.** Both routes converge
-on the same underlying agent-creation service call (`server/src/services/agents.ts`,
-`svc.create(...)`, aliased `svc` at `server/src/routes/agents.ts:311`). Code-verified
-(round-3 review): `svc.create()` is called unconditionally with respect to
-`requireBoardApprovalForNewAgents` from both `POST /agent-hires` (agents.ts:3211)
-and `POST /agents` (agents.ts:3415) — that flag only changes the resulting status /
-whether a hire-approval row is *also* created, not whether `svc.create()` runs. The
-grant-request emission attaches **inside `svc.create()`'s own body**, not as a
-separate call added after each route invokes it — this is a real, load-bearing
-choice, not a wording detail: `svc.create()` has a **third call site**,
-`server/src/services/approvals.ts:161` (inside `approve()`, resolving a `hire_agent`
-approval whose payload has no `agentId` yet). Hooking inside the body covers that
-path too, with no separate code needed per call site; hooking after each call site
-instead would silently miss that third path. "CEO-attributed" describes attribution
-in the activity log (recorded as taken on the CEO's behalf / under the CEO's
-authority), not a literal runtime dependency on the CEO agent's process being
-healthy — this is deterministic system code, not the CEO agent's own LLM-driven
-heartbeat reasoning.
+**Superseded (revision 4 — outside-voice review): shared-body hook replaced with
+an explicit allowlist.** The prior draft hooked inside `agentSvc.create()`'s own
+body and excluded bootstrap paths by name. That denylist was already wrong on
+day one: `agentSvc.create()` has **five** production call sites, not four —
+`grep -rn "agentSvc\.create(\|agentsSvc\.create("` across `server/src` (excluding
+tests) finds:
+
+| Call site | What it is | Grant emission? |
+|---|---|---|
+| `server/src/routes/agents.ts:3211` (`POST /agent-hires`) | Real hire | **Yes** |
+| `server/src/routes/agents.ts:3415` (`POST /agents`, board-direct) | Real hire | **Yes** |
+| `server/src/services/approvals.ts:161` (`approve()`, `hire_agent` resolution) | Real hire (deferred branch) | **Yes** |
+| `server/src/services/built-in-agents.ts:1660,1765` | Utility-agent seeding (`DEFINITIONS`: briefs, learning, reflection-coach, summarizer — **not** CEO/CTO; the prior draft's exclusion rationale was factually wrong) | No |
+| `server/src/services/onboarding-seed.ts:221` | **The actual first-CEO-of-a-new-company creation** (`SEEDED_AGENT_ROLE = "ceo"`, line 24) — a fresh company, zero tool-access profiles configured. This is the scenario the prior draft thought it had excluded via `built-in-agents.ts`, and never examined. | No |
+| `server/src/services/plugin-managed-agents.ts:419` | Plugin-declared agent(s) at install time — "CEO-attributed" framing doesn't fit a plugin install, and a single declaration can create multiple agents at once (same "wall of pending approvals" risk as bootstrap) | No |
+
+**Decision: explicit allowlist, not a shared-body hook with a denylist.** A
+denylist fails open — a new call site defaults to *included* unless someone
+remembers to add it to the exclusion list, which is exactly how the previous
+draft went wrong twice in one review. An allowlist fails safe: grant emission
+is called explicitly, as its own step, after each of the three real-hire call
+sites above — `POST /agent-hires`, `POST /agents`, and the `hire_agent`
+resolution branch in `approvals.ts:161`. Nothing else is touched, by
+construction, not by a list someone has to keep in sync. A future sixth caller
+of `agentSvc.create()` (a test helper, a new seeding path) gets no grant by
+default — today's behavior — rather than silently granting or silently
+blocking.
+
+**Cost of the switch:** the two route call sites lose the convenience of
+`agentSvc.create()`'s existing `db.transaction` (the `syncAgentSecretBindings`
+in-transaction pattern no longer applies automatically) — each of the three
+sites needs its own explicit transaction wrapping around "create agent, then
+insert grant approval." The nested `approvals.ts:161` site in particular
+doesn't share a transaction with anything today and needs one added from
+scratch. This is real incremental work, not free, but bounded to three call
+sites and no new schema.
+
+"CEO-attributed" still describes attribution in the activity log (recorded as
+taken on the CEO's behalf / under the CEO's authority), not a literal runtime
+dependency on the CEO agent's process being healthy — this is deterministic
+system code, not the CEO agent's own LLM-driven heartbeat reasoning.
 
 This resolves three problems:
 - **Route coverage (previously Open Question #4):** hooking the shared creation
@@ -117,6 +140,62 @@ that Constraints rejects: a fast-tracked grant still writes a reviewable
 activity-log entry attributed to the CEO and is inspectable after the fact — the
 rejected alternative was a bind with *no record at all*. The distinction is
 auditability, not automation level.
+
+## Trigger Mechanism — flow diagram (revision 4: explicit allowlist)
+
+```
+POST /agent-hires ──────► agentSvc.create() ──► [own tx] insert grant-request
+  (agents.ts:3211)           (existing)              │
+                                                       ├─ role → toolProfiles
+POST /agents ────────────► agentSvc.create() ──► [own tx] insert grant-request    lookup (Open Q2)
+  (agents.ts:3415,                (existing)          │
+   board-direct)                                      │
+                                                        │
+approvals.ts:161 ────────► agentSvc.create() ──► [new tx, added by this
+  (hire_agent resolution,      (existing)          design] insert grant-request
+   deferred branch)                                    │
+                                                        │
+built-in-agents.ts:1660,1765 ──► agentSvc.create() ─X  (utility-agent seeding —
+                                                          NOT on the allowlist,
+                                                          no grant emitted)
+onboarding-seed.ts:221 ────────► agentSvc.create() ─X  (first-CEO-of-company —
+  (role: "ceo" hardcoded)                                NOT on the allowlist)
+plugin-managed-agents.ts:419 ──► agentSvc.create() ─X  (plugin install-time —
+                                                          NOT on the allowlist)
+                                                        │
+                    ┌────────────┴────────────┐
+                    │                          │
+            profile found                no profile found
+                    │                          │
+        ┌───────────┴──────────┐               │
+        │                      │               │
+  default profile        human edits            │
+  (auto-approve)         before approving        │
+        │                (deviation)             │
+        │                      │                 │
+        ▼                      ▼                 ▼
+  grant APPROVED         grant PENDING      grant PENDING
+  (CEO-attributed,       (CEO-attributed,   (CEO-attributed,
+   or "system" if        awaiting human)     awaiting human —
+   0/2+ CEO agents,                          Open Q3)
+   Open Q8)
+        │                      │                 │
+        └──────────┬───────────┴─────────────────┘
+                    ▼
+         visible in existing approval-gate /
+         pending-approvals UI (Open Q4) +
+         activity log
+                    │
+     ┌──────────────┴───────────────┐
+     ▼                               ▼
+  approved                       rejected (hire_agent)
+     │                               │
+  MCP resolves at next        agentsSvc.terminate() +
+  heartbeat (existing,        approvalsSvc.cancel() on the
+  buildPaperclipRuntimeMcp    paired grant approval
+  Servers — unchanged)        (round-3 fix, CRITICAL —
+                               see Test Review)
+```
 
 ## Premises
 
@@ -225,10 +304,18 @@ activity-log, and tool-profile-binding-precedence machinery with no new schema.
    iteration):** if an agent's role changes, or a profile definition is later
    revised, re-syncing an already-granted agent's MCP scope is not addressed
    here. Flagging as a known gap rather than silently ignoring it.
-7. **Transactional atomicity — resolved (round 3):** `svc.create()` already
-   transacts; add the grant-approval insert inside it, following the
-   `syncAgentSecretBindings` in-transaction pattern (see Trigger Mechanism).
-   No longer open.
+7. **Transactional atomicity — revised (allowlist switch, revision 4):** each
+   of the three allowlisted call sites needs its own transaction wrapping
+   agent-creation + grant-insert (the shared `svc.create()`-body approach that
+   would have gotten this for free was rejected — see Trigger Mechanism).
+   `approvals.ts:161` needs one added from scratch; the two routes can likely
+   reuse `agentSvc.create()`'s internal transaction pattern per call site.
+   **Failure behavior confirmed (/plan-eng-review):** within each site's own
+   transaction, a grant-insert failure rolls back that transaction — the hire
+   fails too, deliberately, consistent with "never silently unprovisioned."
+   This couples hiring availability to tool-access-table availability, a new
+   dependency; accepted as the simpler, more consistent option over a
+   separate-transaction/retry design.
 8. **CEO-attribution fallback (found in round-3 review):** "CEO-attributed" is
    only cleanly resolvable when exactly one non-built-in, non-pending, no-manager
    agent has role "ceo" (the same resolution `built-in-agents.ts`'s
@@ -263,8 +350,10 @@ activity-log, and tool-profile-binding-precedence machinery with no new schema.
   binding that doesn't exist yet.
 - Existing approval-gate / activity-log infrastructure, including
   `approvalsSvc.cancel()` for the rejection-cleanup path above.
-- `server/src/services/agent-permissions.ts`, `server/src/services/agents.ts`
-  (`svc.create()`, all three call sites), and the `agent-hires` route/service.
+- `server/src/services/agent-permissions.ts`, and the three allowlisted call
+  sites: `server/src/routes/agents.ts:3211,3415` and
+  `server/src/services/approvals.ts:161` (the last needs its own new
+  transaction wrapping — see Open Question #7).
 - **UI:** `ui/src/components/ApprovalPayload.tsx` hard-switches on approval
   `type` (`hire_agent`, `budget_override_required`, `request_board_approval`);
   anything else falls through to `CeoStrategyPayload`, which won't render a
@@ -291,19 +380,33 @@ the build, not open decisions — don't drop them during implementation.
 
 ## Reviewer Concerns
 
-This doc went through 3 rounds of adversarial subagent review (the skill's
-cap). Round 1 (6/10) found the original trigger-mechanism draft too vague to
+This doc went through 3 rounds of adversarial subagent review during drafting
+(the office-hours skill's cap), then `/plan-eng-review` (architecture, code
+quality, test, performance) plus an outside-voice pass.
+
+Round 1 (6/10) found the original trigger-mechanism draft too vague to
 implement. Round 2 (7/10) found it code-grounded but resting on a false
 premise (`requireBoardApprovalForNewAgents` defaults to false, so no approval
 record exists on either route by default) — fixed by hooking the shared
 `svc.create()` instead. Round 3 (7/10) verified that fix against the code and
 found it correct, plus five smaller gaps (rejection-orphans-approval, a third
 `svc.create()` call site, one inaccurate transaction claim, a missing UI
-dependency, and an undefined CEO-attribution fallback) — all incorporated
-directly into the sections above rather than left as a fourth review round,
-since the reviewer confirmed none needed further investigation. No further
-review is scheduled; the next adversarial pass this doc should get is
-`/plan-eng-review` before implementation.
+dependency, and an undefined CEO-attribution fallback) — all incorporated.
+
+`/plan-eng-review` then found: bootstrap seeding would produce a wall of
+pending approvals on a fresh company (fixed by excluding it) — but the
+**outside-voice pass** (fresh Claude subagent, no conversation bias) then
+found via grep that the exclusion itself was built on a wrong premise and an
+incomplete call-site list (2 of 5 real call sites were missing, including the
+actual first-CEO-of-a-new-company path). That finding held up under
+independent verification and drove the revision-4 switch from a shared-body
+hook + denylist to an explicit allowlist — see Trigger Mechanism. This is the
+second time in this doc's history that a call-site enumeration was wrong on
+first pass (round 3 found the first); treat any future claim of "this is
+every call site" as needing a fresh grep, not a re-read of the prior claim.
+
+No further review is scheduled for this doc; the next check is whatever
+`/ship` or a human PR reviewer catches against the actual implementation.
 
 ## What I noticed about how you think
 
