@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,6 +10,26 @@ import { SchedulingRoutineModal } from "./SchedulingRoutineModal";
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: null }),
+}));
+
+// Radix Select needs pointer APIs jsdom lacks. A native <select> keeps the form's
+// value/onValueChange wiring under test without them. The trigger renders nothing.
+vi.mock("@/components/ui/select", () => ({
+  Select: ({ value, onValueChange, children }: {
+    value: string;
+    onValueChange: (next: string) => void;
+    children: React.ReactNode;
+  }) => (
+    <select value={value} onChange={(e) => onValueChange(e.target.value)}>
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => (
+    <option value={value}>{children}</option>
+  ),
 }));
 
 function act(callback: () => void) {
@@ -54,6 +75,21 @@ function setTitle(value: string) {
   act(() => {
     setter.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function zoneSelect(): HTMLSelectElement {
+  return [...document.querySelectorAll("select")].find((el) =>
+    [...el.options].some((option) => option.value === "UTC"),
+  )!;
+}
+
+function chooseZone(zone: string) {
+  const select = zoneSelect();
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+  act(() => {
+    setter.call(select, zone);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 
@@ -113,6 +149,23 @@ describe("SchedulingRoutineModal time zone", () => {
   it("shows a stored zone the runtime does not enumerate", () => {
     stubBrowserZone("UTC");
     renderModal(existingRoutine("Mars/Olympus_Mons"));
-    expect(document.getElementById("routine-timezone")!.textContent).toContain("Mars/Olympus_Mons");
+    expect(zoneSelect().value).toBe("Mars/Olympus_Mons");
+  });
+
+  it("sends the zone the user picks instead of the default", () => {
+    stubBrowserZone("Asia/Ho_Chi_Minh");
+    const onSave = renderModal(null);
+    setTitle("Pick a zone");
+    chooseZone("Europe/Paris");
+    clickSave();
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ timezone: "Europe/Paris" });
+  });
+
+  it("lets the user change an existing routine's zone", () => {
+    stubBrowserZone("Asia/Ho_Chi_Minh");
+    const onSave = renderModal(existingRoutine("America/New_York"));
+    chooseZone("Asia/Tokyo");
+    clickSave();
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ timezone: "Asia/Tokyo" });
   });
 });
