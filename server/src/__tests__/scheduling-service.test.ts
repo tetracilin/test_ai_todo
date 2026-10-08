@@ -162,6 +162,28 @@ describeEmbeddedPostgres("scheduling service", () => {
     await expect(svc.getRoutine(companyId, routine.id)).rejects.toThrow();
   });
 
+  it("stores UTC when a routine omits its time zone, and keeps a stored zone unless the patch sets one", async () => {
+    const { companyId, svc } = await seedFixture();
+    const actor = { agentId: null, userId: "creator-user" };
+    const base = { recurrenceRule: { kind: "daily" } as const, scheduledTime: "18:00" };
+
+    const defaulted = await svc.createRoutine(companyId, { ...base, title: "No zone sent" }, actor);
+    expect(defaulted.timezone).toBe("UTC");
+
+    const local = await svc.createRoutine(
+      companyId,
+      { ...base, title: "Zone sent", timezone: "Asia/Ho_Chi_Minh" },
+      actor,
+    );
+    expect(local.timezone).toBe("Asia/Ho_Chi_Minh");
+
+    const edited = await svc.updateRoutine(companyId, local.id, { estimateMinutes: 45 });
+    expect(edited.timezone).toBe("Asia/Ho_Chi_Minh");
+
+    const moved = await svc.updateRoutine(companyId, local.id, { timezone: "America/New_York" });
+    expect(moved.timezone).toBe("America/New_York");
+  });
+
   it("rejects cross-company references when creating a scheduling routine", async () => {
     const { companyId, svc } = await seedFixture();
     const other = await seedFixture();
