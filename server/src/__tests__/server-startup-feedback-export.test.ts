@@ -201,7 +201,10 @@ vi.mock("detect-port", () => ({
   default: detectPortMock,
 }));
 
-vi.mock("@paperclipai/db", () => ({
+vi.mock("@paperclipai/db", async (importOriginal) => ({
+  // Spread the real module: server code reached via the un-mocked import graph
+  // reads table columns at module load (e.g. heartbeatRuns, documents).
+  ...(await importOriginal<typeof import("@paperclipai/db")>()),
   createDb: createDbMock,
   ensurePostgresDatabase: vi.fn(),
   getPostgresDataDirectory: vi.fn(),
