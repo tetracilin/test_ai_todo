@@ -10,7 +10,7 @@ Three workflows, all prefixed `t3-`:
 
 | File | Trigger | Runs on | Purpose |
 |---|---|---|---|
-| `t3-ci.yml` | PR / push to `develop`, `main` | GitHub-hosted | Merge gate: image builds + fast unit/typecheck |
+| `t3-ci.yml` | PR / push to `develop`, `main` | GitHub-hosted | Merge gate: image builds, fast unit/typecheck, and (since PR #110, CICD/PLAN_AI_FACTORY.md Phase 2.1) the server-dependent vitest suites on any PR that touches server-tested paths |
 | `t3-nightly.yml` | 22:00 UTC, on demand | kmv8 | Deploy `develop` to `t3-nightly` (:33130), then e2e against it |
 | `t3-release.yml` | tag `v*` on `main` | kmv8 | Deploy to `t3-prod` (:33100) behind a human approval gate |
 
