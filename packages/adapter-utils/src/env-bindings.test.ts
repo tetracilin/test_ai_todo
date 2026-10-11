@@ -34,6 +34,18 @@ describe("parseEnvBindings", () => {
     expect(env.USER).toEqual({ type: "user_secret_ref", key: "k", allowMissingOverride: true });
   });
 
+  it("keeps a numeric version selector and drops an unsupported one on a company secret ref", () => {
+    const env = parseEnvBindings({
+      PINNED: { type: "secret_ref", secretId: "s-1", version: 3 },
+      BAD_VERSION: { type: "secret_ref", secretId: "s-2", version: "newest" },
+    });
+
+    expect(env).toEqual({
+      PINNED: { type: "secret_ref", secretId: "s-1", version: 3 },
+      BAD_VERSION: { type: "secret_ref", secretId: "s-2" },
+    });
+  });
+
   it("drops invalid keys, unknown shapes, and incomplete refs", () => {
     const env = parseEnvBindings({
       "1BAD": { type: "plain", value: "x" },
@@ -58,6 +70,10 @@ describe("parseEnvVars", () => {
     const env = parseEnvVars("A=1\n# comment\n\nB = two = three\n1BAD=x\nNOEQ");
 
     expect(env).toEqual({ A: "1", B: " two = three" });
+  });
+
+  it("accepts CRLF line endings", () => {
+    expect(parseEnvVars("A=1\r\nB=2\r\n")).toEqual({ A: "1", B: "2" });
   });
 });
 
