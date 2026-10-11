@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { verifyDocumentAnchorSelector } from "@paperclipai/shared";
 import {
   buildAnchorFromContainerSelection,
@@ -30,6 +30,10 @@ const RENDERED_HTML = `
   <p>The annotation feature is ready when the basic flow works.</p>
 </div>
 `;
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
 function makeContainer(): HTMLElement {
   const div = document.createElement("div");

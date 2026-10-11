@@ -76,6 +76,15 @@ describe("buildNewAgentRuntimeConfig", () => {
     });
   });
 
+  it("trims the cheap model and treats a whitespace-only value as the adapter default", () => {
+    expect(
+      buildNewAgentRuntimeConfig({ cheapModel: "  claude-sonnet-4-6  ", cheapModelEnabled: true }).modelProfiles,
+    ).toEqual({ cheap: { enabled: true, adapterConfig: { model: "claude-sonnet-4-6" } } });
+    expect(
+      buildNewAgentRuntimeConfig({ cheapModel: "   ", cheapModelEnabled: true }).modelProfiles,
+    ).toEqual({ cheap: { enabled: true, adapterConfig: {} } });
+  });
+
   it("omits modelProfiles when cheap model is set but explicitly disabled", () => {
     const config = buildNewAgentRuntimeConfig({
       cheapModel: "claude-sonnet-4-6",

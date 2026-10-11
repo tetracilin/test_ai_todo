@@ -376,6 +376,17 @@ async function flush() {
   await new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
+// Bound by time, not iterations: a fixed handful of flush cycles is not enough
+// for lazily-resolved queries to settle on a loaded runner.
+async function pollUntil(done: () => boolean, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) {
+    await act(async () => {
+      await flush();
+    });
+  }
+}
+
 describe("Routines page", () => {
   let container: HTMLDivElement;
 
@@ -589,15 +600,11 @@ describe("Routines page", () => {
       await flush();
     });
 
-    let sortButton = container.querySelector<HTMLButtonElement>('button[title="Sort"]');
-    let groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');
-    for (let attempts = 0; attempts < 5 && (!sortButton || !groupButton); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-      sortButton = container.querySelector<HTMLButtonElement>('button[title="Sort"]');
-      groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');
-    }
+    const findSort = () => container.querySelector<HTMLButtonElement>('button[title="Sort"]');
+    const findGroup = () => container.querySelector<HTMLButtonElement>('button[title="Group"]');
+    await pollUntil(() => Boolean(findSort() && findGroup()));
+    const sortButton = findSort();
+    const groupButton = findGroup();
 
     expect(sortButton).not.toBeNull();
     expect(groupButton).not.toBeNull();
@@ -671,11 +678,7 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Unfiled sweep"); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => Boolean(container.textContent?.includes("Unfiled sweep")));
 
     const sectionLabels = Array.from(container.querySelectorAll("span"))
       .filter((element) => element.className.includes("uppercase") && element.className.includes("tracking-wide"))
@@ -723,11 +726,7 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Built-in routines"); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => Boolean(container.textContent?.includes("Built-in routines")));
 
     const text = container.textContent ?? "";
     expect(text.indexOf("Morning sync")).toBeLessThan(text.indexOf("Built-in routines"));
@@ -800,11 +799,7 @@ describe("Routines page", () => {
       );
       await flush();
     });
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Loose routine"); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => Boolean(container.textContent?.includes("Loose routine")));
 
     // Unfiled filter: only the folderless routine renders; the rail still lists folders.
     expect(container.textContent).toContain("Loose routine");
@@ -827,11 +822,7 @@ describe("Routines page", () => {
       );
       await flush();
     });
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("This folder is empty"); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => Boolean(container.textContent?.includes("This folder is empty")));
 
     expect(container.textContent).toContain("This folder is empty");
     expect(container.textContent).toContain("New routine in this folder");
@@ -864,11 +855,7 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Morning sync"); attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => Boolean(container.textContent?.includes("Morning sync")));
 
     const text = container.textContent ?? "";
     expect(text).toContain("1 routine");
@@ -900,17 +887,10 @@ describe("Routines page", () => {
       await flush();
     });
 
-    let runNowButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Run now"),
-    );
-    for (let attempts = 0; attempts < 5 && !runNowButton; attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-      runNowButton = Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes("Run now"),
-      );
-    }
+    const findRunNow = () =>
+      Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Run now"));
+    await pollUntil(() => Boolean(findRunNow()));
+    const runNowButton = findRunNow();
 
     expect(runNowButton).toBeTruthy();
     expect(runNowButton?.getAttribute("data-variant")).toBe("outline");
@@ -940,17 +920,10 @@ describe("Routines page", () => {
       await flush();
     });
 
-    let createButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Create routine"),
-    );
-    for (let attempts = 0; attempts < 5 && !createButton; attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-      createButton = Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes("Create routine"),
-      );
-    }
+    const findCreate = () =>
+      Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Create routine"));
+    await pollUntil(() => Boolean(findCreate()));
+    const createButton = findCreate();
 
     await act(async () => {
       createButton?.click();
@@ -990,17 +963,10 @@ describe("Routines page", () => {
       await flush();
     });
 
-    let createButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Create routine"),
-    );
-    for (let attempts = 0; attempts < 5 && !createButton; attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-      createButton = Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes("Create routine"),
-      );
-    }
+    const findCreate = () =>
+      Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Create routine"));
+    await pollUntil(() => Boolean(findCreate()));
+    const createButton = findCreate();
 
     expect(createButton).toBeTruthy();
 
@@ -1009,13 +975,9 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5; attempts += 1) {
-      const hasMentionOptions = markdownEditorRenderMock.mock.calls.some(([props]) => (props.mentions ?? []).length > 0);
-      if (hasMentionOptions) break;
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() =>
+      markdownEditorRenderMock.mock.calls.some(([props]) => (props.mentions ?? []).length > 0),
+    );
 
     const callsWithMentions = markdownEditorRenderMock.mock.calls
       .map(([props]) => props.mentions ?? [])
@@ -1058,11 +1020,7 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5 && issuesListMock.mock.calls.length === 0; attempts += 1) {
-      await act(async () => {
-        await flush();
-      });
-    }
+    await pollUntil(() => issuesListMock.mock.calls.length > 0);
 
     expect(issuesListMock).toHaveBeenCalledWith("company-1", { originKind: "routine_execution" });
 

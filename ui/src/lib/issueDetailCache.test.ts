@@ -10,11 +10,16 @@ import {
 } from "./issueDetailCache";
 import { queryKeys } from "./queryKeys";
 
-vi.mock("@/api/issues", () => ({
-  issuesApi: {
-    get: vi.fn(),
-  },
-}));
+vi.mock("@/api/issues", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/issues")>();
+  return {
+    ...actual,
+    issuesApi: {
+      ...actual.issuesApi,
+      get: vi.fn(),
+    },
+  };
+});
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
   return {

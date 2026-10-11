@@ -36,7 +36,9 @@ describe("getMentionAwareLinkNodeInit", () => {
       },
     });
   });
+});
 
+describe("mentionAwareLinkNodeReplacement", () => {
   it("replaces LinkNode creation with MentionAwareLinkNode without throwing", () => {
     const editor = createTestEditor();
     let created: unknown;

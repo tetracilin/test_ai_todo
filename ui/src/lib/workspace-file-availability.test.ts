@@ -66,8 +66,9 @@ describe("chunkWorkspaceFileAvailabilityRefs", () => {
   });
 
   it("chunks only above the cap", () => {
-    const refs = Array.from({ length: 250 }, (_, index) => index);
-    expect(chunkWorkspaceFileAvailabilityRefs(refs).map((chunk) => chunk.length)).toEqual([100, 100, 50]);
+    const max = WORKSPACE_FILE_AVAILABILITY_MAX_BATCH;
+    const refs = Array.from({ length: max * 2 + 50 }, (_, index) => index);
+    expect(chunkWorkspaceFileAvailabilityRefs(refs).map((chunk) => chunk.length)).toEqual([max, max, 50]);
   });
 });
 
