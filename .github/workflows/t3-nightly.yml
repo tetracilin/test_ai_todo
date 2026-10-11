@@ -41,10 +41,14 @@ jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
-    # No `outputs:` here on purpose. slow-tests deliberately does NOT `needs:`
-    # this job (ASSUMPTION A6): Playwright bootstraps its own instance, so the
-    # suite runs on a GitHub-hosted runner even when the deploy guard skips.
-    # Coupling them would make a skipped deploy silently skip the tests too.
+    # Deploy is gated on the test jobs: staging only ever receives a sha whose
+    # full vitest suite (slow-tests) and Playwright run (e2e) both passed. If
+    # either fails or is cancelled, this job is skipped and the deployed sha is
+    # unchanged (the marker file is only written after a deploy). The reverse
+    # direction stays decoupled on purpose (ASSUMPTION A6): the test jobs do not
+    # `needs:` deploy, because Playwright bootstraps its own instance on a
+    # GitHub-hosted runner and must run even when the deploy guard skips.
+    needs: [slow-tests, e2e]
     environment:
       name: staging
       url: http://100.103.41.112:33130
