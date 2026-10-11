@@ -14,6 +14,21 @@ import {
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
+describe("issue review verdict policy (no database)", () => {
+  it("does no database work for the default anyone policy", async () => {
+    const noQueryDb = new Proxy({}, {
+      get() {
+        throw new Error("default policy must not query");
+      },
+    }) as Db;
+
+    await expect(assertIssueReviewVerdictActorAllowed(noQueryDb, {
+      issue: { id: randomUUID(), companyId: randomUUID(), reviewPolicy: null },
+      actor: { type: "agent", id: randomUUID() },
+    })).resolves.toBeUndefined();
+  });
+});
+
 describeEmbeddedPostgres("issue review verdict policy", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
@@ -80,19 +95,6 @@ describeEmbeddedPostgres("issue review verdict policy", () => {
     }).returning();
     return { issue, companyId, requesterAgentId, peerAgentId };
   }
-
-  it("does no database work for the default anyone policy", async () => {
-    const noQueryDb = new Proxy({}, {
-      get() {
-        throw new Error("default policy must not query");
-      },
-    }) as Db;
-
-    await expect(assertIssueReviewVerdictActorAllowed(noQueryDb, {
-      issue: { id: randomUUID(), companyId: randomUUID(), reviewPolicy: null },
-      actor: { type: "agent", id: randomUUID() },
-    })).resolves.toBeUndefined();
-  });
 
   it("blocks the in-review requester under not_creator and admits another agent", async () => {
     const seeded = await seedReview("not_creator");

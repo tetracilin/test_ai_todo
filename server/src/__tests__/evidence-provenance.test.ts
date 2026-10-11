@@ -78,7 +78,11 @@ describe("evidence wedge band call (PC-011 AC3)", () => {
     // the arithmetic accepts bot, manual and out-of-union counts and nothing
     // else, so the only way a system filing could reach the ratio is by being
     // mis-counted as one of those three at the reader.
-    expect(callEvidenceWedgeBand.length).toBe(2); // (botCount, manualCount) + defaulted otherCount
+    // Behavioural check (a Function.length assertion would break on any
+    // harmless signature refactor): a stray fourth "system" tally passed by an
+    // untyped caller must not change the call.
+    const loose = callEvidenceWedgeBand as unknown as (...counts: number[]) => unknown;
+    expect(loose(13, 3, 0, 10)).toEqual(callEvidenceWedgeBand(13, 3, 0));
   });
 });
 

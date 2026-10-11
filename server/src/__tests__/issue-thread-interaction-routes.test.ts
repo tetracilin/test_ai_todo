@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { CROSS_ISSUE_INFLUENCE_ENFORCE_AT } from "../services/cross-issue-influence-limit.js";
 
 const ASSIGNEE_AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const UNRELATED_AGENT_ID = "33333333-3333-4333-8333-333333333333";
@@ -49,12 +50,13 @@ const mockHeartbeatService = vi.hoisted(() => ({
 }));
 const mockResolveTaskWatchdogMutationScope = vi.hoisted(() => vi.fn(async () => ({ kind: "none" })));
 const mockResolveCoreTrustPreset = vi.hoisted(() => vi.fn(() => ({ kind: "standard" })));
+const defaultRunAttribution = vi.hoisted(() => ({
+  companyId: "company-1",
+  agentId: "22222222-2222-4222-8222-222222222222",
+  responsibleUserId: null,
+}));
 const mockRunAttribution = vi.hoisted(() => ({
-  value: {
-    companyId: "company-1",
-    agentId: "22222222-2222-4222-8222-222222222222",
-    responsibleUserId: null,
-  } as Record<string, unknown> | null,
+  value: { ...defaultRunAttribution } as Record<string, unknown> | null,
 }));
 const mockAccessDecide = vi.hoisted(() => vi.fn(async (input: { action?: string }) => ({
   allowed: true,
@@ -274,8 +276,23 @@ async function createApp(actor: Record<string, unknown> = {
 }
 
 describe.sequential("issue thread interaction routes", () => {
+  // Every test resets the module registry and re-imports the (very large) issue
+  // routes module, so the first test used to absorb the whole cold transform cost
+  // and time out on slow hosts. Warm the transform cache once, outside any test.
+  beforeAll(async () => {
+    registerModuleMocks();
+    await Promise.all([import("../routes/issues.js"), import("../middleware/index.js")]);
+  }, 120_000);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.resetModules();
+    // createApp() and one test mutate this shared fixture; restore it so a test
+    // never inherits the previous test's run attribution.
+    mockRunAttribution.value = { ...defaultRunAttribution };
     vi.doUnmock("../routes/issues.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
@@ -2812,6 +2829,10 @@ describe.sequential("issue thread interaction routes", () => {
     "fails a capped run closed on cross-issue $route with no interaction effect",
     async ({ route, kind, body, payload, service }) => {
       stubCrossIssueResolution({ kind, payload });
+      // The cap is only enforced once the rollout date has passed; pin the clock
+      // instead of relying on the wall clock being after that date.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(CROSS_ISSUE_INFLUENCE_ENFORCE_AT);
       mockCrossIssueInfluence.sourceIssueId = OTHER_ISSUE_ID;
       mockCrossIssueInfluence.priorCount = 20;
       const app = await createApp({
