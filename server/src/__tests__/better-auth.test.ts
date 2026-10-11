@@ -25,6 +25,11 @@ describe("Better Auth cookie scoping", () => {
     expect(deriveAuthCookiePrefix("PAP-1601-worktree")).toBe("paperclip-PAP-1601-worktree");
   });
 
+  it("sanitizes unsafe characters and falls back to a default prefix", () => {
+    expect(deriveAuthCookiePrefix("  my instance/v2! ")).toBe("paperclip-my-instance-v2");
+    expect(deriveAuthCookiePrefix("***")).toBe("paperclip-default");
+  });
+
   it("uses PAPERCLIP_INSTANCE_ID for the Better Auth cookie prefix", () => {
     process.env.PAPERCLIP_INSTANCE_ID = "sat-worktree";
 
@@ -62,6 +67,12 @@ describe("Better Auth cookie scoping", () => {
       deploymentMode: "authenticated",
       deploymentExposure: "public",
     })).toEqual({ enabled: true });
+  });
+
+  it("does not enable Better Auth rate limiting in local_trusted mode by default", () => {
+    expect(buildBetterAuthRateLimitOptions({
+      deploymentMode: "local_trusted",
+    })).toEqual({ enabled: false });
   });
 
   it("allows an explicit Better Auth rate-limit override", () => {

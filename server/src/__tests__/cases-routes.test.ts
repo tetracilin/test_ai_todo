@@ -45,7 +45,7 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
-describeEmbeddedPostgres("cases routes", () => {
+describe("buildCasePatchUpdateValues", () => {
   it("omits completedAt from non-status case patches", () => {
     const now = new Date("2026-07-10T00:00:00.000Z");
     const completedAt = new Date("2026-07-09T00:00:00.000Z");
@@ -57,7 +57,9 @@ describeEmbeddedPostgres("cases routes", () => {
     expect(statusPatch).toHaveProperty("completedAt");
     expect(statusPatch.completedAt).toBeInstanceOf(Date);
   });
+});
 
+describeEmbeddedPostgres("cases routes", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   const previousAgentJwtSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;

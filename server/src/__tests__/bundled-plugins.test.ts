@@ -41,12 +41,12 @@ describe("resolveBundledPluginInstalls", () => {
       {
         key: "kubernetes",
         pluginKey: "paperclip.kubernetes-sandbox-provider",
-        localPath: path.join(CATALOG_ROOT, "sandbox-providers/kubernetes"),
+        localPath: path.resolve(CATALOG_ROOT, "sandbox-providers/kubernetes"),
       },
       {
         key: "daytona",
         pluginKey: "paperclip.daytona-sandbox-provider",
-        localPath: path.join(CATALOG_ROOT, "sandbox-providers/daytona"),
+        localPath: path.resolve(CATALOG_ROOT, "sandbox-providers/daytona"),
       },
     ]);
   });
@@ -110,7 +110,8 @@ describe("resolveBundledPluginInstalls", () => {
     const outside = makeTempDir("bundled-outside-");
     const root = makeTempDir("bundled-root-");
     mkdirSync(path.join(root, "sandbox-providers"), { recursive: true });
-    symlinkSync(outside, path.join(root, "sandbox-providers", "kubernetes"));
+    // "junction" lets Windows create the link without elevated privileges; POSIX ignores the type.
+    symlinkSync(outside, path.join(root, "sandbox-providers", "kubernetes"), "junction");
     expect(() =>
       resolveBundledPluginInstalls(["kubernetes"], {
         catalogRoot: root,
@@ -130,13 +131,13 @@ describe("resolveBundledPluginInstalls", () => {
       {
         key: "kubernetes",
         pluginKey: "paperclip.kubernetes-sandbox-provider",
-        localPath: "/somewhere/else/kubernetes",
+        localPath: path.resolve("/somewhere/else/kubernetes"),
       },
     ]);
   });
 
   it("honors an env override that stays inside the catalog root under enforcement", () => {
-    const inside = path.join(CATALOG_ROOT, "sandbox-providers", "kubernetes");
+    const inside = path.resolve(CATALOG_ROOT, "sandbox-providers", "kubernetes");
     const resolved = resolveBundledPluginInstalls(["kubernetes"], {
       catalogRoot: CATALOG_ROOT,
       env: { PAPERCLIP_KUBERNETES_PLUGIN_PATH: inside },
@@ -165,7 +166,7 @@ describe("resolveBundledPluginInstalls", () => {
     expect(entry).toEqual({
       key: "kubernetes",
       pluginKey: "paperclip.kubernetes-sandbox-provider",
-      localPath: "/app/packages/plugins/sandbox-providers/kubernetes",
+      localPath: path.resolve("/app/packages/plugins/sandbox-providers/kubernetes"),
     });
   });
 
@@ -210,6 +211,13 @@ function makeManifest(pluginKey: string, version: string) {
   return { id: pluginKey, apiVersion: 1, version } as unknown as import("@paperclipai/shared").PaperclipPluginManifestV1;
 }
 
+// Catalog relative paths use "/" separators; compare on a "/"-normalized path so
+// the fake loader resolves the same entry on Windows ("\\") and POSIX.
+function findCatalogEntry(localPath: string) {
+  const normalized = localPath.split(path.sep).join("/");
+  return BUNDLED_PLUGIN_CATALOG.find((candidate) => normalized.endsWith(candidate.relativePath));
+}
+
 function makeDeps(overrides?: {
   rows?: Record<string, LooseRow | null>;
   bundleManifestExists?: (localPath: string) => boolean;
@@ -232,18 +240,14 @@ function makeDeps(overrides?: {
   );
   const installPlugin = vi.fn(async ({ localPath }: { localPath: string }) => {
     if (overrides?.installError) throw overrides.installError;
-    const entry = BUNDLED_PLUGIN_CATALOG.find((candidate) =>
-      localPath.endsWith(candidate.relativePath),
-    );
+    const entry = findCatalogEntry(localPath);
     const pluginKey = entry?.pluginKey ?? "unknown";
     installedRows.set(pluginKey, normalize({ id: `id-${pluginKey}`, pluginKey, status: "installed" }));
     return { manifest: { id: pluginKey } };
   });
   const update = vi.fn(async () => undefined);
   const loadManifest = vi.fn(async (localPath: string) => {
-    const entry = BUNDLED_PLUGIN_CATALOG.find((candidate) =>
-      localPath.endsWith(candidate.relativePath),
-    );
+    const entry = findCatalogEntry(localPath);
     const pluginKey = entry?.pluginKey ?? "unknown";
     const persisted = installedRows.get(pluginKey);
     // Default: the bundle version matches the persisted version, so no
@@ -267,12 +271,12 @@ function makeDeps(overrides?: {
 const K8S: ResolvedBundledPlugin = {
   key: "kubernetes",
   pluginKey: "paperclip.kubernetes-sandbox-provider",
-  localPath: path.join(CATALOG_ROOT, "sandbox-providers/kubernetes"),
+  localPath: path.resolve(CATALOG_ROOT, "sandbox-providers/kubernetes"),
 };
 const DAYTONA: ResolvedBundledPlugin = {
   key: "daytona",
   pluginKey: "paperclip.daytona-sandbox-provider",
-  localPath: path.join(CATALOG_ROOT, "sandbox-providers/daytona"),
+  localPath: path.resolve(CATALOG_ROOT, "sandbox-providers/daytona"),
 };
 
 describe("ensureBundledPlugins", () => {

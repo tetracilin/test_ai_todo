@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Operator-hidden Access surface floor (`instance.access` in
@@ -57,10 +57,17 @@ describe("operator-hidden access admin floor", () => {
   // cost is not charged to the first test's timeout on slow CI runners.
   beforeAll(async () => {
     app = await createApp();
-  }, 30_000);
+  }, 120_000);
+
+  const originalHiddenSettings = process.env.PAPERCLIP_HIDDEN_SETTINGS;
+
+  beforeEach(() => {
+    delete process.env.PAPERCLIP_HIDDEN_SETTINGS;
+  });
 
   afterEach(() => {
-    delete process.env.PAPERCLIP_HIDDEN_SETTINGS;
+    if (originalHiddenSettings === undefined) delete process.env.PAPERCLIP_HIDDEN_SETTINGS;
+    else process.env.PAPERCLIP_HIDDEN_SETTINGS = originalHiddenSettings;
   });
 
   const attempts: Array<[string, () => request.Test]> = [

@@ -77,6 +77,7 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
   getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })),
 }));
 const mockDeviceLoginPromotion = vi.hoisted(() => vi.fn());
+const mockLogActivity = vi.hoisted(() => vi.fn());
 
 // Capture every logger call, so the redaction test can assert the logs and the
 // activity omit the URL, the code, the credential bytes, and the lease id.
@@ -119,7 +120,7 @@ vi.mock("../services/index.js", () => ({
   issueApprovalService: () => ({}),
   issueRecoveryActionService: () => ({}),
   issueService: () => ({}),
-  logActivity: vi.fn(),
+  logActivity: mockLogActivity,
   syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => ({}),
 }));
@@ -394,6 +395,40 @@ describe("adapter device-login routes", () => {
     expect(row?.id).not.toBe(res.body.sessionId);
     // No row is keyed by the public session id in the internal-id map.
     expect(store.rows.get(res.body.sessionId)).toBeUndefined();
+  });
+
+  it("rejects a board actor without the adapter configuration permission before any lease", async () => {
+    mockAccessService.decide.mockResolvedValue({
+      allowed: false,
+      reason: "deny_missing_grant",
+      explanation: "Missing permission",
+    });
+    const app = await createApp();
+
+    const res = await request(app)
+      .post(loginPath(COMPANY_1))
+      .send({ environmentId: SANDBOX_ENV_1 });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(harness.acquisitions).toHaveLength(0);
+  });
+
+  it("reports authenticated only after the credential is promoted", async () => {
+    mockDeviceLoginPromotion.mockResolvedValueOnce("promoted");
+    const app = await createApp();
+
+    const start = await request(app)
+      .post(loginPath(COMPANY_1))
+      .send({ environmentId: SANDBOX_ENV_1 });
+    expect(start.status, JSON.stringify(start.body)).toBe(201);
+    const sessionId = start.body.sessionId as string;
+
+    harness.releaseGate();
+    await vi.waitFor(async () => {
+      const status = await request(app).get(`${loginPath(COMPANY_1)}/${sessionId}`);
+      expect(status.body.status).toBe("authenticated");
+    });
+    expect(mockDeviceLoginPromotion).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an adapter whose login capability drives a different transport", async () => {
@@ -707,8 +742,12 @@ describe("adapter device-login routes", () => {
     expect(status.status).toBe(200);
 
     // Serialize every logged argument and assert none carries a secret.
-    const loggedText = (["info", "warn", "error", "debug"] as const)
-      .flatMap((level) => (mockLogger[level] as ReturnType<typeof vi.fn>).mock.calls)
+    const loggedText = [
+      ...(["info", "warn", "error", "debug"] as const).flatMap(
+        (level) => (mockLogger[level] as ReturnType<typeof vi.fn>).mock.calls,
+      ),
+      ...mockLogActivity.mock.calls,
+    ]
       .map((args) => JSON.stringify(args))
       .join("\n");
     expect(loggedText).not.toContain("auth.openai.com");
