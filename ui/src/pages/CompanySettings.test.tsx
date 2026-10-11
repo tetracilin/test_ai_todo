@@ -118,8 +118,11 @@ async function flushReact() {
 }
 
 async function waitForAssertion(assertion: () => void) {
+  // Bound by time, not iterations: a lazy-loaded form can take far longer than 20
+  // flush cycles to mount on a loaded CI runner.
+  const deadline = Date.now() + 5_000;
   let lastError: unknown;
-  for (let i = 0; i < 20; i += 1) {
+  do {
     await flushReact();
     try {
       assertion();
@@ -127,7 +130,7 @@ async function waitForAssertion(assertion: () => void) {
     } catch (error) {
       lastError = error;
     }
-  }
+  } while (Date.now() < deadline);
   throw lastError;
 }
 
