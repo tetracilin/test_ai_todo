@@ -6,6 +6,22 @@ import { resolveCanonicalWorktreeSeedSource } from "./worktree-seed-source.js";
 
 const cleanup: string[] = [];
 
+// V8: creating symlinks needs elevated rights on Windows (EPERM), and lstat on a path
+// below a regular file reports ENOENT there instead of POSIX ENOTDIR. Guard, don't weaken.
+const IS_WINDOWS = process.platform === "win32";
+const canSymlink = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-seed-symlink-probe-"));
+  try {
+    fs.mkdirSync(path.join(probe, "target"));
+    fs.symlinkSync(path.join(probe, "target"), path.join(probe, "link"), "dir");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 function makeInstance(prefix: string, instanceId: string) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   cleanup.push(cwd);
@@ -79,7 +95,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     });
   });
 
-  it("rejects a dangling config symlink instead of falling back to the named source", () => {
+  it.skipIf(!canSymlink)("rejects a dangling config symlink instead of falling back to the named source", () => {
     const baseCwd = makePlainCheckout();
     fs.mkdirSync(path.join(baseCwd, ".paperclip"), { recursive: true });
     fs.symlinkSync(path.join(baseCwd, "absent.json"), path.join(baseCwd, ".paperclip", "config.json"));
@@ -96,7 +112,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     })).toThrow(/Registered source Paperclip config does not exist/);
   });
 
-  it("fails closed when the declared config cannot be inspected", () => {
+  it.skipIf(IS_WINDOWS)("fails closed when the declared config cannot be inspected", () => {
     const baseCwd = makePlainCheckout();
     // `.paperclip` as a regular file makes lstat report ENOTDIR, not ENOENT.
     fs.writeFileSync(path.join(baseCwd, ".paperclip"), "not a directory\n");
@@ -113,7 +129,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     })).toThrow(/cannot be inspected \(ENOTDIR\)/);
   });
 
-  it("rejects a dangling .paperclip symlink instead of falling back to the named source", () => {
+  it.skipIf(!canSymlink)("rejects a dangling .paperclip symlink instead of falling back to the named source", () => {
     const baseCwd = makePlainCheckout();
     // Resolving `.paperclip` fails before the probe reaches config.json, so the config
     // entry reports ENOENT even though this workspace is malformed rather than plain.
@@ -131,7 +147,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     })).toThrow(/cannot be inspected \(ENOENT on its \.paperclip symlink target\)/);
   });
 
-  it("takes the named source when .paperclip is a symlink to a directory with no config", () => {
+  it.skipIf(!canSymlink)("takes the named source when .paperclip is a symlink to a directory with no config", () => {
     const baseCwd = makePlainCheckout();
     const linked = path.join(baseCwd, "linked-config-dir");
     fs.mkdirSync(linked, { recursive: true });
