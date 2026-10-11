@@ -23,4 +23,12 @@ describe("buildGrokLocalConfig", () => {
       extraArgs: ["--check", "--verbatim"],
     });
   });
+
+  it("falls back to the default model and omits optional fields when the form is empty", () => {
+    expect(buildGrokLocalConfig({ model: "", envVars: "", extraArgs: "" } as never)).toEqual({
+      model: "grok-build",
+      timeoutSec: 0,
+      graceSec: 20,
+    });
+  });
 });
