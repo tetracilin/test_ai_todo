@@ -212,7 +212,11 @@ async function unregisterTestAdapter(type: string) {
 }
 
 describe("agent routes adapter validation", () => {
+  const originalSelectableAdapters = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+
   beforeEach(async () => {
+    // These tests describe a Hermes-Gateway-only instance; pin it rather than rely on the registry default.
+    process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway";
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
@@ -294,6 +298,11 @@ describe("agent routes adapter validation", () => {
   });
 
   afterEach(async () => {
+    if (originalSelectableAdapters === undefined) {
+      delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    } else {
+      process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = originalSelectableAdapters;
+    }
     await unregisterTestAdapter("external_test");
     await unregisterTestAdapter(missingAdapterType);
   });
