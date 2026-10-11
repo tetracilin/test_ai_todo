@@ -310,11 +310,12 @@ function runVitest(args, label) {
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
   const startedAt = Date.now();
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-  });
+  // PAPERCLIP_VITEST_RUNNER_FAKE swaps pnpm for a node script; only the runner's own tests set it.
+  const fake = process.env.PAPERCLIP_VITEST_RUNNER_FAKE;
+  const vitestArgs = ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args];
+  const result = fake
+    ? spawnSync(process.execPath, [fake, ...vitestArgs], { cwd: repoRoot, env, stdio: "inherit" })
+    : spawnSync("pnpm", vitestArgs, { cwd: repoRoot, env, stdio: "inherit" });
   if (result.error) {
     // Could not even start vitest: every later invocation would fail the same way.
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);

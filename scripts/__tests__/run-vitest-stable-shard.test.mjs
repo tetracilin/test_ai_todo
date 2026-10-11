@@ -287,71 +287,66 @@ test("the runner's non-server project list is exactly vitest.config.ts minus ser
   assert.ok(configured.length > 0);
 });
 
-// End-to-end: a fake `pnpm` on PATH whose vitest invocations fail for chosen
-// labels, so the real runner loop is exercised without running any real tests.
+// End-to-end: PAPERCLIP_VITEST_RUNNER_FAKE points the runner at a node script
+// standing in for `pnpm exec vitest`, so the real runner loop is exercised
+// without running any real tests. Works the same on Windows and Linux.
 function runWithFakePnpm(args, failPattern) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "fake-pnpm-"));
-  const bin = path.join(dir, "bin");
-  mkdirSync(bin);
   const log = path.join(dir, "calls.log");
-  const impl = path.join(bin, "pnpm-impl.mjs");
+  const impl = path.join(dir, "fake-pnpm.mjs");
   writeFileSync(
     impl,
     `import { appendFileSync } from "node:fs";
      const a = process.argv.slice(2).join(" ");
-     appendFileSync(${JSON.stringify(log)}, a + "\n");
+     appendFileSync(${JSON.stringify(log)}, a + "\\n");
      process.exit(new RegExp(${JSON.stringify(failPattern)}).test(a) ? 1 : 0);`,
   );
-  const shim =
-    process.platform === "win32"
-      ? [["pnpm.cmd", `@echo off\r\n"${process.execPath}" "${impl}" %*\r\n`]]
-      : [["pnpm", `#!/bin/sh\nexec "${process.execPath}" "${impl}" "$@"\n`]];
-  for (const [name, body] of shim) {
-    writeFileSync(path.join(bin, name), body, { mode: 0o755 });
-  }
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
-    shell: false,
+    env: { ...process.env, PAPERCLIP_VITEST_RUNNER_FAKE: impl },
   });
-  const calls = (
-    spawnSync(process.execPath, ["-e", `process.stdout.write(require("fs").existsSync(${JSON.stringify(log)})?require("fs").readFileSync(${JSON.stringify(log)},"utf8"):"")`], { encoding: "utf8" }).stdout
-  )
-    .split("\n")
-    .filter(Boolean);
-  return { result, calls };
+  let calls = [];
+  try {
+    calls = readFileSync(log, "utf8").split("\n").filter(Boolean);
+  } catch {
+    // no invocation reached the fake; assertions below report stdout/stderr
+  }
+  const output = `\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`;
+  return { result, calls, output };
 }
 
-test("a failing invocation does not stop the remaining ones, and the run exits 1", { skip: process.platform === "win32" && "runner spawns pnpm without a shell; Linux CI covers this" }, () => {
-  const { result, calls } = runWithFakePnpm(
+test("a failing invocation does not stop the remaining ones, and the run exits 1", () => {
+  const { result, calls, output } = runWithFakePnpm(
     ["--mode", "general", "--group", "general-workspaces-b"],
     "adapter-utils",
   );
-  const projectCount = calls.length;
-  assert.ok(projectCount > 3, `expected several invocations, got ${projectCount}`);
-  assert.ok(calls.some((call) => call.includes("--project @paperclipai/db")));
-  assert.ok(calls.some((call) => call.includes("--project paperclipai") || call.includes("--project @paperclipai/plugin-sdk")), "invocations after the failure must still run");
-  assert.equal(result.status, 1);
+  assert.ok(calls.length > 3, `expected several invocations, got ${calls.length}${output}`);
+  assert.ok(calls.some((call) => call.includes("--project @paperclipai/db")), output);
+  assert.ok(
+    calls.some((call) => call.includes("--project @paperclipai/plugin-sdk")),
+    `invocations after the failure must still run${output}`,
+  );
+  assert.equal(result.status, 1, output);
   assert.match(result.stdout, /1 failed/);
   assert.match(result.stdout, /FAIL \(exit 1\) .*adapter-utils/);
 });
 
-test("--bail stops at the first failing invocation", { skip: process.platform === "win32" && "runner spawns pnpm without a shell; Linux CI covers this" }, () => {
-  const { result, calls } = runWithFakePnpm(
+test("--bail stops at the first failing invocation", () => {
+  const { result, calls, output } = runWithFakePnpm(
     ["--mode", "general", "--group", "general-workspaces-b", "--bail"],
     "adapter-utils",
   );
-  assert.equal(result.status, 1);
-  assert.ok(calls.at(-1).includes("adapter-utils"), "the failing invocation must be the last one run");
+  assert.equal(result.status, 1, output);
+  assert.ok(calls.at(-1)?.includes("adapter-utils"), `the failing invocation must be the last one run${output}`);
   assert.match(result.stdout, /1 failed/);
 });
 
-test("an all-green run exits 0 and prints the summary", { skip: process.platform === "win32" && "runner spawns pnpm without a shell; Linux CI covers this" }, () => {
-  const { result } = runWithFakePnpm(
+test("an all-green run exits 0 and prints the summary", () => {
+  const { result, output } = runWithFakePnpm(
     ["--mode", "general", "--group", "general-workspaces-b"],
     "^$never-matches",
   );
-  assert.equal(result.status, 0);
+  assert.equal(result.status, 0, output);
   assert.match(result.stdout, /0 failed/);
 });
