@@ -54,7 +54,11 @@ describe("heartbeat run runtime status store", () => {
       companyId: "company-1",
       now: new Date("2026-06-24T00:02:00.001Z"),
     })).toBeNull();
-    expect(getHeartbeatRunRuntimeStatus("run-1")).toBeNull();
+    // Pin the clock: an unpinned read would compare the 2026-06 fixture against the
+    // real wall clock and only be "expired" by accident of when the suite runs.
+    expect(getHeartbeatRunRuntimeStatus("run-1", {
+      now: new Date("2026-06-24T00:02:00.001Z"),
+    })).toBeNull();
   });
 
   it("clears status explicitly", () => {

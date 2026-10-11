@@ -184,7 +184,7 @@ describe("project env routes", () => {
         env: normalizedEnv,
       });
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockSecretService.normalizeEnvBindingsForPersistence).toHaveBeenCalledWith(
       "company-1",
       normalizedEnv,
@@ -202,6 +202,8 @@ describe("project env routes", () => {
         }),
       }),
     );
+    // Only key names are logged, never the binding payload (secret id).
+    expect(JSON.stringify(mockLogActivity.mock.calls)).not.toContain(normalizedEnv.API_KEY.secretId);
   });
 
   it("normalizes env bindings on update and avoids logging raw values", async () => {
@@ -220,6 +222,7 @@ describe("project env routes", () => {
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(JSON.stringify(mockLogActivity.mock.calls)).not.toContain("top-secret");
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
   agents,
@@ -267,11 +267,13 @@ describeEmbeddedPostgres("WP-close export (PC-006 F-006-1)", () => {
 
     await svc.update(wpId, { status: "done" });
 
-    // Best-effort and post-commit -- give the generator's own queries a turn.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    const doc = await documentsSvc.getIssueDocumentByKey(wpId, WP_CLOSE_EXPORT_DOCUMENT_KEY);
-    expect(doc).not.toBeNull();
+    // Best-effort and post-commit: poll (bounded) for the document instead of
+    // sleeping a fixed interval, so the test neither races nor over-waits.
+    const doc = await vi.waitFor(async () => {
+      const found = await documentsSvc.getIssueDocumentByKey(wpId, WP_CLOSE_EXPORT_DOCUMENT_KEY);
+      expect(found).not.toBeNull();
+      return found;
+    }, { timeout: 5_000, interval: 25 });
     expect(doc!.body).toContain(`${prefix}-`);
     expect(doc!.body).toContain("Scope widened");
     expect(doc!.body).toContain("git");
