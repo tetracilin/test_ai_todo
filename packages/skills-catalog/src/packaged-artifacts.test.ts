@@ -6,12 +6,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+// npm/pnpm are .cmd shims on Windows; execFile needs a shell to resolve them.
+const useShell = process.platform === "win32";
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function readPackMetadata(packDestination: string) {
   const output = execFileSync("npm", ["pack", "--json", "--pack-destination", packDestination], {
     cwd: packageRoot,
     encoding: "utf8",
+    shell: useShell,
   });
   const metadata = JSON.parse(output);
   if (!Array.isArray(metadata) || metadata.length === 0 || typeof metadata[0]?.filename !== "string") {
@@ -41,6 +44,7 @@ describe("skills catalog package artifacts", () => {
       execFileSync("pnpm", ["--filter", "@paperclipai/skills-catalog", "build"], {
         cwd: packageRoot,
         stdio: "ignore",
+        shell: useShell,
       });
       metadata = readPackMetadata(createPackDestination());
     }

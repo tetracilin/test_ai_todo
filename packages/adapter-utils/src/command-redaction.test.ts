@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { REDACTED_COMMAND_TEXT_VALUE, redactDiagnosticText } from "./command-redaction.js";
+import {
+  REDACTED_COMMAND_TEXT_VALUE,
+  redactCommandText,
+  redactDiagnosticText,
+} from "./command-redaction.js";
+
+describe("redactCommandText", () => {
+  it("returns text with no secret-shaped content unchanged", () => {
+    expect(redactCommandText("ls -la /workspace")).toBe("ls -la /workspace");
+  });
+
+  it("redacts a CLI secret option value in both space and equals forms", () => {
+    const spaced = redactCommandText("tool --api-key sk-live-value-1234 run");
+    expect(spaced).not.toContain("sk-live-value-1234");
+    expect(spaced).toContain(`--api-key ${REDACTED_COMMAND_TEXT_VALUE}`);
+    const equals = redactCommandText("tool --token=opaque-token-value run");
+    expect(equals).not.toContain("opaque-token-value");
+    expect(equals).toContain(`--token=${REDACTED_COMMAND_TEXT_VALUE}`);
+  });
+
+  it("redacts an Authorization bearer header but keeps the scheme", () => {
+    const output = redactCommandText('curl -H "Authorization: Bearer opaque-bearer-value" https://x.test');
+    expect(output).not.toContain("opaque-bearer-value");
+    expect(output).toContain(`Authorization: Bearer ${REDACTED_COMMAND_TEXT_VALUE}`);
+  });
+
+  it("redacts well-known provider token shapes found anywhere in the text", () => {
+    const openAiKey = "sk-abcdefghijklmnop123456";
+    const githubToken = `ghp_${"a".repeat(24)}`;
+    const output = redactCommandText(`echo ${openAiKey} ${githubToken}`);
+    expect(output).not.toContain(openAiKey);
+    expect(output).not.toContain(githubToken);
+  });
+
+  it("uses a caller-supplied replacement value", () => {
+    expect(redactCommandText("API_KEY=abc123", "<hidden>")).toBe("API_KEY=<hidden>");
+  });
+});
 
 describe("redactDiagnosticText", () => {
   it("redacts a JSON secret field value", () => {
