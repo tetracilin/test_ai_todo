@@ -155,7 +155,7 @@ describe("adapter routes", () => {
       const selectable = res.body
         .filter((a: { selectable: boolean }) => a.selectable)
         .map((a: { type: string }) => a.type);
-      expect(selectable.every((type: string) => ["hermes_gateway", "claude_local", "hermes_local"].includes(type))).toBe(true);
+      expect([...selectable].sort()).toEqual(["claude_local", "hermes_gateway", "hermes_local"]);
       const codexLocal = res.body.find((a: { type: string }) => a.type === "codex_local");
       expect(codexLocal.selectable).toBe(false);
       for (const adapter of res.body) expect(typeof adapter.selectable).toBe("boolean");
@@ -299,7 +299,7 @@ describe("adapter routes", () => {
     expect(paused.status, JSON.stringify(paused.body)).toBe(200);
 
     const builtin = await request(app).get("/api/adapters/claude_local/config-schema");
-    expect([200, 404], JSON.stringify(builtin.body)).toContain(builtin.status);
+    expect(builtin.status, JSON.stringify(builtin.body)).toBe(200);
     expect(builtin.body).not.toMatchObject({
       fields: [{ key: "mode" }],
     });

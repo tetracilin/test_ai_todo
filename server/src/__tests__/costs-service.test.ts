@@ -1,7 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
@@ -224,12 +223,12 @@ describe("cost routes", () => {
     });
   });
 
-  it("returns 400 for an invalid 'from' date string", async () => {
+  it("rejects an invalid 'from' date string with a bad-request error", async () => {
     const { parseCostDateRange } = await loadCostParsers();
     expect(() => parseCostDateRange({ from: "not-a-date" })).toThrow(/invalid 'from' date/i);
   });
 
-  it("returns 400 for an invalid 'to' date string", async () => {
+  it("rejects an invalid 'to' date string with a bad-request error", async () => {
     const { parseCostDateRange } = await loadCostParsers();
     expect(() => parseCostDateRange({ to: "banana" })).toThrow(/invalid 'to' date/i);
   });
@@ -247,6 +246,28 @@ describe("cost routes", () => {
       estimatedDebitCents: 0,
       eventCount: 0,
     });
+  });
+
+  it("maps an invalid date range to HTTP 400 without querying the cost service", async () => {
+    const app = await createApp();
+    const res = await request(app)
+      .get("/api/companies/company-1/costs/by-agent")
+      .query({ from: "not-a-date" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid 'from' date/i);
+    expect(mockCostService.byAgent).not.toHaveBeenCalled();
+  });
+
+  it("maps an invalid finance event limit to HTTP 400 without listing events", async () => {
+    const app = await createApp();
+    const res = await request(app)
+      .get("/api/companies/company-1/costs/finance-events")
+      .query({ limit: "0" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid 'limit'/i);
+    expect(mockFinanceService.list).not.toHaveBeenCalled();
   });
 
   it("returns issue subtree cost summaries for issue refs", async () => {
@@ -271,7 +292,7 @@ describe("cost routes", () => {
     });
   });
 
-  it("returns 400 for invalid finance event list limits", async () => {
+  it("rejects a zero finance event list limit with a bad-request error", async () => {
     const { parseCostLimit } = await loadCostParsers();
     expect(() => parseCostLimit({ limit: "0" })).toThrow(/invalid 'limit'/i);
   });

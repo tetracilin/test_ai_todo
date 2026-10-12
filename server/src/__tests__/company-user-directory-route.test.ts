@@ -129,4 +129,20 @@ describe("GET /companies/:companyId/user-directory", () => {
       ],
     });
   });
+
+  it("rejects board users who are not members of the requested company", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
+    });
+
+    const res = await request(app).get("/api/companies/company-2/user-directory");
+
+    expect(res.status).toBe(403);
+    expect(res.body.users).toBeUndefined();
+  });
 });

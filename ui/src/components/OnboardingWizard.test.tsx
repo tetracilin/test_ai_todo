@@ -193,6 +193,9 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
   afterEach(() => {
     document.body.innerHTML = "";
+    // Several cases spy on Storage.prototype and only restore inline; a failed
+    // assertion before that line would leave storage broken for later cases.
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 

@@ -23,17 +23,25 @@ function createProgram(): Command {
 }
 
 describe("project and goal commands", () => {
+  const tempDirs: string[] = [];
+
   beforeEach(() => {
     vi.restoreAllMocks();
     delete process.env.PAPERCLIP_API_KEY;
     delete process.env.PAPERCLIP_API_URL;
     delete process.env.PAPERCLIP_COMPANY_ID;
-    process.env.PAPERCLIP_CONTEXT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-project-goal-")), "context.json");
+    const contextDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-project-goal-"));
+    tempDirs.push(contextDir);
+    process.env.PAPERCLIP_CONTEXT = path.join(contextDir, "context.json");
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     delete process.env.PAPERCLIP_CONTEXT;
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("creates and updates projects with shared schemas", async () => {

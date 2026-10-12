@@ -44,6 +44,7 @@ function sentBodies(): Array<Record<string, unknown>> {
 describe("TelemetryClient runtime event gate", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("swallows proposed first-party events before they touch state or the queue", async () => {
@@ -168,6 +169,7 @@ describe("resolveTelemetryConfig caps + backoff surface", () => {
 describe("TelemetryClient chunking (count + bytes)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("splits more than maxEventsPerBatch events into multiple compliant POSTs", async () => {
@@ -242,6 +244,7 @@ describe("TelemetryClient deterministic batchId", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("emits a batchId on every envelope", async () => {
@@ -372,6 +375,7 @@ describe("TelemetryClient batched retry + backoff", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("retries a 429 with the same batchId and eventually succeeds", async () => {
@@ -529,6 +533,7 @@ describe("TelemetryClient bounded pending-retry store", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("evicts the oldest batch and retries only the newest within the bound", async () => {
@@ -611,5 +616,54 @@ describe("TelemetryClient bounded pending-retry store", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(vi.getTimerCount()).toBe(1);
     client.stop();
+  });
+});
+
+// Opt-out gating. This fork's default endpoints are fixed in client.ts, so the
+// environment/file switches below are the only user-facing way to keep a
+// self-hosted instance from emitting telemetry. Each case clears the CI
+// variables first so the test is independent of where it runs.
+describe("resolveTelemetryConfig opt-out gating", () => {
+  const CI_VARS = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI"];
+
+  beforeEach(() => {
+    for (const key of CI_VARS) vi.stubEnv(key, "");
+    vi.stubEnv("PAPERCLIP_TELEMETRY_DISABLED", "");
+    vi.stubEnv("DO_NOT_TRACK", "");
+    vi.stubEnv("PAPERCLIP_TELEMETRY_ENDPOINT", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is enabled when no opt-out signal is present", () => {
+    expect(resolveTelemetryConfig().enabled).toBe(true);
+  });
+
+  it("passes a configured endpoint override through", () => {
+    vi.stubEnv("PAPERCLIP_TELEMETRY_ENDPOINT", "http://localhost:9999/ingest");
+    expect(resolveTelemetryConfig()).toMatchObject({
+      enabled: true,
+      endpoint: "http://localhost:9999/ingest",
+    });
+  });
+
+  it.each([
+    ["PAPERCLIP_TELEMETRY_DISABLED", "1"],
+    ["DO_NOT_TRACK", "1"],
+    ["CI", "true"],
+    ["GITHUB_ACTIONS", "true"],
+  ])("is disabled by %s=%s", (key, value) => {
+    vi.stubEnv(key, value);
+    expect(resolveTelemetryConfig().enabled).toBe(false);
+  });
+
+  it("is disabled by an explicit enabled:false in the config file", () => {
+    expect(resolveTelemetryConfig({ enabled: false }).enabled).toBe(false);
+  });
+
+  it("keeps the caps resolved even when disabled", () => {
+    vi.stubEnv("DO_NOT_TRACK", "1");
+    expect(resolveTelemetryConfig({ maxEventsPerBatch: 7 }).maxEventsPerBatch).toBe(7);
   });
 });

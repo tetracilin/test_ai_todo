@@ -44,7 +44,8 @@ describe("isWorkerEntrypoint", () => {
     const realDir = path.join(tempRoot, "real");
     const linkDir = path.join(tempRoot, "link");
     fs.mkdirSync(realDir);
-    fs.symlinkSync(realDir, linkDir, "dir");
+    // Windows symlinks need elevation; a junction resolves the same way via realpath.
+    fs.symlinkSync(realDir, linkDir, process.platform === "win32" ? "junction" : "dir");
 
     const workerPath = path.join(realDir, "worker.js");
     fs.writeFileSync(workerPath, "");
@@ -579,8 +580,9 @@ describe("worker provider tracer", () => {
         apiVersion: 1,
       });
       await callWorker("getData", { key: "probe", companyId: "company-a", params: {} }, invocation);
-      // Let the fire-and-forget span.record flush.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // Ordering barrier, no sleep: the worker writes span.record to stdout
+      // synchronously before it writes the getData response, and the host reads
+      // that stream in order, so every span.record is captured by now.
       return spanRecords;
     } finally {
       worker.stop();
@@ -714,8 +716,8 @@ describe("worker execute.log emitter", () => {
         apiVersion: 1,
       });
       await callWorker("getData", { key: "emit-logs", companyId: "company-a", params: {} }, invocation);
-      // Let the fire-and-forget execute.log notifications flush.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // Ordering barrier, no sleep: execute.log notifications are written
+      // synchronously before the getData response on the same ordered stream.
       return logRecords;
     } finally {
       worker.stop();

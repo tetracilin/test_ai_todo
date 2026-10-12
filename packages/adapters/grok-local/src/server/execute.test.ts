@@ -135,7 +135,7 @@ describe("grok_local execute", () => {
     });
     expect(await pathExists(path.join(root, "Agents.md"))).toBe(false);
     expect(await pathExists(path.join(root, ".claude", "skills", "paperclip"))).toBe(false);
-    expect(logs.map((entry) => entry.chunk)).not.toEqual([]);
+    expect(logs).toContainEqual({ stream: "stdout", chunk: '{"type":"text","data":"done"}' + "\n" });
   });
 
   it("reports real per-run token usage, marks it as per_run, and only surfaces cost for API billing", async () => {

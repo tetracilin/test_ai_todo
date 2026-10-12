@@ -142,6 +142,7 @@ describe("secrets CLI helpers", () => {
     delete process.env.AWS_ACCESS_KEY_ID;
     delete process.env.AWS_SECRET_ACCESS_KEY;
     delete process.env.AWS_SESSION_TOKEN;
+    delete process.env.AWS_PROFILE;
   });
 
   afterEach(() => {
@@ -265,6 +266,8 @@ describe("secrets CLI helpers", () => {
 });
 
 describe("secrets API parity commands", () => {
+  const originalEnv = { ...process.env };
+
   beforeEach(() => {
     vi.restoreAllMocks();
     delete process.env.PAPERCLIP_API_KEY;
@@ -273,7 +276,9 @@ describe("secrets API parity commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    process.env = { ...originalEnv };
   });
 
   it("wraps provider config and remote import endpoints", async () => {

@@ -23,4 +23,21 @@ describe("buildLineDiff", () => {
     const rows = buildLineDiff("", "x\ny");
     expect(rows.filter((row) => row.kind === "added")).toHaveLength(2);
   });
+
+  it("numbers context rows on both sides and keeps numbering independent across changes", () => {
+    const rows = buildLineDiff("a\nb\nc", "a\nc\nd");
+    expect(rows).toEqual([
+      { kind: "context", oldLineNumber: 1, newLineNumber: 1, text: "a" },
+      { kind: "removed", oldLineNumber: 2, newLineNumber: null, text: "b" },
+      { kind: "context", oldLineNumber: 3, newLineNumber: 2, text: "c" },
+      { kind: "added", oldLineNumber: null, newLineNumber: 3, text: "d" },
+    ]);
+  });
+
+  it("marks every old line removed when the new text shares no lines", () => {
+    const rows = buildLineDiff("x\ny", "z");
+    expect(rows.filter((row) => row.kind === "removed").map((row) => row.text)).toEqual(["x", "y"]);
+    expect(rows.filter((row) => row.kind === "added").map((row) => row.text)).toEqual(["z"]);
+    expect(rows.some((row) => row.kind === "context")).toBe(false);
+  });
 });

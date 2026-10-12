@@ -854,11 +854,12 @@ describe("EnvironmentVariablesEditor", () => {
       container.querySelector<HTMLInputElement>('input[aria-label="Variable value"]')!.type,
     ).toBe("text");
 
-    // Dismissal is a local UI concern — the emitted plain value is unchanged.
-    const lastEmit = onChange.mock.calls.at(-1)?.[0];
-    if (lastEmit) {
-      expect(lastEmit).toEqual({ STRIPE_API_KEY: { type: "plain", value: "supersecretvalue" } });
-    }
+    // Dismissal is a local UI concern — nothing is emitted (the editor only
+    // emits on Save), so the bound plain value cannot have changed.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="Variable value"]')!.value,
+    ).toBe("supersecretvalue");
   });
 
   it("lets slash-delimited secrets be browsed by folder and exposes full paths on hover", async () => {

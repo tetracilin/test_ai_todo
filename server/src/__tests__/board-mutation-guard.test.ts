@@ -29,7 +29,7 @@ describe("boardMutationGuard", () => {
   it("allows safe methods for board actor", async () => {
     const app = createApp("board");
     const res = await request(app).get("/read");
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("blocks board mutations without trusted origin", () => {
@@ -57,19 +57,19 @@ describe("boardMutationGuard", () => {
   it("allows local implicit board mutations without origin", async () => {
     const app = createApp("board", "local_implicit");
     const res = await request(app).post("/mutate").send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("allows board bearer-key mutations without origin", async () => {
     const app = createApp("board", "board_key");
     const res = await request(app).post("/mutate").send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("allows trusted Cloud tenant mutations without origin", async () => {
     const app = createApp("board", "cloud_tenant");
     const res = await request(app).post("/mutate").send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("allows board mutations from trusted origin", async () => {
@@ -78,7 +78,7 @@ describe("boardMutationGuard", () => {
       .post("/mutate")
       .set("Origin", "http://localhost:3100")
       .send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("allows board mutations from trusted referer origin", async () => {
@@ -87,7 +87,7 @@ describe("boardMutationGuard", () => {
       .post("/mutate")
       .set("Referer", "http://localhost:3100/issues/abc")
       .send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("allows HTTPS branch-runtime mutations when forwarded MagicDNS host and non-standard port match", async () => {
@@ -99,7 +99,7 @@ describe("boardMutationGuard", () => {
       .set("X-Forwarded-Proto", "https")
       .set("Origin", "https://branch-runner.tail123.ts.net:42000")
       .send({ ok: true });
-    expect([200, 204]).toContain(res.status);
+    expect(res.status).toBe(204);
   });
 
   it("blocks board mutations when x-forwarded-host does not match origin", async () => {

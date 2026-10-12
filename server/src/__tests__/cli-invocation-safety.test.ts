@@ -335,7 +335,17 @@ const SKIP_DIRS = new Set([
   "tmp",
 ]);
 
-const SKIP_PATH_PREFIXES = ["doc/logs/", "doc/plans/", "scripts/"];
+// `.claude/worktrees/` holds full checkouts of this repository that agent
+// tooling creates next to the working tree. Each one is a copy of the repo, not
+// guidance of this checkout, and scanning them multiplies the walk time (the
+// two scans below time out) and reports offenders from stale copies. Prune them
+// at the directory level; `.claude/skills/` stays in scope.
+const SKIP_PATH_PREFIXES = [
+  "doc/logs/",
+  "doc/plans/",
+  "scripts/",
+  ".claude/worktrees/",
+];
 
 const SCAN_EXTENSIONS = new Set([
   ".md",
@@ -364,6 +374,7 @@ function listGuidanceFiles(): string[] {
       const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue;
+        if (SKIP_PATH_PREFIXES.some((prefix) => `${relPath}/`.startsWith(prefix))) continue;
         walk(path.join(absDir, entry.name), relPath);
         continue;
       }
@@ -430,10 +441,17 @@ function scanText(relPath: string, source: string): string[] {
   return offenders;
 }
 
+// Read every guidance file once and share the result between the two scans.
+let guidanceCache: Array<{ relPath: string; text: string }> | null = null;
+function guidanceSources(): Array<{ relPath: string; text: string }> {
+  guidanceCache ??= listGuidanceFiles().map((relPath) => ({ relPath, text: read(relPath) }));
+  return guidanceCache;
+}
+
 function scanForOffenders(): string[] {
   const offenders: string[] = [];
-  for (const relPath of listGuidanceFiles()) {
-    offenders.push(...scanText(relPath, read(relPath)));
+  for (const { relPath, text } of guidanceSources()) {
+    offenders.push(...scanText(relPath, text));
   }
   return offenders;
 }
@@ -453,14 +471,12 @@ function recommendsBrokenExecForm(line: string): boolean {
 
 function scanForBrokenExecForm(): string[] {
   const offenders: string[] = [];
-  for (const relPath of listGuidanceFiles()) {
-    read(relPath)
-      .split("\n")
-      .forEach((line, index) => {
-        if (recommendsBrokenExecForm(line)) {
-          offenders.push(`${relPath}:${index + 1}: ${line.trim()}`);
-        }
-      });
+  for (const { relPath, text } of guidanceSources()) {
+    text.split("\n").forEach((line, index) => {
+      if (recommendsBrokenExecForm(line)) {
+        offenders.push(`${relPath}:${index + 1}: ${line.trim()}`);
+      }
+    });
   }
   return offenders;
 }

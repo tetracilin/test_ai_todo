@@ -358,4 +358,27 @@ describe("agent instructions service", () => {
     ]);
     expect(exported.files).toEqual({ "AGENTS.md": "# Managed Agent\n" });
   });
+
+  it.each(["../escape.md", "docs/../../escape.md", "..\\escape.md", ".."])(
+    "rejects bundle file paths that escape the bundle root (%s)",
+    async (escapingPath) => {
+      const externalRoot = await makeTempDir("paperclip-agent-instructions-escape-");
+      cleanupDirs.add(externalRoot);
+      await fs.writeFile(path.join(externalRoot, "AGENTS.md"), "# External Agent\n", "utf8");
+      const svc = agentInstructionsService();
+      const agent = makeAgent({
+        instructionsBundleMode: "external",
+        instructionsRootPath: externalRoot,
+        instructionsEntryFile: "AGENTS.md",
+        instructionsFilePath: path.join(externalRoot, "AGENTS.md"),
+      });
+
+      await expect(svc.writeFile(agent, escapingPath, "pwned")).rejects.toMatchObject({ status: 422 });
+      await expect(svc.readFile(agent, escapingPath)).rejects.toMatchObject({ status: 422 });
+      await expect(svc.deleteFile(agent, escapingPath)).rejects.toMatchObject({ status: 422 });
+
+      await expect(fs.stat(path.join(path.dirname(externalRoot), "escape.md"))).rejects.toThrow();
+      expect((await svc.getBundle(agent)).files.map((file) => file.path)).toEqual(["AGENTS.md"]);
+    },
+  );
 });

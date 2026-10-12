@@ -31,6 +31,7 @@ describe("run inspection commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

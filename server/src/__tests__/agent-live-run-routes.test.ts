@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -114,6 +114,33 @@ async function createApp(db: Record<string, unknown> = {}) {
   return app;
 }
 
+function makeLiveRunRow(overrides: Record<string, unknown> = {}) {
+  return {
+    companyId: "company-1",
+    status: "running",
+    invocationSource: "on_demand",
+    triggerDetail: "manual",
+    startedAt: new Date("2026-04-10T09:30:00.000Z"),
+    finishedAt: null,
+    agentId: "agent-1",
+    agentName: "Builder",
+    adapterType: "codex_local",
+    logBytes: 0,
+    livenessState: "healthy",
+    livenessReason: null,
+    continuationAttempt: 0,
+    lastUsefulActionAt: null,
+    nextAction: null,
+    lastOutputAt: null,
+    lastOutputSeq: null,
+    lastOutputStream: null,
+    lastOutputBytes: 0,
+    processStartedAt: null,
+    issueId: "issue-1",
+    ...overrides,
+  };
+}
+
 function createLiveRunsDbStub(rows: Array<Record<string, unknown>>) {
   const limit = vi.fn(async (value: number) => rows.slice(0, value));
   const orderedQuery = {
@@ -163,6 +190,13 @@ async function requestApp(
 }
 
 describe("agent live run routes", () => {
+  // Warm the transform cache for the very large agents router so its first
+  // import is not charged to the first test's timeout.
+  beforeAll(async () => {
+    await vi.importActual("../routes/agents.js");
+    await vi.importActual("../middleware/index.js");
+  }, 120_000);
+
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../services/agents.js");
@@ -275,7 +309,7 @@ describe("agent live run routes", () => {
     expect(res.body).not.toHaveProperty("resultJson");
     expect(res.body).not.toHaveProperty("contextSnapshot");
     expect(res.body).not.toHaveProperty("logRef");
-  }, 10_000);
+  });
 
   it("ignores a stale execution run from another issue and falls back to the assignee's matching run", async () => {
     mockHeartbeatService.getRunIssueSummary.mockResolvedValue({
@@ -376,30 +410,9 @@ describe("agent live run routes", () => {
   });
 
   it("caps company live run polling by default", async () => {
-    const rows = Array.from({ length: 75 }, (_, index) => ({
+    const rows = Array.from({ length: 75 }, (_, index) => makeLiveRunRow({
       id: `run-${index}`,
-      companyId: "company-1",
-      status: "running",
-      invocationSource: "on_demand",
-      triggerDetail: "manual",
-      startedAt: new Date("2026-04-10T09:30:00.000Z"),
-      finishedAt: null,
       createdAt: new Date(`2026-04-10T09:${String(index % 60).padStart(2, "0")}:00.000Z`),
-      agentId: "agent-1",
-      agentName: "Builder",
-      adapterType: "codex_local",
-      logBytes: 0,
-      livenessState: "healthy",
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      lastOutputAt: null,
-      lastOutputSeq: null,
-      lastOutputStream: null,
-      lastOutputBytes: 0,
-      processStartedAt: null,
-      issueId: "issue-1",
     }));
     const { db, limit } = createLiveRunsDbStub(rows);
 
@@ -415,30 +428,9 @@ describe("agent live run routes", () => {
   });
 
   it("treats explicit zero or invalid live run limit as the capped default", async () => {
-    const rows = Array.from({ length: 75 }, (_, index) => ({
+    const rows = Array.from({ length: 75 }, (_, index) => makeLiveRunRow({
       id: `run-${index}`,
-      companyId: "company-1",
-      status: "running",
-      invocationSource: "on_demand",
-      triggerDetail: "manual",
-      startedAt: new Date("2026-04-10T09:30:00.000Z"),
-      finishedAt: null,
       createdAt: new Date(`2026-04-10T09:${String(index % 60).padStart(2, "0")}:00.000Z`),
-      agentId: "agent-1",
-      agentName: "Builder",
-      adapterType: "codex_local",
-      logBytes: 0,
-      livenessState: "healthy",
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      lastOutputAt: null,
-      lastOutputSeq: null,
-      lastOutputStream: null,
-      lastOutputBytes: 0,
-      processStartedAt: null,
-      issueId: "issue-1",
     }));
     const { db, limit } = createLiveRunsDbStub(rows);
 
@@ -453,33 +445,11 @@ describe("agent live run routes", () => {
   });
 
   it("does not pad with recent runs when no minCount is requested", async () => {
-    const liveRows = Array.from({ length: 8 }, (_, index) => ({
+    const liveRows = Array.from({ length: 8 }, (_, index) => makeLiveRunRow({
       id: `run-live-${index}`,
-      companyId: "company-1",
-      status: "running",
-      invocationSource: "on_demand",
-      triggerDetail: "manual",
-      startedAt: new Date("2026-04-10T09:30:00.000Z"),
-      finishedAt: null,
       createdAt: new Date(`2026-04-10T09:${String(index % 60).padStart(2, "0")}:00.000Z`),
-      agentId: "agent-1",
-      agentName: "Builder",
-      adapterType: "codex_local",
-      logBytes: 0,
-      livenessState: "healthy",
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      lastOutputAt: null,
-      lastOutputSeq: null,
-      lastOutputStream: null,
-      lastOutputBytes: 0,
-      processStartedAt: null,
-      issueId: "issue-1",
     }));
 
-    const selectCalls: Array<ReturnType<typeof vi.fn>> = [];
     const db = {
       select: vi.fn().mockImplementation(() => {
         const limitFn = vi.fn(async (value: number) => liveRows.slice(0, value));
@@ -494,7 +464,6 @@ describe("agent live run routes", () => {
           where: vi.fn().mockReturnThis(),
           orderBy: vi.fn().mockReturnValue(orderedQuery),
         };
-        selectCalls.push(limitFn);
         return query;
       }),
     };
@@ -510,55 +479,16 @@ describe("agent live run routes", () => {
   });
 
   it("pads with recent runs when minCount is explicitly requested", async () => {
-    const liveRows = Array.from({ length: 2 }, (_, index) => ({
+    const liveRows = Array.from({ length: 2 }, (_, index) => makeLiveRunRow({
       id: `run-live-${index}`,
-      companyId: "company-1",
-      status: "running",
-      invocationSource: "on_demand",
-      triggerDetail: "manual",
-      startedAt: new Date("2026-04-10T09:30:00.000Z"),
-      finishedAt: null,
       createdAt: new Date(`2026-04-10T09:${String(index % 60).padStart(2, "0")}:00.000Z`),
-      agentId: "agent-1",
-      agentName: "Builder",
-      adapterType: "codex_local",
-      logBytes: 0,
-      livenessState: "healthy",
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      lastOutputAt: null,
-      lastOutputSeq: null,
-      lastOutputStream: null,
-      lastOutputBytes: 0,
-      processStartedAt: null,
-      issueId: "issue-1",
     }));
-    const recentRows = Array.from({ length: 4 }, (_, index) => ({
+    const recentRows = Array.from({ length: 4 }, (_, index) => makeLiveRunRow({
       id: `run-recent-${index}`,
-      companyId: "company-1",
       status: "succeeded",
-      invocationSource: "on_demand",
-      triggerDetail: "manual",
       startedAt: new Date("2026-04-09T09:30:00.000Z"),
       finishedAt: new Date("2026-04-09T09:35:00.000Z"),
       createdAt: new Date(`2026-04-09T09:${String(index % 60).padStart(2, "0")}:00.000Z`),
-      agentId: "agent-1",
-      agentName: "Builder",
-      adapterType: "codex_local",
-      logBytes: 0,
-      livenessState: "healthy",
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      lastOutputAt: null,
-      lastOutputSeq: null,
-      lastOutputStream: null,
-      lastOutputBytes: 0,
-      processStartedAt: null,
-      issueId: "issue-1",
     }));
 
     let selectCallCount = 0;
