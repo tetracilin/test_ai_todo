@@ -286,6 +286,7 @@ describe("issue workspace command authorization", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.error).toContain("runtimeProvisionCommand");
     expect(mockIssueService.create).not.toHaveBeenCalled();
   });
 
@@ -314,6 +315,32 @@ describe("issue workspace command authorization", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.error).toContain("teardownCommand");
     expect(mockIssueService.update).not.toHaveBeenCalled();
+  });
+
+  it("allows board callers to set the same workspace runtime provision command (control for the agent denial)", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "board-user",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app)
+      .post("/api/companies/company-1/issues")
+      .send({
+        title: "Board-configured workspace",
+        executionWorkspaceSettings: {
+          workspaceStrategy: {
+            type: "git_worktree",
+            runtimeProvisionCommand: "pnpm install",
+          },
+        },
+      });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockIssueService.create).toHaveBeenCalledTimes(1);
   });
 });

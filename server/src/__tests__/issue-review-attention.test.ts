@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   agentWakeupRequests,
@@ -255,9 +256,15 @@ describeEmbeddedPostgres("issue review attention", () => {
       finishedAt: new Date(),
     });
 
-    await expect(db.insert(agentWakeupRequests).values({
+    await db.insert(agentWakeupRequests).values({
       ...baseWake,
       status: "queued",
-    })).resolves.toBeDefined();
+    });
+
+    const rows = await db
+      .select({ status: agentWakeupRequests.status })
+      .from(agentWakeupRequests)
+      .where(eq(agentWakeupRequests.idempotencyKey, idempotencyKey));
+    expect(rows.map((row) => row.status).sort()).toEqual(["queued", "skipped"]);
   });
 });

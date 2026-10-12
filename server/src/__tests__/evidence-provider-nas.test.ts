@@ -53,18 +53,18 @@ describe("buildNasEvidenceTarget", () => {
         externalId: "/nas/evidence/a.pdf",
         url: "https://nas.internal/a.pdf",
       }),
-    ).toThrowError();
+    ).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses an empty path", () => {
     expect(() =>
       buildNasEvidenceTarget({ providerKey: "nas", objectType: "path", externalId: "   " }),
-    ).toThrowError();
+    ).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses a relative path", () => {
     expect(() =>
       buildNasEvidenceTarget({ providerKey: "nas", objectType: "path", externalId: "evidence/a.pdf" }),
-    ).toThrowError();
+    ).toThrowError(expect.objectContaining({ status: 422 }));
   });
 });
