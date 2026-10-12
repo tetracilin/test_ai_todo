@@ -130,6 +130,13 @@ describe("formatScope", () => {
         new Map(),
       ),
     ).toBe("Project · Support");
+    expect(
+      formatScope(
+        gateway({ contextScopeType: "agent", contextScopeId: "a1" }),
+        new Map(),
+        new Map([["a1", "Coder"]]),
+      ),
+    ).toBe("Agent · Coder");
   });
 });
 

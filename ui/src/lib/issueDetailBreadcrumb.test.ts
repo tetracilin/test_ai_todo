@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   armIssueDetailInboxQuickArchive,
   createIssueDetailLocationState,
@@ -26,9 +26,19 @@ const sessionStorageMock = (() => {
   };
 })();
 
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+
 Object.defineProperty(globalThis, "window", {
   configurable: true,
   value: { sessionStorage: sessionStorageMock },
+});
+
+afterAll(() => {
+  if (originalWindowDescriptor) {
+    Object.defineProperty(globalThis, "window", originalWindowDescriptor);
+  } else {
+    delete (globalThis as { window?: unknown }).window;
+  }
 });
 
 describe("issueDetailBreadcrumb", () => {

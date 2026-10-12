@@ -3,9 +3,19 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  getEmbeddedPostgresTestSupport,
+  startEmbeddedPostgresTestDatabase,
+} from "./test-embedded-postgres.js";
 
-const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
-const describePostgres = adminUrl ? describe : describe.skip;
+// TEST_DATABASE_ADMIN_URL lets a caller point the suite at an external server.
+// Nothing in CI sets it, so without a fallback the suite never ran; use the
+// embedded Postgres harness (like the sibling migration tests) when it is unset.
+const externalAdminUrl = process.env.TEST_DATABASE_ADMIN_URL;
+const embeddedPostgresSupport = externalAdminUrl
+  ? { supported: true as const }
+  : await getEmbeddedPostgresTestSupport();
+const describePostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 const baselineMigrationPath = fileURLToPath(new URL("./migrations/0227_nappy_doorman.sql", import.meta.url));
 const migrationPath = fileURLToPath(new URL("./migrations/0228_mature_namora.sql", import.meta.url));
 const databaseName = `paperclip_scheduling_${randomUUID().replaceAll("-", "")}`;
@@ -55,15 +65,36 @@ describePostgres("scheduling schema migration on PostgreSQL", () => {
   let admin!: postgres.Sql;
   let sql!: postgres.Sql;
   let migration!: string;
+  let adminUrl!: string;
+  let embeddedCleanup: (() => Promise<void>) | null = null;
+
+  // The first test applies the migration inside a rolled-back transaction and then
+  // for real; later tests need it applied. Make them independent of run order.
+  async function ensureMigrationApplied(): Promise<void> {
+    const [{ applied }] = await sql<{ applied: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'scheduling_routines' AND column_name = 'timezone'
+      ) AS applied
+    `;
+    if (!applied) await applyMigration(sql, migration);
+  }
 
   beforeAll(async () => {
-    admin = postgres(adminUrl!, { max: 1 });
+    if (externalAdminUrl) {
+      adminUrl = externalAdminUrl;
+    } else {
+      const embedded = await startEmbeddedPostgresTestDatabase("paperclip-scheduling-schema-");
+      embeddedCleanup = embedded.cleanup;
+      adminUrl = databaseUrl(embedded.connectionString, "postgres");
+    }
+    admin = postgres(adminUrl, { max: 1 });
     await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
-    sql = postgres(databaseUrl(adminUrl!, databaseName), { max: 1 });
+    sql = postgres(databaseUrl(adminUrl, databaseName), { max: 1 });
     migration = await readFile(migrationPath, "utf8");
     await createPrerequisiteSchema(sql);
     await applyMigration(sql, await readFile(baselineMigrationPath, "utf8"));
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await sql?.end();
@@ -74,6 +105,7 @@ describePostgres("scheduling schema migration on PostgreSQL", () => {
       await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}"`);
       await admin.end();
     }
+    await embeddedCleanup?.();
   });
 
   it("rolls back cleanly before applying the migration", async () => {
@@ -102,6 +134,7 @@ describePostgres("scheduling schema migration on PostgreSQL", () => {
   });
 
   it("enforces one scheduling row per issue, tenant FKs, positive durations, defaults, and indexes", async () => {
+    await ensureMigrationApplied();
     const companyId = randomUUID();
     const otherCompanyId = randomUUID();
     const issueId = randomUUID();
@@ -162,6 +195,7 @@ describePostgres("scheduling schema migration on PostgreSQL", () => {
   });
 
   it("stores recurrence fields with UTC timezone default and enforces routine FK behavior", async () => {
+    await ensureMigrationApplied();
     const companyId = randomUUID();
     const otherCompanyId = randomUUID();
     const projectId = randomUUID();
@@ -247,6 +281,7 @@ describePostgres("scheduling schema migration on PostgreSQL", () => {
   });
 
   it("cascades issue deletion without deleting unrelated scheduling routines", async () => {
+    await ensureMigrationApplied();
     const companyId = randomUUID();
     const issueId = randomUUID();
     await sql`INSERT INTO companies (id) VALUES (${companyId})`;

@@ -5,7 +5,7 @@ status: APPROVED
 owner: tetracilin
 derives_from: docs/designs/t3-company-os-ssot.md
 targets: [backlog.md, roadmap.md]
-updated: 2026-09-03
+updated: 2026-09-07
 ---
 
 # T3 — Slice 1 feature decomposition (agent-implementable)
@@ -29,32 +29,83 @@ as GitHub issues (`backlog.md` Filing-status table records the numbers).
 
 ## Current state — verified in code, not assumed
 
+**⚠️ 2026-09-04 refresh.** Everything below this line was re-verified directly against
+`origin/develop` on 2026-09-04, after this table was found stale in TWO separate ways in one
+session: (1) it described `feature/evidence-substrate` as unmerged when it had already landed as
+PR #75, and (2) after that correction, its "Dossier service ... EXISTS" row turned out to describe
+only the pure markdown grammar module — there was still no persistence layer, no
+`issue_documents` row for key `dossier` ever created, until PR #81. **Read B.1's Status column
+first** — it is the fastest way to see what is actually shipped in Lane A. Treat any claim in this
+table as provisional until you have grepped for it yourself; this table drifts.
+
+**"SHIPPED" means merged to `develop`. It does not always mean deployed.** As of 2026-09-07
+the staging stack at `:33130` is still serving `c3c03e81` (2026-09-03): `t3-nightly`'s deploy
+job has failed since the 2026-09-04 run on two secret files that were never created on kmv8.
+So the table splits in two:
+
+- **Deployed and running on staging** — everything up to and including `c3c03e81`. That
+  covers PR #40 (the PC-001 evidence gate) and PR #75 (`issue_evidence_links`, PC-011
+  provenance, `wp0-phrases`, `doc/WP0-OPERATIONS.md`); `git merge-base --is-ancestor`
+  confirms both are ancestors of the deployed sha.
+- **Merged but never deployed** — the 11 commits in `c3c03e81..origin/develop`: PRs #78,
+  #68, #79, #80, #81, #83, #84, #82, #85, #87, #88. That includes every evidence *provider*
+  (minio/git/nas), the dossier persistence layer, and the WP-close export bundle. They have
+  passed `t3-ci` but have never run on staging or production.
+
+Re-derive the split rather than trusting this paragraph:
+`git log --oneline c3c03e81..origin/develop`. See `CICD/PLAN_CICD.md` §0.
+
 | Claim | Verified | Evidence |
 |---|---|---|
-| PC-001 evidence gate | **SHIPPED** (develop, #40 / issue #41) | `server/src/services/issues.ts:7842-7940`, gate inside the row-locked `issueService.update()` transaction; `companies.evidenceGateEnabled` flag; `cancelled` never gated; activity_log `issue.evidence_gate.closed` with count written even when the flag is off |
-| PC-001 tests | 13 cases | `server/src/__tests__/issue-evidence-gate.test.ts` — flag on/off, both evidence sources, cancelled, already-done no-retrigger, race/reopen, activity_log, PATCH 422, recovery-actions 422 |
-| `issue_evidence_links` table | **EXISTS** | `packages/db/src/schema/issue_evidence_links.ts`, migration `0232_naive_cerise.sql`. Columns: id, company_id, issue_id, external_object_id, created_at. FK cascade on both. |
-| `issue_evidence_links` **write path** | **WRITTEN AND PUSHED — `origin/feature/evidence-substrate`** | Not on `develop`, so the gate on `develop` can today only be satisfied by `issue_attachments`. But the branch carries `server/src/services/issue-evidence-links.ts` (493 lines) + `issue-evidence-links.test.ts` (980) and the link/unlink/move routes. **No PR is open for it.** See F-000. |
-| PC-011 `source` provenance column | **WRITTEN AND PUSHED — same branch** | Migration `0233_evidence_source_provenance.sql`, plus `server/src/services/evidence-provenance.ts` (199) + test (391). |
-| `source=bot` **producer** | **DOES NOT EXIST — deliberately** | `server/src/routes/issues.ts:342` on that branch is `const HTTP_EVIDENCE_SOURCE: EvidenceSource = "manual"`, used at :8568 and :13341. Every HTTP filing act records `manual`. The chat bridge is the only intended `bot` writer and is unbuilt. See ENG-8. |
-| **Company export carries evidence links** | **NO — live silent failure** | Portability uses an enumerated manifest (`packages/shared/src/types/company-portability.ts`), not a table walk. `issue_evidence_links` appears 0 times in `company-portability.ts` and 0 times in `export-fidelity.ts`. Export drops it; the fidelity report reports clean. See review finding 1.2. |
-| Dossier mechanism | free-text `key` on `issue_documents` | `packages/db/src/schema/issue_documents.ts` — key `dossier` needs no schema change |
-| Discord bridge | slash-command + outbox transport only | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. README: "Gateway requests only `Guilds`; no message content or privileged intents." No message handler, no DM path, no media path. |
-| Teable client | **DOES NOT EXIST** | No module under `server/src/services/` |
-| `doc/WP0-OPERATIONS.md` | **EXISTS (757 lines) on `feature/evidence-substrate`** | Not on `develop`. Satisfies most of F-OPS-1. |
-| Vietnamese phrase table | **EXISTS on that branch** | `packages/shared/src/wp0-phrases.ts` (514) + test (356). Satisfies most of F-VERB-0. |
-| Dossier service | **EXISTS on that branch** | `server/src/services/issue-dossier.ts` (412) + fixture + test (351). Satisfies most of F-002-1 and F-002-4. |
+| PC-001 evidence gate | **SHIPPED** (develop, #40 / issue #41) | `server/src/services/issues.ts`, gate inside the row-locked `issueService.update()` transaction; `companies.evidenceGateEnabled` flag; `cancelled` never gated; activity_log `issue.evidence_gate.closed` with count written even when the flag is off |
+| PC-001 tests | 15+ cases, incl. the comment-decision path (F-001-1) | `server/src/__tests__/issue-evidence-gate.test.ts` — flag on/off, both evidence sources, cancelled, already-done no-retrigger, race/reopen, activity_log, PATCH 422, recovery-actions 422, **and** `POST /api/issues/:id/comments` auto-approval 422 + auto-close |
+| `issue_evidence_links` table + write path | **SHIPPED** — PR #75 | `server/src/services/issue-evidence-links.ts` — `link`/`unlink`/`move`, unique-index idempotency, `countEvidenceForIssue` (the one predicate the gate/wedge-ratio/dossier all share) |
+| Evidence providers `minio`/`git`/`nas` | **SHIPPED** — PR #79, concurrency-hardened in #80 | `server/src/services/evidence-provider-{minio,git,nas}.ts`. The generic `POST /issues/:id/evidence-links` route now refuses unverified `git`/`nas`/`minio` submissions instead of accepting any `providerKey` on say-so (closed review findings 3.1/3.2). `evidence-storage-reaper.ts` is the GC backstop for minio uploads. |
+| PC-011 `source` provenance column + ratio query | **SHIPPED** — PR #75 | `server/src/services/evidence-provenance.ts` (`getWedgeMetric`) — bot/(bot+manual) ratio, `system` excluded from both sides, band call (pass/iterate/abort/extend_window). **No HTTP route** — function + tests only, same pattern later reused for F-002-3. |
+| `source=bot` **producer** | **still does not exist — deliberately** | `HTTP_EVIDENCE_SOURCE = "manual"` in `server/src/routes/issues.ts` — every HTTP filing act records `manual`. The chat bridge (F-DM-2/PC-004) is the only intended `bot` writer and is still unbuilt. See ENG-8. |
+| **Company export carries evidence links** | **not re-verified since the 2026-09-01 review** — treat the original finding (export silently drops `issue_evidence_links`) as still open until someone re-checks `company-portability.ts` against the shipped table | See review finding 1.2 in the review-findings section below |
+| Dossier persistence + hooks | **SHIPPED** — PR #81 | `issueDossierService(db)` in `server/src/services/issue-dossier.ts`, built on `documentService` (the same generic keyed-`issue_documents` mechanism `issue-continuation-summary.ts` uses). Create-on-intake (best-effort hook on `issueService(db).create()`), evidence-log hook (covers **both** `issue_evidence_links` and `issue_attachments` — product decision, wider than AC5's literal wording), clarification-answer hook, and a new agent-facing `POST /issues/:id/dossier/scope-changes` route (not best-effort) that mirrors as an issue comment. |
+| Scope-change timestamp query | **SHIPPED** — PR #81 | `queryScopeChangeTimestamps` in `issue-dossier.ts`. Function + tests only, no route; superseded as a timeline consumer by the WP-close export bundle below. |
+| WP-close export bundle (F-006-1, partial F-006-3) | **SHIPPED** — PR #84 | `server/src/services/wp-close-export.ts` — a parent issue carrying a company-scoped label named `WP` (`WORK_PACKAGE_LABEL_NAME`, K6 rule: no `work_packages` table) refuses to close while a child is neither `done` nor `cancelled` (same commit-point choke as the PC-001 gate, inside `issueService.update()`), and on success renders/persists a markdown bundle (dossier, evidence index, scope-change timeline, wedge ratio) as the WP's own `wp-close-export` document, best-effort and post-commit. One checked-in example fixture (`server/src/__tests__/fixtures/wp-close-export-example.md`) satisfies F-006-3's fixture half; **F-006-2 (commit to `Tecotec-JSc/T3-wiki` + CTO chat notification) is still unbuilt.** |
+| Dossier renders in card UI (F-002-5) | **SHIPPED** — PR #100 | `ui/src/components/IssueDossierPanel.tsx`, rendered in the card's Activity tab next to `IssueContinuationHandoff`, reading the existing `GET /issues/:id/documents/dossier` route. The dossier's key, its PC-002 AC1 headings, and a read-only parser moved to `packages/shared/src/dossier-view.ts` so the writer and the renderer cannot declare the grammar separately; `server/src/__tests__/issue-dossier-view.test.ts` runs both parsers over the checked-in fixture and fails on any disagreement. Evidence log and Scope changes render as structured lists, the other three sections stay markdown (no closed server grammar exists for them), and a section the reader cannot fully parse falls back to raw markdown rather than dropping a line. |
+| Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
+| Teable client | **F-010-1 SHIPPED** — PR #102; **F-010-2 SHIPPED**; **F-005-1 SHIPPED** (this PR); F-010-3 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create/update records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row; `updateRecord`, added for F-005-1, is single-attempt for the same reason). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. F-010-2 (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`) adds the append-only agent write: one allowlisted table (per-company secret `TEABLE_WRITE_TABLE_ID`), the created row linked on the card + one dossier Evidence-log line, and a bot-account attribution marker (`TEABLE_BOT_ACCOUNT_NAME`, checked via the exported `isPaperclipBotAuthored` predicate) so F-005-1's conflict flagging skips the bot's own rows. F-005-1 (`server/src/services/teable-mirror.ts`) is the consumer: a heartbeat-scheduler sweep (same convention as `evidence-storage-reaper.ts`) that mirrors card create/status/assignee onto one `external_objects(provider=teable, objectType="issue_mirror")` row per issue via `createRecords`/`updateRecord`, flags a Teable-side edit as a conflict (reusing `isPaperclipBotAuthored`, scoped to `lastModifiedBy`) instead of overwriting it, and reuses `activity_log` itself as the retry-backoff state. Fixture/embedded-Postgres-verified, not live-verified, same as F-010-1/F-010-2. |
+| `doc/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
+| Vietnamese phrase table (F-VERB-0) | **SHIPPED** — PR #75 | `packages/shared/src/wp0-phrases.ts` + test. The branch-name auto-link matcher for F-007-3 (`matchesIssueBranch`) is shipped as a pure function only — nothing wires it to a live "watch for pushes" trigger yet. |
+| F-001-1 / F-001-2 (gate residue) | **SHIPPED** — already present when checked 2026-09-04, exact PR unclear (predates this session's PRs) | See PC-001 tests row above; `EVIDENCE_GATE_REJECTION_CODE`/`acceptedEvidenceTypes`/`chatPhraseKey` in `server/src/services/issues.ts` |
 
-**Residual PC-001 gaps** (the story is merged but three ACs are not fully met):
+**Residual PC-001 gaps** (re-verified 2026-09-04 — two of the three original gaps are now closed):
 
-- AC2 half-met — the rejection names accepted evidence types, but its remedy is *"link
-  evidence via the API"*. The AC promises **the chat phrase**; the phrase table does not
-  exist yet. The message is addressed to a developer, not to a Vietnamese field engineer.
-- AC5 unmet — evidence counts are in `activity_log` payloads but no query surface exposes
-  them per engineer per WP. Superseded by F-011-3.
-- AC6 partly met — tests cover the main PATCH and the recovery-action path. The
-  **comment-decision auto-approval path** is not in the test list, and the AC requires all
-  done-producing paths be exercised.
+- ~~AC2~~ — **closed**. The 422 rejection now carries `code`, `acceptedEvidenceTypes`, and
+  `chatPhraseKey`, resolving against the F-VERB-0 phrase table (F-001-2, shipped).
+- AC5 — **closed differently than planned**. Nothing new was built for it; PC-011's
+  `getWedgeMetric` (`evidence-provenance.ts`, grouped by engineer/work_package) already answers
+  "evidence counts per engineer per WP" once its (still-unbuilt) HTTP route exists. Flagging
+  rather than asserting fully done, since no route consumes it yet.
+- ~~AC6~~ — **closed**. `issue-evidence-gate.test.ts` now exercises the comment-decision
+  auto-approval path (F-001-1, shipped).
+
+**Next unblocked unit (refreshed 2026-09-18, after F-005-1).** F-002-5 shipped in PR #100, so
+**Lane A is complete** — there is no server-substrate or read-surface work left in it. Lane B
+opened with F-010-1, and F-010-2 and F-005-1 (append-only agent write, and the card mirror
+cron that consumes its `isPaperclipBotAuthored` export) now ship on top of it. Where the
+remaining candidates stand:
+
+- **Lane B — F-010 Teable client.** **F-010-1**, **F-010-2**, and **F-005-1** are all shipped
+  (see the `Teable client` row above). **F-010-3** (read verb, no write scope) is the one
+  remaining unit, unblocked, building directly on the shipped client. Owner constraint recorded
+  2026-09-13: production Teable is a **self-hosted container on the app host**, and the hosted
+  Teable API must **never** be called from this repo — build from published documentation, and
+  verify against the staging endpoint the owner supplies.
+- **Lane D — F-402 pilot card gate.** `backlog.md`'s own **OQ-4 is still open** ("Is a
+  flowchart mandatory for every SW card?") — the brief-linkage mechanism AC1 needs is
+  undefined. Get OQ-4 answered before starting this one, or it will need a throwaway design
+  decision re-litigated later.
+- **Lane C — Discord DM/capture verbs (F-DM-2 onward).** Blocked on gate **G-2** (external
+  Discord privileged-intent approval), not something an agent can unblock.
+- **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
+  direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
+  most dev environments will not have configured — confirm access before picking it up.
 
 ---
 
@@ -242,30 +293,37 @@ G-2 is the single longest external dependency in Slice 1. Everything in Lane C b
 Ordered. `F-011-1` goes first because every later write path must set the column, and adding
 it after those writes exist means touching each of them twice.
 
-| ID | Feature | Depends on | Effort |
-|---|---|---|---|
-| **F-000** | **Recover the stashed evidence-substrate WIP** | — | human: 2h / CC: 20m |
-| **F-012-1** | **Portability manifest + registration test (P1)** | F-000 | human: 2-3d / CC: 2h |
-| F-011-1 | Provenance columns — review + complete recovered code | F-000 | human: 1h / CC: 10m |
-| F-007-1 | Evidence-link write/unlink API — review + complete | F-000, F-011-1 | human: 1d / CC: 1h |
-| F-007-2 | MinIO evidence upload (provider `minio`) | F-007-1 | human: 2d / CC: 2h |
-| F-007-3 | Git commit verify + link (provider `git`) | F-007-1 | human: 1d / CC: 1h |
-| F-007-4 | NAS path reference (provider `nas`) | F-007-1 | human: 4h / CC: 30m |
-| F-007-5 | Unlink / move correction path | F-007-1, F-002-2 | human: 1d / CC: 1h |
-| ~~F-011-2~~ | _moved to Lane C and rewritten as a design unit — see A1. `human: >=1d`_ | — | — |
-| F-011-3 | Provenance ratio + evidence-count query | F-011-2 | human: 1d / CC: 1h |
-| F-002-1 | Dossier service (create/read/append) | — | human: 1.5d / CC: 1.5h |
-| F-002-2 | Dossier append hooks + scope-change mirror | F-002-1, F-007-1 | human: 1d / CC: 1h |
-| F-002-3 | Scope-change timestamp query | F-002-2 | human: 4h / CC: 30m |
-| F-002-4 | Dossier markdown export + fixture | F-002-1 | human: 1d / CC: 45m |
-| F-002-5 | Dossier renders in card UI | F-002-1 | human: 1d / CC: 1h |
-| F-001-1 | Comment-decision done-path gate test | — | human: 3h / CC: 20m |
-| F-001-2 | Machine-relayable gate rejection payload | F-VERB-0 | human: 4h / CC: 30m |
+**Status column added 2026-09-04, verified against code on `origin/develop` (not assumed from
+this table, which had gone stale twice already — see the dated addendum after the Current
+state table above).** **Lane A is complete as of PR #100** — F-002-5, the last unit, shipped.
+
+| ID | Feature | Depends on | Effort | Status |
+|---|---|---|---|---|
+| **F-000** | **Recover the stashed evidence-substrate WIP** | — | human: 2h / CC: 20m | ✅ shipped — PR #75 |
+| **F-012-1** | **Portability manifest + registration test (P1)** | F-000 | human: 2-3d / CC: 2h | ✅ shipped — PR #75 |
+| F-011-1 | Provenance columns — review + complete recovered code | F-000 | human: 1h / CC: 10m | ✅ shipped — PR #75 |
+| F-007-1 | Evidence-link write/unlink API — review + complete | F-000, F-011-1 | human: 1d / CC: 1h | ✅ shipped — PR #75 (`server/src/services/issue-evidence-links.ts`) |
+| F-007-2 | MinIO evidence upload (provider `minio`) | F-007-1 | human: 2d / CC: 2h | ✅ shipped — PR #79, concurrency-hardened in #80 (`server/src/services/evidence-provider-minio.ts`) |
+| F-007-3 | Git commit verify + link (provider `git`) | F-007-1 | human: 1d / CC: 1h | ✅ shipped — PR #79 (`server/src/services/evidence-provider-git.ts`); branch-name auto-link matcher shipped as a pure function only, no live trigger wired yet |
+| F-007-4 | NAS path reference (provider `nas`) | F-007-1 | human: 4h / CC: 30m | ✅ shipped — PR #79 (`server/src/services/evidence-provider-nas.ts`) |
+| F-007-5 | Unlink / move correction path | F-007-1, F-002-2 | human: 1d / CC: 1h | ✅ shipped — PR #75 (`unlink`/`move` in `issue-evidence-links.ts`) |
+| F-011-2 | Provenance set on every write path | — | human: >=1d | ✅ satisfied in practice — every shipped write path sets `source` explicitly (`HTTP_EVIDENCE_SOURCE` default `manual`, bot passed explicitly); the "rewrite as a Lane C design unit" note below is superseded |
+| F-011-3 | Provenance ratio + evidence-count query | F-011-2 | human: 1d / CC: 1h | ✅ shipped — PR #75 (`server/src/services/evidence-provenance.ts`, `getWedgeMetric`); function + tests only, **no HTTP route** — nothing has consumed it yet |
+| F-002-1 | Dossier service (create/read/append) | — | human: 1.5d / CC: 1.5h | ✅ shipped — PR #81. **Correction:** this table previously said PR #75 shipped it; #75 only shipped the pure markdown grammar (`issue-dossier.ts`), with zero persistence anywhere. #81 built the actual `issueDossierService(db)` on `documentService`. |
+| F-002-2 | Dossier append hooks + scope-change mirror | F-002-1, F-007-1 | human: 1d / CC: 1h | ✅ shipped — PR #81: evidence-link hook covers both `issue_evidence_links` and `issue_attachments` (product decision, broader than AC5's literal "linkage" wording), plus a clarification-answer hook and a new agent-facing `POST /issues/:id/dossier/scope-changes` route |
+| F-002-3 | Scope-change timestamp query | F-002-2 | human: 4h / CC: 30m | ✅ shipped — PR #81 (`queryScopeChangeTimestamps`); function + tests only, no route, matching F-011-3's precedent |
+| F-002-4 | Dossier markdown export + fixture | F-002-1 | human: 1d / CC: 45m | ✅ shipped — PR #75 |
+| F-002-5 | Dossier renders in card UI | F-002-1 | human: 1d / CC: 1h | ✅ shipped — PR #100 (`ui/src/components/IssueDossierPanel.tsx` + `packages/shared/src/dossier-view.ts`). **Lane A is now complete.** |
+| F-001-1 | Comment-decision done-path gate test | — | human: 3h / CC: 20m | ✅ shipped — already present when checked 2026-09-04, `issue-evidence-gate.test.ts` ("POST /api/issues/:id/comments surfaces the same 422 when an approval comment auto-closes" + the auto-closes-once-evidence-linked case) |
+| F-001-2 | Machine-relayable gate rejection payload | F-VERB-0 | human: 4h / CC: 30m | ✅ shipped — already present when checked 2026-09-04 (`EVIDENCE_GATE_REJECTION_CODE`, `acceptedEvidenceTypes`, `chatPhraseKey` in `server/src/services/issues.ts`) |
 
 ---
 
 **F-000 — Open a PR for `feature/evidence-substrate`** *(rewritten after the Phase 3 outside
 voice; the earlier "recover a stash" version was wrong — see finding 1.1-CORRECTED)*
+
+**✅ Done — merged as PR #75 on 2026-09-03.** The narrative below is kept for historical context
+(why the units are shaped the way they are); do not read it as current branch state.
 
 The work is **not** in a stash. `origin/feature/evidence-substrate` is a pushed branch, five
 commits ahead of `develop`, **+4,885 lines across 19 files**, with **no PR open**:
@@ -491,10 +549,10 @@ phrase** from the F-VERB-0 table. The English API message stays for API callers.
 
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
-| F-010-1 | Teable REST client (shared service module) | — | human: 2d / CC: 2h |
-| F-010-2 | Append-only agent write + link + attribution | F-010-1, F-007-1, F-002-2 | human: 2d / CC: 2h |
+| ~~F-010-1~~ | ~~Teable REST client (shared service module)~~ **SHIPPED — PR #102** (`server/src/services/teable-client.ts`; fixture-verified, not live-verified) | — | human: 2d / CC: 2h |
+| ~~F-010-2~~ | ~~Append-only agent write + link + attribution~~ **SHIPPED** (this PR) (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`; fixture-verified, not live-verified) | F-010-1, F-007-1, F-002-2 | human: 2d / CC: 2h |
 | F-010-3 | Teable read verb (no write scope) | F-010-1 | human: 1d / CC: 1h |
-| F-005-1 | Card → Teable mirror cron | F-010-1 | human: 3d / CC: 3h |
+| ~~F-005-1~~ | ~~Card → Teable mirror cron~~ **SHIPPED** (this PR) (`server/src/services/teable-mirror.ts`, wired into the heartbeat scheduler in `server/src/index.ts`; fixture/embedded-Postgres-verified, not live-verified) | F-010-1 | human: 3d / CC: 3h |
 
 **F-010-1** — `server/src/services/teable-client.ts`, credentials via the existing secrets
 service (named refs, never inline), retry with backoff, typed responses. **A shared module,
@@ -510,16 +568,38 @@ flagging must never fire on the bot's own writes.
 - Deferred to Slice 2 (PC-010 AC2/AC3): multi-table allowlist framework, per-table schema
   maps, update-with-conflict policy.
 - Tests: a write outside the allowlist is refused with an actionable message; the linked row
-  appears on the card; F-005-1 does not flag the bot's row as a conflict.
+  appears on the card; the dossier gets exactly one Evidence-log line. `isPaperclipBotAuthored`
+  is exported from `teable-append.ts` so **F-005-1, once built, does not flag the bot's own
+  row as a conflict** — that assertion belongs to F-005-1's own test suite, since the cron
+  doesn't exist yet.
 
 **F-010-3** — reads answer "what's in table X for Y" in chat; read scope grants no write.
 
-**F-005-1** — card create/status/assignee → base "Tecotec CN" within 5 minutes
-(`pc005_teable_mirror_latency_minutes`). Direction Paperclip → Teable only; Teable-side edits
-are flagged as conflicts and never overwritten; failures surface in `activity_log` and retry
-with backoff.
-- Tests: latency budget asserted against a clock-frozen fixture; a Teable-side edit produces a
-  conflict flag, not an overwrite; a row carrying the F-010-2 attribution marker is skipped.
+**F-005-1 — SHIPPED (this PR).** `server/src/services/teable-mirror.ts`, swept on the
+existing heartbeat-scheduler interval (`server/src/index.ts`, same reaper convention as
+`evidence-storage-reaper.ts`) -- no new cron mechanism, no new table. Card create/status/
+assignee → base "Tecotec CN" within 5 minutes (comfortably inside the sweep cadence). Owns
+exactly one `external_objects(provider=teable, objectType="issue_mirror")` row per issue,
+linked via the existing `issue_evidence_links` service with `source: "system"` (F-011-1's
+third provenance value), created via `teable-client.ts`'s `createRecords` and updated in
+place via a new `updateRecord` method added to that client. Teable-side edits are detected by
+re-reading the row and comparing `lastModifiedTime`/`lastModifiedBy` (reusing
+`teable-append.ts`'s exported `isPaperclipBotAuthored` predicate, scoped to `lastModifiedBy`
+only -- see the module docblock for why `createdBy` alone would make a mirror's own rows
+permanently immune to conflict detection) and are flagged, never overwritten, sticky until a
+human resolves them out of band (Eng-8's accepted pilot-scale race window). Retry-with-backoff
+and the failure surface both reuse `activity_log` directly: the backoff state IS the
+consecutive `issue.teable_mirror_failed` streak, no counter column needed.
+- Deferred/simplified for Slice 1: the field mapping (`defaultMirrorFieldMapper`) targets
+  placeholder Teable column names pending the real "Tecotec CN" base schema (no live instance
+  reachable from this repo, same constraint as F-010-1/F-010-2) -- isolated behind an
+  injectable `mapFields` option so matching the real base is a one-line change, not a
+  re-verified against staging like every other documented Teable assumption in this repo.
+- Tests: `server/src/__tests__/teable-mirror.test.ts` (embedded Postgres) -- create-then-update
+  on the same row, a Teable-side edit produces a conflict flag and never calls `updateRecord`,
+  a bot-authored edit is excluded from that check, retry-with-backoff withholds a retry until
+  the window elapses and resumes after, an `activity_log` entry is written on failure. Plus two
+  new `updateRecord` cases in `server/src/__tests__/teable-client.test.ts`.
 
 ### B.3 Lane C — conversational verb pipeline (Discord DM surface)
 
@@ -674,19 +754,30 @@ digest is exactly the failure mode that recreates the PM's manual summary.
 
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
-| F-006-1 | WP-close export bundle generator | F-002-3, F-011-3 | human: 3d / CC: 2h |
+| ~~F-006-1~~ | ~~WP-close export bundle generator~~ **SHIPPED — PR #84** | F-002-3, F-011-3 | human: 3d / CC: 2h |
 | F-006-2 | Commit to T3-wiki + CTO notification | F-006-1 | human: 1d / CC: 1h |
-| F-006-3 | Example bundle fixture | F-006-1 | human: 4h / CC: 30m |
+| ~~F-006-3~~ | ~~Example bundle fixture~~ **SHIPPED (fixture half) — PR #84** | F-006-1 | human: 4h / CC: 30m |
 | F-402-1 | Brief required before `in_progress` | — | human: 1d / CC: 1h |
 | F-402-2 | Commit auto-link from `PC-xxx` branches | F-007-3 | human: 1d / CC: 1h |
 | F-402-3 | Close requires commit + demo + test report | F-007-1 | human: 1d / CC: 1h |
 
-**F-006-1** — closing a parent issue labelled `WP` generates a markdown bundle: per-card
-dossier, activity summary, evidence index (links, hashes, counts), scope-change timeline, and
-the bot/manual ratio. Refuses while any child is neither `done` nor `cancelled`.
-**F-006-2** — bundle committed to `Tecotec-JSc/T3-wiki`; confidential content is NAS path
-references only, never bytes (AD-026); CTO notified in chat with the commit link within 24h.
-**F-006-3** — one example bundle checked in; the CTO retrieval test runs against this shape.
+**F-006-1 — SHIPPED (PR #84).** Closing a parent issue labelled `WP` (a company-scoped label
+named `WP`, per K6 — no `work_packages` table) generates a markdown bundle: per-card dossier,
+evidence index (links, counts; hashes for attachments via `assets.sha256`), scope-change
+timeline, and the bot/manual ratio. Refuses while any child is neither `done` nor `cancelled`,
+at the same commit-point choke as the PC-001 evidence gate inside `issueService.update()`'s
+row-locked transaction. Bundle generation itself is best-effort and post-commit (mirrors the
+dossier intake-seed hook): a rendering failure logs a warning but never blocks or undoes the
+close, and the bundle is regenerable via `wpCloseExportService(db).generateAndPersist()`.
+Persisted as the WP issue's own `wp-close-export` `issue_documents` row — same generic
+keyed-document mechanism the dossier uses, no new schema.
+**F-006-2 — still unbuilt.** Bundle committed to `Tecotec-JSc/T3-wiki`; confidential content is
+NAS path references only, never bytes (AD-026); CTO notified in chat with the commit link
+within 24h.
+**F-006-3 — fixture half shipped (PR #84).** One example bundle is checked in
+(`server/src/__tests__/fixtures/wp-close-export-example.md`, reusing the `dossier-example.md`
+pump-card story plus a second, cancelled card) and pinned by tests. PC-502's CTO retrieval test
+itself is not run yet — that is F-PILOT-2.
 **F-402-1/2/3** — the pilot card type. `in_progress` blocked without a linked brief
 (flowchart / REQ spec / PUC reference); commits on `PC-xxx` branches auto-link as evidence;
 close requires ≥1 commit + demo + test report.
@@ -802,11 +893,12 @@ Working protocol for an implementing agent, per feature unit:
    git fetch origin
    git worktree add "$(git rev-parse --show-toplevel)/../t3-PC-xxx-<slug>"        -b feature/PC-xxx-<slug> origin/develop
    cd "$(git rev-parse --show-toplevel)/../t3-PC-xxx-<slug>" && pnpm install
-   pnpm paperclipai worktree init --from-config    # REQUIRED
+   npx paperclipai worktree init --from-config ~/.paperclip/instances/default/config.json   # REQUIRED
    pnpm paperclipai worktree env                   # confirm it came up
    ```
    Three corrections over the obvious version, each verified: **`paperclipai` is not on PATH**
-   (`command -v paperclipai` → nothing) — always `pnpm paperclipai`. **Manual worktrees must
+   (`command -v paperclipai` → nothing) — use `npx paperclipai` for the content-bearing
+   `--from-config <path>` argument (`doc/CLI.md`), not `pnpm paperclipai`. **Manual worktrees must
    pass `--from-config`** (`doc/DEVELOPING.md:489`). And the path is anchored to the repo root,
    because a bare `../t3-…` resolves against the current directory and lands in the wrong place
    when you are already inside a worktree.

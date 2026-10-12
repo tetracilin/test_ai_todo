@@ -113,6 +113,7 @@ vi.mock("../adapters/use-disabled-adapters", () => ({
   // so every export the component reaches for has to be here — omitting one
   // makes it undefined and the call throws.
   useAdapterRegistryLoaded: () => true,
+  useSelectableAdapterTypes: () => null,
 }));
 vi.mock("../adapters/use-adapter-capabilities", () => ({
   useAdapterCapabilities: () => () => ({
@@ -192,6 +193,9 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
   afterEach(() => {
     document.body.innerHTML = "";
+    // Several cases spy on Storage.prototype and only restore inline; a failed
+    // assertion before that line would leave storage broken for later cases.
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 

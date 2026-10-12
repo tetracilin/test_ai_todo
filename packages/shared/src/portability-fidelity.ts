@@ -15,6 +15,11 @@ export const EXPORT_FIDELITY_COUNT_KEYS = [
   "issueDocuments",
   "issueWorkProducts",
   "issueAttachments",
+  // PC-012: both halves of the evidence substrate. `externalObjects` is the
+  // artifact table every evidence link points at; the two are counted
+  // separately so a report can show an object that survived with its link lost.
+  "issueEvidenceLinks",
+  "externalObjects",
   "approvals",
   "costEvents",
   "activityLogEntries",

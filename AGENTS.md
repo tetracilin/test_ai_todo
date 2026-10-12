@@ -9,9 +9,9 @@ The current implementation target is V1 and is defined in `doc/SPEC-implementati
 This repository is a hard fork of `paperclipai/paperclip` with an independent roadmap, used as
 the starting scaffold for T3 AI Todo. `main` is the development branch; the former
 `integration/paperclip` integration branch is retired. Nothing is ever contributed back to
-upstream. Upstream changes land only as one-way, selective cherry-picks (security fixes and
-useful core improvements) at the owner's discretion — see `doc/ORIGIN.md`. No `upstream`
-remote is configured until the first actual cherry-pick. Preserve `LICENSE` and `NOTICE` for any
+upstream. Upstream changes land only as one-way, selective imports: security fixes (human
+cherry-pick) and feature code an agent imports when the current task requires it — see
+`doc/ORIGIN.md`, "Feature-driven upstream import". No `upstream` remote is configured. Preserve `LICENSE` and `NOTICE` for any
 code carried over from paperclip. Never force-push `main`.
 
 ## 2. Read This First

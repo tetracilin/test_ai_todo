@@ -67,6 +67,10 @@ describe("PipelinesExperimentalGate", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enablePipelines: false });
     await renderGate();
 
+    // Poll (time-bounded) for the resolved flag instead of trusting a fixed number of ticks.
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="navigate"]')).not.toBeNull();
+    });
     const navigate = container.querySelector('[data-testid="navigate"]');
     expect(navigate?.getAttribute("data-to")).toBe("/dashboard");
     expect(navigate?.getAttribute("data-replace")).toBe("true");
@@ -77,7 +81,9 @@ describe("PipelinesExperimentalGate", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enablePipelines: true });
     await renderGate();
 
-    expect(container.querySelector('[data-testid="pipeline-content"]')).not.toBeNull();
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="pipeline-content"]')).not.toBeNull();
+    });
     expect(container.querySelector('[data-testid="navigate"]')).toBeNull();
   });
 

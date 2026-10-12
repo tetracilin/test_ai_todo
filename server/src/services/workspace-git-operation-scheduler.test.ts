@@ -151,7 +151,9 @@ describe("WorkspaceGitOperationScheduler", () => {
   it("coalesces the same canonical key and cleans single-flight state after success and failure", async () => {
     const workspace = await makeWorkspace();
     const alias = `${workspace}-alias`;
-    await fs.symlink(workspace, alias, "dir");
+    // A directory symlink needs elevation on Windows; a junction is the unprivileged
+    // equivalent and canonicalises through fs.realpath the same way.
+    await fs.symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
     tempPaths.push(alias);
     const gate = deferred<void>();
     let calls = 0;
@@ -356,7 +358,9 @@ describe("WorkspaceGitOperationScheduler", () => {
     ].join("\n"), "utf8");
     const scheduler = createWorkspaceGitOperationScheduler({
       concurrency: 1,
-      timeoutMs: 500,
+      // Generous enough for a cold `node` start on a loaded runner to write its pid
+      // file before the hard timeout fires; the hang itself is what ends the run.
+      timeoutMs: 2_000,
       killGraceMs: 50,
       gitBinary: process.execPath,
       gitArgsPrefix: [scriptPath],
@@ -374,7 +378,7 @@ describe("WorkspaceGitOperationScheduler", () => {
     expect(() => process.kill(killedPid, 0)).toThrow();
     const outputScheduler = createWorkspaceGitOperationScheduler({
       concurrency: 1,
-      timeoutMs: 1_000,
+      timeoutMs: 5_000,
       killGraceMs: 50,
       gitBinary: process.execPath,
       gitArgsPrefix: ["-e", 'process.stdout.write("x".repeat(65536)); setInterval(() => {}, 1000);'],

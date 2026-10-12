@@ -58,8 +58,12 @@ function event(overrides: Partial<ToolCallEvent>): ToolCallEvent {
 const agents: Agent[] = [{ id: "agent-1", name: "BenchmarkForensics" } as Agent];
 
 let container: HTMLDivElement | null = null;
+let root: ReturnType<typeof createRoot> | null = null;
 
 afterEach(() => {
+  // Unmount before removing the node so React effects/subscriptions do not leak across tests.
+  if (root) act(() => root!.unmount());
+  root = null;
   container?.remove();
   container = null;
 });
@@ -67,8 +71,8 @@ afterEach(() => {
 function renderPanel(props: Parameters<typeof ActivityPanel>[0]) {
   container = document.createElement("div");
   document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(<ActivityPanel {...props} />));
+  root = createRoot(container);
+  act(() => root!.render(<ActivityPanel {...props} />));
   return container.textContent ?? "";
 }
 

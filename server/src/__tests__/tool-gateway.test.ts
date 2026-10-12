@@ -434,6 +434,9 @@ async function startFakeRemoteMcpServer(handler: (request: FakeMcpRequest) => Pr
   delayMs?: number;
 }) {
   const requests: FakeMcpRequest[] = [];
+  // Assertions inside a handler run in a server callback; capture them so a failing expectation
+  // surfaces from close() instead of hanging the request and leaking an unhandled rejection.
+  const handlerErrors: unknown[] = [];
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
@@ -447,7 +450,15 @@ async function startFakeRemoteMcpServer(handler: (request: FakeMcpRequest) => Pr
       }
       const requestRecord = { headers: req.headers, body };
       requests.push(requestRecord);
-      const response = await handler(requestRecord);
+      let response: Awaited<ReturnType<typeof handler>>;
+      try {
+        response = await handler(requestRecord);
+      } catch (error) {
+        handlerErrors.push(error);
+        res.statusCode = 500;
+        res.end("fake MCP handler failed");
+        return;
+      }
       if (response.delayMs) {
         await new Promise((resolve) => setTimeout(resolve, response.delayMs));
       }
@@ -474,7 +485,11 @@ async function startFakeRemoteMcpServer(handler: (request: FakeMcpRequest) => Pr
     url: `http://127.0.0.1:${address.port}/mcp`,
     requests,
     close: () => new Promise<void>((resolve, reject) => {
-      server.close((error) => error ? reject(error) : resolve());
+      server.close((error) => {
+        if (error) reject(error);
+        else if (handlerErrors.length > 0) reject(handlerErrors[0]);
+        else resolve();
+      });
     }),
   };
 }

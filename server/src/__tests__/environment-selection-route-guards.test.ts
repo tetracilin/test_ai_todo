@@ -94,7 +94,7 @@ vi.mock("../services/index.js", () => ({
   }),
   documentService: () => ({}),
   documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
-  routineService: () => ({}),
+  routineService: () => ({ syncRunStatusForIssue: vi.fn(async () => undefined) }),
   workProductService: () => ({}),
 }));
 
@@ -218,7 +218,7 @@ describe.sequential("execution environment route guards", () => {
         },
       });
 
-    expect(res.status).not.toBe(422);
+    expect(res.status).toBe(201);
     expect(mockProjectService.create).toHaveBeenCalled();
   });
 
@@ -253,7 +253,7 @@ describe.sequential("execution environment route guards", () => {
         },
       });
 
-    expect(res.status).not.toBe(422);
+    expect(res.status).toBe(200);
     expect(mockProjectService.update).toHaveBeenCalled();
   });
 
@@ -282,7 +282,7 @@ describe.sequential("execution environment route guards", () => {
         },
       });
 
-    expect(res.status).not.toBe(422);
+    expect(res.status).toBe(201);
     expect(mockIssueService.create).toHaveBeenCalled();
   });
 
@@ -357,7 +357,7 @@ describe.sequential("execution environment route guards", () => {
         },
       });
 
-    expect(res.status).not.toBe(422);
+    expect(res.status).toBe(201);
     expect(mockIssueService.create).toHaveBeenCalled();
   });
 
@@ -393,7 +393,7 @@ describe.sequential("execution environment route guards", () => {
         },
       });
 
-    expect(res.status).not.toBe(422);
+    expect(res.status).toBe(200);
     expect(mockIssueService.update).toHaveBeenCalled();
   });
 });

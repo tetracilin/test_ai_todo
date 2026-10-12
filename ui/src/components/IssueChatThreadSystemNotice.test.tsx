@@ -317,6 +317,7 @@ describe("IssueChatThread system notice routing", () => {
   it("shows copy-link feedback on the link button only", async () => {
     const writeText = vi.fn(async () => undefined);
     const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     Object.defineProperty(window, "isSecureContext", {
       configurable: true,
       value: true,
@@ -343,23 +344,32 @@ describe("IssueChatThread system notice routing", () => {
       ...baseTimestamps,
     };
 
-    renderThread([comment]);
+    try {
+      renderThread([comment]);
 
-    const copyLink = container.querySelector('button[aria-label="Copy link to system notice"]') as HTMLButtonElement;
-    const copyText = container.querySelector('button[aria-label="Copy system notice"]') as HTMLButtonElement;
-    await act(async () => {
-      copyLink.click();
-      await Promise.resolve();
-    });
+      const copyLink = container.querySelector('button[aria-label="Copy link to system notice"]') as HTMLButtonElement;
+      const copyText = container.querySelector('button[aria-label="Copy system notice"]') as HTMLButtonElement;
+      await act(async () => {
+        copyLink.click();
+        await Promise.resolve();
+      });
 
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("#comment-comment-copy-link"));
-    expect(copyLink.querySelector(".lucide-check")).not.toBeNull();
-    expect(copyText.querySelector(".lucide-check")).toBeNull();
-    if (originalSecureContext) {
-      Object.defineProperty(window, "isSecureContext", originalSecureContext);
-    } else {
-      // @ts-expect-error test cleanup for optional browser API
-      delete window.isSecureContext;
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining("#comment-comment-copy-link"));
+      expect(copyLink.querySelector(".lucide-check")).not.toBeNull();
+      expect(copyText.querySelector(".lucide-check")).toBeNull();
+    } finally {
+      if (originalSecureContext) {
+        Object.defineProperty(window, "isSecureContext", originalSecureContext);
+      } else {
+        // @ts-expect-error test cleanup for optional browser API
+        delete window.isSecureContext;
+      }
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        // @ts-expect-error test cleanup for optional browser API
+        delete navigator.clipboard;
+      }
     }
   });
 

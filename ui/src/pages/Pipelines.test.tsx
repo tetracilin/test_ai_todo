@@ -136,6 +136,15 @@ describe("pipeline stage board presentation", () => {
     expect(getPipelineStageColumnTone("cancelled").outer).toContain("bg-muted/25");
     expect(getPipelineStageColumnTone("cancelled").outer).toContain("opacity-85");
   });
+
+  it("falls back to the neutral tone for unknown, blank, or missing stage kinds and ignores case", () => {
+    const neutral = getPipelineStageColumnTone("working");
+    expect(getPipelineStageColumnTone(null)).toBe(neutral);
+    expect(getPipelineStageColumnTone(undefined)).toBe(neutral);
+    expect(getPipelineStageColumnTone("   ")).toBe(neutral);
+    expect(getPipelineStageColumnTone("no-such-kind")).toBe(neutral);
+    expect(getPipelineStageColumnTone("  DONE ")).toBe(getPipelineStageColumnTone("done"));
+  });
 });
 
 describe("pipeline conversation comments", () => {

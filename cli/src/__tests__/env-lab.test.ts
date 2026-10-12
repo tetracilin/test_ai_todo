@@ -156,8 +156,10 @@ describe("env-lab cleanup command hint", () => {
     it(`keeps a checkout path with ${label} inert in the cleanup hint`, () => {
       const command = buildEnvLabCleanupCommand({ invocation: sourceInvocation(root) });
       const tokens = tokenizePosix(command);
-      const tsxBin = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
-      const entry = path.join(root, "src", "index.ts");
+      // The resolver anchors the fabricated root with path.resolve, so build the
+      // expectation the same way; on Windows path.join alone would omit the drive.
+      const tsxBin = path.resolve(root, "node_modules", "tsx", "dist", "cli.mjs");
+      const entry = path.resolve(root, "src", "index.ts");
 
       // The shell reads the exact paths as single argument tokens. It does not
       // split the paths or run the embedded construct.

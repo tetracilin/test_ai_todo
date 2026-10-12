@@ -67,8 +67,12 @@ describe("server adapter registry", () => {
     expect(findServerAdapter("gemini_local")).toBeNull();
   });
 
-  it("offers Hermes Gateway as the sole built-in AI adapter", () => {
-    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual(["hermes_gateway"]);
+  it("offers Hermes Gateway, Claude Code and local Hermes as the default built-in adapters", () => {
+    expect(listSelectableServerAdapters().map((adapter) => adapter.type)).toEqual([
+      "hermes_gateway",
+      "claude_local",
+      "hermes_local",
+    ]);
   });
 
   it("widens the selectable set when PAPERCLIP_SELECTABLE_ADAPTER_TYPES names more adapters", () => {

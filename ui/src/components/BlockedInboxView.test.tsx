@@ -136,14 +136,19 @@ const blockedViewProps = {
   showUpdatedColumn: true,
 };
 
-async function waitFor(predicate: () => boolean, attempts = 30): Promise<void> {
-  for (let i = 0; i < attempts; i += 1) {
-    if (predicate()) return;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
-  }
-  throw new Error("waitFor predicate did not become true");
+// Bounded by time (vi.waitFor's budget), not by a fixed attempt count of 5ms
+// turns (~150ms), which was too tight for a loaded worker.
+async function waitFor(predicate: () => boolean): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      if (predicate()) return;
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+      if (!predicate()) throw new Error("waitFor predicate did not become true");
+    },
+    { timeout: 5000, interval: 10 },
+  );
 }
 
 describe("BlockedInboxView", () => {

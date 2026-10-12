@@ -33,7 +33,7 @@ env:
   COMPOSE_PROJECT: t3-nightly
   COMPOSE_FILE: deploy/compose.yaml
   IMAGE_NAME: paperclip
-  HEALTH_URL: http://127.0.0.1:33130/api/health
+  HEALTH_URL: http://100.103.41.112:33130/api/health
   # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-nightly.
   SECRETS_DIR: /etc/t3/secrets/nightly
 
@@ -41,19 +41,26 @@ jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
-    # No `outputs:` here on purpose. slow-tests deliberately does NOT `needs:`
-    # this job (ASSUMPTION A6): Playwright bootstraps its own instance, so the
-    # suite runs on a GitHub-hosted runner even when the deploy guard skips.
-    # Coupling them would make a skipped deploy silently skip the tests too.
+    # Deploy is gated on the test jobs: staging only ever receives a sha whose
+    # full vitest suite (slow-tests) and Playwright run (e2e) both passed. If
+    # either fails or is cancelled, this job is skipped and the deployed sha is
+    # unchanged (the marker file is only written after a deploy). The reverse
+    # direction stays decoupled on purpose (ASSUMPTION A6): the test jobs do not
+    # `needs:` deploy, because Playwright bootstraps its own instance on a
+    # GitHub-hosted runner and must run even when the deploy guard skips.
+    needs: [slow-tests, e2e]
     environment:
       name: staging
-      url: http://127.0.0.1:33130
+      url: http://100.103.41.112:33130
     timeout-minutes: 30
     steps:
       - name: Skip scheduled run if develop has no new commits
         # Cheap guard: the last deployed sha is recorded in a marker file on the host.
         id: guard
         shell: bash
+        env:
+          # Read-only: only the compare endpoint below is called with it.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ref="${{ github.event.inputs.ref || 'develop' }}"
@@ -63,6 +70,41 @@ jobs:
           head=$(git ls-remote --quiet "https://github.com/${{ github.repository }}.git" "refs/heads/$ref" | cut -f1)
           [[ -n "$head" ]] || { echo "ref $ref not found"; exit 1; }
           echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          # Change list for the Discord report: the first line of every commit
+          # landed between the last deployed sha and this head (squash merges
+          # carry the PR title and number). Two small API calls instead of a
+          # paged compare: the compare gives the commit count, the commits
+          # endpoint gives the newest 15 titles from head, so the newest
+          # changes are never lost behind a page boundary. The shallow
+          # checkout below needs no history. Best effort on purpose: a failed
+          # lookup yields an empty list and a named status, never a failed
+          # deploy. `compare` is one of: ok, same_commit, no_marker, lookup_failed.
+          changes=""
+          compare="lookup_failed"
+          if [[ "$last" == none ]]; then
+            compare="no_marker"
+          elif [[ "$last" == "$head" ]]; then
+            compare="same_commit"
+          else
+            api="${{ github.api_url }}/repos/${{ github.repository }}"
+            auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+            if total=$(curl -fsS "${auth[@]}" "$api/compare/$last...$head?per_page=1" | jq -r '.total_commits') \
+               && [[ "$total" =~ ^[0-9]+$ ]] \
+               && changes=$(curl -fsS "${auth[@]}" "$api/commits?sha=$head&per_page=15" \
+                    | jq -r --argjson total "$total" '
+                        [.[:$total][] | .commit.message | split("\n")[0]
+                         | select(test("^Merge (pull request|branch)") | not)]
+                        | reverse
+                        | (if $total > 15 then ["… \($total - 15) earlier commits"] + . else . end)
+                        | .[] | "• " + .'); then
+              compare="ok"
+            else
+              changes=""
+            fi
+          fi
+          echo "compare=$compare" >> "$GITHUB_OUTPUT"
+          { echo "changes<<EOF"; echo "$changes"; echo "EOF"; } >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "schedule" && "$last" == "$head" ]]; then
             echo "no changes on $ref since last deploy ($last) — skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -70,7 +112,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.guard.outputs.skip == 'false'
         with:
           ref: ${{ steps.guard.outputs.ref }}
@@ -82,7 +124,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in postgres_password better_auth_secret; do
+          # The artifact keys are required by deploy/compose.yaml. Checking them
+          # here turns a missing file into a named error instead of a bind-mount
+          # failure several steps later.
+          for f in postgres_password better_auth_secret \
+                   paperclip_artifacts_access_key paperclip_artifacts_secret_key; do
             [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
           done
 
@@ -115,12 +161,46 @@ jobs:
           # ASSUMPTION A1 — these must match what deploy/compose.yaml reads.
           PAPERCLIP_IMAGE: ${{ steps.tag.outputs.image }}
           PAPERCLIP_PORT: ${{ vars.NIGHTLY_PORT || '33130' }}
-          PAPERCLIP_BIND_ADDRESS: 127.0.0.1
+          # Staging is reachable from the tailnet so a remote monitoring host can
+          # poll it. It stays authenticated (deploy/compose.yaml sets
+          # PAPERCLIP_DEPLOYMENT_MODE=authenticated), so this is tailnet-scoped
+          # plus login-gated, the same posture as production.
+          #
+          # Binding the tailnet IP UNBINDS 127.0.0.1:33130 -- the ports entry in
+          # deploy/compose.yaml publishes one address. HEALTH_URL above moves with
+          # it; anything else pointing at loopback on this host must move too.
+          PAPERCLIP_BIND_ADDRESS: 100.103.41.112
+          # exposure=private + mode=authenticated enables the private-hostname
+          # guard, which runs BEFORE the health route and 403s any Host: not in
+          # this list. Both the tailnet IP and the MagicDNS name are listed, so a
+          # browser can use either; loopback stays for anything still on the host.
+          # See t3-release.yml for the same guard on production.
+          PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,hostinger-kvm8-host.tail9831b.ts.net,localhost,127.0.0.1
+          # The only value that can put the PUBLISHED host port into Better
+          # Auth's trusted origins. deriveAuthTrustedOrigins (server/src/auth/
+          # better-auth.ts) expands PAPERCLIP_ALLOWED_HOSTNAMES using the
+          # container's INTERNAL listen port (3100, per deploy/compose.yaml),
+          # so it can only ever produce http://100.103.41.112:3100 -- never
+          # :33130, which is what a browser actually sends. The remaining
+          # source of trusted origins is config.auth.publicBaseUrl, which
+          # deploy/scripts/container-entrypoint.sh writes from this variable
+          # with baseUrlMode=explicit. Left unset, compose defaults it to
+          # http://127.0.0.1:33100 (wrong host AND wrong port), so every
+          # browser sign-in got 403 INVALID_ORIGIN. t3-release.yml sets the
+          # prod equivalent; this is the fifth value that must move with a
+          # bind change, not the fourth.
+          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33130
+          # Adapters an operator may pick when hiring an agent on this stack.
+          # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
+          # `staging` GitHub Environment to override this default.
+          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway,claude_local,hermes_local' }}
           # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
           # not SECRETS_DIR directly — without them it falls back to a
           # relative ./secrets/... path that doesn't exist on the runner.
           POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
           BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
+          PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_access_key
+          PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_secret_key
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
@@ -129,6 +209,25 @@ jobs:
         if: steps.guard.outputs.skip == 'false'
         shell: bash
         run: deploy/scripts/healthcheck.sh "$HEALTH_URL" "${{ steps.tag.outputs.full }}" 30 5
+
+      - name: Seed the persistent staging tester account
+        if: steps.guard.outputs.skip == 'false'
+        shell: bash
+        env:
+          # Staging is login-gated, so QA needs a known account. Re-asserted on
+          # every deploy rather than created by hand once, because a volume reset
+          # would otherwise silently take the shared login away.
+          #
+          # The password lives in the `staging` GitHub Environment, never in the
+          # repo -- it grants instance_admin on a live stack. The job already
+          # declares `environment: staging` above, which is what makes this
+          # secret resolvable here.
+          SEED_TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
+          SEED_TESTER_PASSWORD: ${{ secrets.STAGING_TESTER_PASSWORD }}
+          SEED_TESTER_NAME: Staging Tester
+        # HEALTH_URL minus /api/health: the seed must post from a trusted origin,
+        # and PAPERCLIP_PUBLIC_URL above is what makes that host one.
+        run: deploy/scripts/seed-staging-tester.sh "${HEALTH_URL%/api/health}" "$COMPOSE_PROJECT"
 
       - name: Record deployed sha
         if: steps.guard.outputs.skip == 'false'
@@ -157,20 +256,49 @@ jobs:
           # output must reach bash as data, never be interpolated into the
           # script source where a quote or $( ) span would be evaluated.
           DRIFT: ${{ steps.drift.outputs.report }}
+          # Same rule for the commit list: PR titles are free text.
+          CHANGES: ${{ steps.guard.outputs.changes }}
+          COMPARE: ${{ steps.guard.outputs.compare }}
+          LAST_SHA: ${{ steps.guard.outputs.last }}
+          HEAD_SHA: ${{ steps.guard.outputs.head }}
+          # Same default as the seed step above, so the message names the
+          # account that really exists on staging. Never the password.
+          TESTER_EMAIL: ${{ vars.STAGING_TESTER_EMAIL || 'admintest@staging.local' }}
         run: |
           set -euo pipefail
           [[ -n "$WEBHOOK" ]] || { echo "DISCORD_WEBHOOK_URL not set; skipping"; exit 0; }
           status="${{ job.status }}"
+          test_url="${HEALTH_URL%/api/health}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [[ "${{ steps.guard.outputs.skip }}" == "true" ]]; then
             emoji="⏭️"; line="nightly: no changes on develop, skipped"
           elif [[ "$status" == "success" ]]; then
-            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to :33130"
+            emoji="✅"; line="nightly: deployed ${{ steps.tag.outputs.image }} to staging"
           else
-            emoji="❌"; line="nightly: **$status** at ref ${{ steps.guard.outputs.head }}"
+            emoji="❌"; line="nightly: **$status** at ref ${HEAD_SHA:0:8}"
           fi
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          content=$(printf '%s %s\n<%s>\n```\n%s\n```' "$emoji" "$line" "$run_url" "${DRIFT:-(no drift report)}")
-          jq -n --arg c "$content" '{content: $c}' \
+          # One sentence per compare state, so a reader diagnosing a run is
+          # never told "redeployed" when the guard simply did not finish.
+          case "$COMPARE" in
+            ok)
+              if [[ -n "$CHANGES" ]]; then
+                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}):"$'\n'"$CHANGES"
+              else
+                changes="Changes since last deploy (${LAST_SHA:0:8} → ${HEAD_SHA:0:8}): merge commits only"
+              fi ;;
+            same_commit)   changes="Changes since last deploy: none, ${HEAD_SHA:0:8} is already deployed" ;;
+            no_marker)     changes="Changes since last deploy: unavailable, no previous deploy recorded on this runner" ;;
+            lookup_failed) changes="Changes since last deploy: unavailable, GitHub compare lookup failed (see run log)" ;;
+            *)             changes="Changes since last deploy: unavailable, guard step did not finish" ;;
+          esac
+          drift="${DRIFT:-(no drift report)}"
+          content=$(printf '%s %s\nTest it: %s (login: %s)\nRun: <%s>\n%s\n```\n%s\n```' \
+            "$emoji" "$line" "$test_url" "$TESTER_EMAIL" "$run_url" "$changes" "${drift:0:600}")
+          # Discord rejects messages over 2000 characters.
+          if (( ${#content} > 1990 )); then content="${content:0:1980}"$'\n…'; fi
+          # PR titles are contributor text: never let them ping @everyone,
+          # @here, a user, or a role.
+          jq -n --arg c "$content" '{content: $c, allowed_mentions: {parse: []}}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
 
   # Slow suites salvaged from upstream pr.yml (general_tests, verify_serialized_server,
@@ -186,12 +314,24 @@ jobs:
   # pr.yml sharded these across a matrix purely for PR latency. Nightly has no latency
   # budget, so it uses the repo's own stable runner (scripts/run-vitest-stable.mjs), which
   # already serializes the suites that contend over embedded Postgres.
-  slow-tests:
-    name: slow-tests
+  # e2e is its OWN job, deliberately, not a tail of slow-tests.
+  #
+  # It used to be three steps after the vitest step in that job. Steps run in
+  # order and the job aborts at the first failure, and vitest failed on every
+  # run this workflow ever had -- so `Install Chromium` and `E2E` were skipped
+  # every single time. e2e has never executed once. A separate job cannot be
+  # hidden by an unrelated red suite, reports its own status, and runs in
+  # parallel instead of queueing behind a 20-minute vitest run.
+  #
+  # It does not `needs:` deploy for the same reason slow-tests does not
+  # (ASSUMPTION A6 above): playwright.config.ts bootstraps its own throwaway
+  # instance on 127.0.0.1 and cannot be pointed at the deployed :33130 stack.
+  e2e:
+    name: e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref || 'develop' }}
           fetch-depth: 1
@@ -199,18 +339,18 @@ jobs:
         with:
           version: 9.15.4
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: Full vitest suite (general + serialized)
-        # pnpm test:run (bare) skips the plugin-sdk build step that
-        # test:run:general / test:run:serialized include, so
-        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
-        # test file that imports it (ERR_MODULE_NOT_FOUND).
-        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+      # The e2e webServer runs `paperclipai onboard --run`, which boots the real
+      # server. That pulls in @paperclipai/plugin-sdk/testing the same way the
+      # vitest suites do, so the prebuild is required here too -- without it the
+      # bootstrap dies with ERR_MODULE_NOT_FOUND before Playwright sees a page.
+      - name: Build plugin-SDK deps
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
 
       - name: Install Chromium
         # Deliberately Playwright's bundled Chromium, NOT the runner's stable
@@ -228,7 +368,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-nightly
           # test-results/ carries the failure screenshots and first-retry
@@ -240,7 +380,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Discord report (slow tests)
+      - name: Discord report (e2e)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          msg=$(printf 'nightly e2e FAILED on develop\n<%s>' "$run_url")
+          jq -n --arg c "$msg" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  slow-tests:
+    name: slow-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Full vitest suite (general + serialized)
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+
+
+      - name: Discord report (vitest)
         if: failure()
         shell: bash
         env:

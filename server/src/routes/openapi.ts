@@ -30,6 +30,8 @@ import {
   createIssueLabelSchema,
   addIssueCommentSchema,
   checkoutIssueSchema,
+  appendTeableRowSchema,
+  queryTeableRowsSchema,
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
@@ -640,6 +642,27 @@ const externalObjectSummariesBodySchema = z.object({
 
 const refreshExternalObjectsBodySchema = z.object({
   objectIds: z.array(z.string().guid()).max(50).optional(),
+}).strict();
+
+// Evidence links (PC-007 AC6/AC7). Re-declared here rather than imported: the
+// canonical shapes are `linkIssueEvidenceSchema` / `moveIssueEvidenceSchema` in
+// routes/issues.ts, which is a route module, so the spec keeps its own copy the
+// way externalObjectSummariesBodySchema above does. Note there is no `source`
+// field: PC-011 AC2 provenance is decided server-side and a body that sends it
+// is rejected by the route's `.strict()` schema.
+const linkIssueEvidenceBodySchema = z.union([
+  z.object({ externalObjectId: z.string().guid() }).strict(),
+  z.object({
+    providerKey: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/),
+    objectType: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_]*$/),
+    externalId: z.string().trim().min(1).max(1_024),
+    displayTitle: z.string().trim().min(1).max(200).optional(),
+    url: z.string().trim().url().max(2_048).optional(),
+  }).strict(),
+]);
+
+const moveIssueEvidenceBodySchema = z.object({
+  toIssueId: z.string().guid(),
 }).strict();
 
 // The start route reads the body directly, so document the accepted fields
@@ -6146,6 +6169,115 @@ registry.registerPath({
   summary: "List external objects mentioned by an issue",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// Evidence links (PC-007). Distinct from the external-object surface above:
+// that one lists text-detected mentions, these are the first-class filing acts
+// the PC-001 evidence gate counts.
+
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/evidence-links",
+  tags: ["issues"],
+  summary: "List evidence links for an issue",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/evidence-links",
+  tags: ["issues"],
+  summary: "Link evidence to an issue",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(linkIssueEvidenceBodySchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/issues/{id}/evidence-links/{linkId}",
+  tags: ["issues"],
+  summary: "Unlink evidence from an issue",
+  request: { params: z.object({ id: z.string(), linkId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/evidence-links/{linkId}/move",
+  tags: ["issues"],
+  summary: "Move an evidence link to another issue",
+  request: {
+    params: z.object({ id: z.string(), linkId: z.string() }),
+    body: jsonBody(moveIssueEvidenceBodySchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
+});
+
+// F-010-2 (PC-010 AC1/AC4/AC6, Slice-1 append-only subset): creates one row in the company's
+// single allowlisted Teable table, links it on the card, and appends a dossier Evidence-log
+// line. 422 is the allowlist/not-configured refusal; 502/503 are upstream Teable failures.
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/teable-rows",
+  tags: ["issues"],
+  summary: "Append a row to the company's allowlisted Teable table and link it to an issue",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(appendTeableRowSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+    502: r.serverError,
+    503: r.serverError,
+  },
+});
+
+// F-010-3 (PC-010 AC5, Slice-1 read-only subset): queries the SAME single allowlisted Teable
+// table F-010-2 writes to, without granting write scope. 422 is the allowlist/not-configured
+// refusal; 502/503 are upstream Teable failures, matching the write route above.
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/teable-rows",
+  tags: ["issues"],
+  summary: "Query rows from the company's allowlisted Teable table (read-only)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: queryTeableRowsSchema,
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+    502: r.serverError,
+    503: r.serverError,
+  },
 });
 
 registry.registerPath({

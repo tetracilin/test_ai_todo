@@ -23,7 +23,8 @@ describe("local service supervision", () => {
     await resetRuntimeServicesForTests({ terminateProcesses: true });
   });
 
-  it("keeps request-logging runtime stdio usable after the supervisor side closes", async () => {
+  // Runtime services use POSIX shell command lines, process groups and port-owner lookup.
+  it.skipIf(process.platform === "win32")("keeps request-logging runtime stdio usable after the supervisor side closes", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-service-stdio-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-service-home-"));
     const previousPaperclipHome = process.env.PAPERCLIP_HOME;
@@ -98,8 +99,7 @@ describe("local service supervision", () => {
     }
   }, 15_000);
 
-  it("does not wait for an unrelated process that takes over the service port", async () => {
-    if (process.platform === "win32") return;
+  it.skipIf(process.platform === "win32")("does not wait for an unrelated process that takes over the service port", async () => {
     const unrelatedListener = net.createServer();
     await new Promise<void>((resolve) => unrelatedListener.listen(0, "127.0.0.1", resolve));
     const address = unrelatedListener.address();

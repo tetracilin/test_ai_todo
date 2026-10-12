@@ -1,3 +1,4 @@
+import { CheckCircle2, CircleDashed, CloudOff, Github, GitPullRequest, KeyRound, Loader2, XCircle } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExternalObjectSummary } from "@paperclipai/shared";
 import { externalObjectsApi } from "../api/externalObjects";
@@ -22,11 +23,16 @@ import {
 } from "./external-objects";
 import { normalizeExternalObjectHref } from "./external-object-href";
 
-vi.mock("../api/externalObjects", () => ({
-  externalObjectsApi: {
-    getIssueSummaries: vi.fn(),
-  },
-}));
+vi.mock("../api/externalObjects", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/externalObjects")>();
+  return {
+    ...actual,
+    externalObjectsApi: {
+      ...actual.externalObjectsApi,
+      getIssueSummaries: vi.fn(),
+    },
+  };
+});
 
 const emptySummary: ExternalObjectSummary = {
   total: 0,
@@ -170,16 +176,17 @@ describe("external-objects helpers", () => {
   });
 
   it("returns the spec lucide icon names for every category", () => {
-    expect(externalObjectIconForCategory("succeeded").displayName ?? "").toMatch(/CheckCircle2|Check/);
-    expect(externalObjectIconForCategory("failed").displayName ?? "").toMatch(/XCircle|X/);
-    expect(externalObjectIconForCategory("auth_required").displayName ?? "").toMatch(/KeyRound|Key/);
-    expect(externalObjectIconForCategory("unreachable").displayName ?? "").toMatch(/CloudOff|Cloud/);
-    expect(externalObjectIconForCategory("running").displayName ?? "").toMatch(/Loader2|Loader/);
+    expect(externalObjectIconForCategory("succeeded")).toBe(CheckCircle2);
+    expect(externalObjectIconForCategory("failed")).toBe(XCircle);
+    expect(externalObjectIconForCategory("auth_required")).toBe(KeyRound);
+    expect(externalObjectIconForCategory("unreachable")).toBe(CloudOff);
+    expect(externalObjectIconForCategory("running")).toBe(Loader2);
+    expect(externalObjectIconForCategory("not-a-category")).toBe(CircleDashed);
   });
 
   it("maps provider-controlled icon keys through host-owned icons", () => {
-    expect(externalObjectIconForKey("github")?.displayName ?? "").toMatch(/Github/i);
-    expect(externalObjectIconForKey("git-pull-request")?.displayName ?? "").toMatch(/GitPullRequest/i);
+    expect(externalObjectIconForKey("github")).toBe(Github);
+    expect(externalObjectIconForKey("git-pull-request")).toBe(GitPullRequest);
     expect(externalObjectIconForKey("unknown-provider-icon")).toBeNull();
   });
 

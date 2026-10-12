@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -9,6 +11,11 @@ import {
   loadShardDurations,
   partitionGeneralServerSuites,
 } from "../general-server-shard.mjs";
+import {
+  createRunTracker,
+  formatSummary,
+  normalizeExitStatus,
+} from "../vitest-run-summary.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const script = path.join(repoRoot, "scripts", "run-vitest-stable.mjs");
@@ -223,4 +230,123 @@ test("the real shard partition is duration-balanced", () => {
     maxTotal - minTotal <= heaviest,
     `shard weight spread ${maxTotal - minTotal}ms exceeds heaviest suite ${heaviest}ms: ${totals.join(", ")}`,
   );
+});
+
+test("the tracker keeps every result and reports only the failures", () => {
+  const tracker = createRunTracker();
+  tracker.record("a", 0, 1000);
+  tracker.record("b", 1, 2500);
+  tracker.record("c", 0, 10);
+  tracker.record("d", 130, 4000);
+  assert.equal(tracker.results.length, 4);
+  assert.deepEqual(
+    tracker.failures().map((result) => result.label),
+    ["b", "d"],
+  );
+});
+
+test("the summary lists every failed invocation with its exit code", () => {
+  const text = formatSummary([
+    { label: "ok-one", status: 0, durationMs: 1000 },
+    { label: "server/src/__tests__/x-routes.test.ts", status: 1, durationMs: 6500 },
+  ]);
+  assert.match(text, /1 passed, 1 failed, 2 invocations/);
+  assert.match(text, /FAIL \(exit 1\) server\/src\/__tests__\/x-routes\.test\.ts \[6\.5s\]/);
+  assert.doesNotMatch(text, /ok-one/);
+});
+
+test("the summary of an all-green run has no failure section", () => {
+  const text = formatSummary([{ label: "a", status: 0, durationMs: 5 }]);
+  assert.match(text, /1 passed, 0 failed/);
+  assert.doesNotMatch(text, /failed invocations/);
+});
+
+test("a signal-killed child (null status) counts as a failure", () => {
+  assert.equal(normalizeExitStatus(null), 1);
+  assert.equal(normalizeExitStatus(undefined), 1);
+  assert.equal(normalizeExitStatus(0), 0);
+  assert.equal(normalizeExitStatus(2), 2);
+});
+
+test("the runner's non-server project list is exactly vitest.config.ts minus server", () => {
+  const result = spawnSync(process.execPath, [script, "--mode", "general", "--dry-run"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const { nonServerProjects } = JSON.parse(result.stdout);
+
+  const configText = readFileSync(path.join(repoRoot, "vitest.config.ts"), "utf8");
+  const block = /projects\s*:\s*\[([^\]]*)\]/.exec(configText);
+  assert.ok(block, "vitest.config.ts must declare a projects list");
+  const names = [...block[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => JSON.parse(readFileSync(path.join(repoRoot, match[1], "package.json"), "utf8")).name,
+  );
+  const configured = names.filter((name) => name !== "@paperclipai/server");
+  assert.deepEqual(nonServerProjects, configured);
+  assert.ok(configured.length > 0);
+});
+
+// End-to-end: PAPERCLIP_VITEST_RUNNER_FAKE points the runner at a node script
+// standing in for `pnpm exec vitest`, so the real runner loop is exercised
+// without running any real tests. Works the same on Windows and Linux.
+function runWithFakePnpm(args, failPattern) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fake-pnpm-"));
+  const log = path.join(dir, "calls.log");
+  const impl = path.join(dir, "fake-pnpm.mjs");
+  writeFileSync(
+    impl,
+    `import { appendFileSync } from "node:fs";
+     const a = process.argv.slice(2).join(" ");
+     appendFileSync(${JSON.stringify(log)}, a + "\\n");
+     process.exit(new RegExp(${JSON.stringify(failPattern)}).test(a) ? 1 : 0);`,
+  );
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, PAPERCLIP_VITEST_RUNNER_FAKE: impl },
+  });
+  let calls = [];
+  try {
+    calls = readFileSync(log, "utf8").split("\n").filter(Boolean);
+  } catch {
+    // no invocation reached the fake; assertions below report stdout/stderr
+  }
+  const output = `\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`;
+  return { result, calls, output };
+}
+
+test("a failing invocation does not stop the remaining ones, and the run exits 1", () => {
+  const { result, calls, output } = runWithFakePnpm(
+    ["--mode", "general", "--group", "general-workspaces-b"],
+    "adapter-utils",
+  );
+  assert.ok(calls.length > 3, `expected several invocations, got ${calls.length}${output}`);
+  assert.ok(calls.some((call) => call.includes("--project @paperclipai/db")), output);
+  assert.ok(
+    calls.some((call) => call.includes("--project @paperclipai/plugin-sdk")),
+    `invocations after the failure must still run${output}`,
+  );
+  assert.equal(result.status, 1, output);
+  assert.match(result.stdout, /1 failed/);
+  assert.match(result.stdout, /FAIL \(exit 1\) .*adapter-utils/);
+});
+
+test("--bail stops at the first failing invocation", () => {
+  const { result, calls, output } = runWithFakePnpm(
+    ["--mode", "general", "--group", "general-workspaces-b", "--bail"],
+    "adapter-utils",
+  );
+  assert.equal(result.status, 1, output);
+  assert.ok(calls.at(-1)?.includes("adapter-utils"), `the failing invocation must be the last one run${output}`);
+  assert.match(result.stdout, /1 failed/);
+});
+
+test("an all-green run exits 0 and prints the summary", () => {
+  const { result, output } = runWithFakePnpm(
+    ["--mode", "general", "--group", "general-workspaces-b"],
+    "^$never-matches",
+  );
+  assert.equal(result.status, 0, output);
+  assert.match(result.stdout, /0 failed/);
 });

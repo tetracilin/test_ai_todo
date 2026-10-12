@@ -90,6 +90,10 @@ export default defineConfig({
       PAPERCLIP_BIND: "loopback",
       PAPERCLIP_DEPLOYMENT_MODE: "local_trusted",
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private",
+      // Mounts the WOPI editor-session routes (server/src/app.ts), which
+      // artifact-editor-geometry.spec.ts needs to open the OpenOffice editor frame.
+      // The throwaway server never reaches a real WOPI host; the spec only measures layout.
+      PAPERCLIP_WOPI_STAGING_ENABLED: "true",
     },
   },
   outputDir: "./test-results",

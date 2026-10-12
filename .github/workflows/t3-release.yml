@@ -45,7 +45,7 @@ jobs:
       tag: ${{ steps.t.outputs.tag }}
       sha: ${{ steps.t.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # actions/checkout passes --no-tags unless told otherwise. On the
@@ -84,7 +84,7 @@ jobs:
       url: http://100.103.41.112:33100
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.verify-tag.outputs.sha }}
           fetch-depth: 1
@@ -94,7 +94,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in postgres_password better_auth_secret; do
+          # The artifact keys are required by deploy/compose.yaml. Checking them
+          # here turns a missing file into a named error instead of a bind-mount
+          # failure several steps later.
+          for f in postgres_password better_auth_secret \
+                   paperclip_artifacts_access_key paperclip_artifacts_secret_key; do
             [[ -s "$SECRETS_DIR/$f" ]] || { echo "missing or empty $SECRETS_DIR/$f"; exit 1; }
           done
 
@@ -140,6 +144,10 @@ jobs:
           # 127.0.0.1, which is always in the allow set.
           PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,localhost,127.0.0.1
           PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33100
+          # Adapters an operator may pick when hiring an agent on this stack.
+          # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
+          # `production` GitHub Environment to override this default.
+          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway,claude_local,hermes_local' }}
           # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
           # not SECRETS_DIR directly — without them it falls back to a
           # relative ./secrets/... path that doesn't exist on the runner.
@@ -147,6 +155,8 @@ jobs:
           # would have hit this exact failure on the first real release.
           POSTGRES_PASSWORD_FILE: ${{ env.SECRETS_DIR }}/postgres_password
           BETTER_AUTH_SECRET_FILE: ${{ env.SECRETS_DIR }}/better_auth_secret
+          PAPERCLIP_ARTIFACTS_ACCESS_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_access_key
+          PAPERCLIP_ARTIFACTS_SECRET_KEY_FILE: ${{ env.SECRETS_DIR }}/paperclip_artifacts_secret_key
         run: |
           set -euo pipefail
           docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300

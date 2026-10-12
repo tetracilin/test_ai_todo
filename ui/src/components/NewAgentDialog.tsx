@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { buildAgentOnboardingPrompt } from "@/lib/agent-onboarding-prompt";
 import { listUIAdapters } from "../adapters";
-import { isValidAdapterType, isVisualAdapterChoice } from "../adapters/metadata";
+import { isSelectableAdapter, isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
 import { useToast } from "../context/ToastContext";
@@ -90,7 +90,7 @@ export function NewAgentDialog() {
   const adapterGrid = useMemo(() => {
     const offeredTypes = new Set(
       (serverAdapters ?? [])
-        .filter((adapter) => !adapter.disabled && isValidAdapterType(adapter.type))
+        .filter((adapter) => isSelectableAdapter(adapter))
         .map((adapter) => adapter.type),
     );
     const registered = listUIAdapters()
@@ -298,6 +298,13 @@ export function NewAgentDialog() {
                   Choose the runtime Paperclip should start or resume directly.
                 </p>
               </div>
+
+              {adapterGrid.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No agent runtime is available on this instance. Ask an operator to set
+                  PAPERCLIP_SELECTABLE_ADAPTER_TYPES (for example claude_local) and to install the matching CLI.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 {adapterGrid.map((opt) => (

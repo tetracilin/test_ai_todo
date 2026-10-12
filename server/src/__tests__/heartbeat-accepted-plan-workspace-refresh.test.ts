@@ -51,7 +51,10 @@ const adapterExecute = vi.hoisted(() => vi.fn(async () => ({
   model: "test-model",
 })));
 
-vi.mock("../adapters/index.js", () => ({
+// Partial mock: only the adapter lookups are replaced. Every other export of the
+// registry stays real so new exports consumed by heartbeat.ts cannot go missing.
+vi.mock("../adapters/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../adapters/index.js")>()),
   getServerAdapter: () => ({
     type: "codex_local",
     execute: adapterExecute,

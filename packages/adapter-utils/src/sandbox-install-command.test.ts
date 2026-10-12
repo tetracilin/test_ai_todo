@@ -4,7 +4,7 @@ import { buildSandboxNpmInstallCommand } from "./sandbox-install-command.js";
 describe("buildSandboxNpmInstallCommand", () => {
   it("installs globally as root, via sudo when available, and under ~/.local otherwise", () => {
     const command = buildSandboxNpmInstallCommand("@google/gemini-cli");
-    expect(command).toContain("if [ \"$(id -u)\" -eq 0 ]; then npm install -g '@google/gemini-cli';");
+    expect(command).toContain("elif [ \"$(id -u)\" -eq 0 ]; then npm install -g '@google/gemini-cli';");
     expect(command).toContain("sudo -E npm install -g '@google/gemini-cli'");
     expect(command).toContain("npm install -g --prefix \"$HOME/.local\" '@google/gemini-cli'");
   });
@@ -14,6 +14,15 @@ describe("buildSandboxNpmInstallCommand", () => {
     expect(command).toContain("if ! command -v npm >/dev/null 2>&1; then");
     expect(command).toContain("https://nodejs.org/dist/");
     expect(command).toContain('export PATH="$HOME/.local/bin:$PATH"');
+  });
+
+  it("skips sudo right after bootstrapping npm, because sudo would reset PATH and lose the new npm", () => {
+    const command = buildSandboxNpmInstallCommand("@google/gemini-cli");
+    // The bootstrapped branch comes first and installs plain `npm install -g`.
+    expect(command).toContain(
+      "if [ -n \"$PAPERCLIP_NPM_BOOTSTRAPPED\" ]; then npm install -g '@google/gemini-cli'; elif",
+    );
+    expect(command.indexOf("PAPERCLIP_NPM_BOOTSTRAPPED\" ]; then")).toBeLessThan(command.indexOf("sudo -E"));
   });
 
   it("shell-quotes package names", () => {

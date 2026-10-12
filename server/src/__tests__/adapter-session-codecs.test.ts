@@ -190,6 +190,28 @@ describe("adapter session codecs", () => {
   });
 });
 
+describe("adapter session codecs reject unusable input", () => {
+  const codecs = [
+    ["claude", claudeSessionCodec],
+    ["codex", codexSessionCodec],
+    ["opencode", opencodeSessionCodec],
+    ["cursor", cursorSessionCodec],
+    ["acpx", acpxSessionCodec],
+  ] as const;
+
+  it.each(codecs)("%s codec deserializes null, scalars, arrays and empty objects to null", (_name, codec) => {
+    expect(codec.deserialize(null)).toBeNull();
+    expect(codec.deserialize("session-1")).toBeNull();
+    expect(codec.deserialize(["session-1"])).toBeNull();
+    expect(codec.deserialize({})).toBeNull();
+    expect(codec.deserialize({ sessionId: "   " })).toBeNull();
+  });
+
+  it.each(codecs)("%s codec serializes null params to null", (_name, codec) => {
+    expect(codec.serialize(null)).toBeNull();
+  });
+});
+
 describe("codex resume recovery detection", () => {
   it("detects unknown session errors from codex output", () => {
     expect(

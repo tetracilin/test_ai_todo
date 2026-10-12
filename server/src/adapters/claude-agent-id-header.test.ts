@@ -88,6 +88,39 @@ describe("stampClaudeAgentIdHeader", () => {
     expect(customHeaders(inner.mock.calls[0]?.[0] as ExecuteCtx)).toBeUndefined();
   });
 
+  it("stamps the header when the context carries no config at all", async () => {
+    const { inner } = recordingInner();
+    const wrapped = stampClaudeAgentIdHeader(inner as never);
+
+    await wrapped({ agent: { id: "agent-5" } } as never);
+
+    const forwarded = inner.mock.calls[0]?.[0] as ExecuteCtx;
+    expect(customHeaders(forwarded)).toBe("X-Anthropic-Agent-Id: agent-5");
+  });
+
+  it("passes through unchanged when the agent id is only CR/LF and whitespace", async () => {
+    const { inner } = recordingInner();
+    const wrapped = stampClaudeAgentIdHeader(inner as never);
+
+    const ctx = { agent: { id: " \r\n " }, config: { env: {} } } as never;
+    await wrapped(ctx);
+
+    expect(inner.mock.calls[0]?.[0]).toBe(ctx);
+  });
+
+  it("treats an existing X-Anthropic-Agent-Id header name case-insensitively", async () => {
+    const { inner } = recordingInner();
+    const wrapped = stampClaudeAgentIdHeader(inner as never);
+
+    const ctx = {
+      agent: { id: "agent-7" },
+      config: { env: { ANTHROPIC_CUSTOM_HEADERS: "x-trace: 1\nx-anthropic-agent-id: manual" } },
+    } as never;
+    await wrapped(ctx);
+
+    expect(inner.mock.calls[0]?.[0]).toBe(ctx);
+  });
+
   it("does not append a duplicate when X-Anthropic-Agent-Id is already present", async () => {
     const { inner } = recordingInner();
     const wrapped = stampClaudeAgentIdHeader(inner as never);

@@ -30,11 +30,17 @@ afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((candidate) => fs.rm(candidate, { recursive: true, force: true })));
 });
 
+// buildLocalProcessSandboxSpawnTarget rejects every non-Linux platform before it validates
+// anything (Bubblewrap and network namespaces are Linux-only), so the cases that call it
+// can only run on Linux. The pure parser cases below stay platform-independent.
+const itLinux = it.runIf(process.platform === "linux");
+
 describe("local process sandbox", () => {
   it("parses read-only and writable extra paths", () => {
+    // The parser resolves each path for the host platform, so build the expectation the same way.
     expect(parseLocalProcessSandboxExtraPaths(["/opt/cache", { path: "/var/lib/tool", access: "rw" }])).toEqual([
-      { path: "/opt/cache", access: "ro" },
-      { path: "/var/lib/tool", access: "rw" },
+      { path: path.resolve("/opt/cache"), access: "ro" },
+      { path: path.resolve("/var/lib/tool"), access: "rw" },
     ]);
     expect(() => parseLocalProcessSandboxExtraPaths(["relative"])).toThrow("must be an absolute path");
   });
@@ -52,7 +58,7 @@ describe("local process sandbox", () => {
     expect(() => parseLocalProcessNetworkScope("public")).toThrow('"deny" or "allowlist"');
   });
 
-  it("describes every valid allowlist input when no proxy rules remain", async () => {
+  itLinux("describes every valid allowlist input when no proxy rules remain", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-rules-"));
     cleanup.push(workspace);
 
@@ -69,7 +75,7 @@ describe("local process sandbox", () => {
     })).rejects.toThrow("valid networkAllowlist hostname or HTTP(S) networkTrustedUrl");
   });
 
-  it("builds a fresh-root bubblewrap command with workspace access", async () => {
+  itLinux("builds a fresh-root bubblewrap command with workspace access", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-fs-sandbox-"));
     cleanup.push(root);
     const workspace = path.join(root, "workspace");
@@ -96,7 +102,7 @@ describe("local process sandbox", () => {
     expect(target.args.slice(-3)).toEqual([process.execPath, "-e", "console.log('ok')"]);
   });
 
-  it("binds a confined absolute alias to the synchronized workspace", async () => {
+  itLinux("binds a confined absolute alias to the synchronized workspace", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-fs-alias-"));
     cleanup.push(root);
     const workspace = path.join(root, "workspace");
@@ -116,7 +122,7 @@ describe("local process sandbox", () => {
     expect(target.args).toEqual(expect.arrayContaining(["--bind", workspace, "/app"]));
   });
 
-  it("rejects writable out-of-tree paths without an outbound restore mapping", async () => {
+  itLinux("rejects writable out-of-tree paths without an outbound restore mapping", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-fs-outbound-"));
     cleanup.push(root);
     const workspace = path.join(root, "workspace");
@@ -136,7 +142,7 @@ describe("local process sandbox", () => {
     })).rejects.toThrow("has no outbound restore mapping");
   });
 
-  it("builds a network-only namespace without changing filesystem visibility", async () => {
+  itLinux("builds a network-only namespace without changing filesystem visibility", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-sandbox-"));
     cleanup.push(workspace);
     const target = await buildLocalProcessSandboxSpawnTarget({
@@ -152,7 +158,7 @@ describe("local process sandbox", () => {
     expect(target.env?.HTTP_PROXY).toBeUndefined();
   });
 
-  it("forwards allowed proxy targets with a deep TMPDIR and rejects other hosts", async () => {
+  itLinux("forwards allowed proxy targets with a deep TMPDIR and rejects other hosts", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-proxy-"));
     cleanup.push(workspace);
     const deepTmpDir = path.join(workspace, ...Array.from({ length: 6 }, () => "deep-temporary-directory-segment"));
@@ -228,7 +234,7 @@ describe("local process sandbox", () => {
     }
   });
 
-  it("always permits trusted Paperclip control-plane URLs", async () => {
+  itLinux("always permits trusted Paperclip control-plane URLs", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-trusted-"));
     cleanup.push(workspace);
     const server = http.createServer((_request, response) => response.end("control-plane-response"));

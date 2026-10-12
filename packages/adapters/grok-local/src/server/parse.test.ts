@@ -88,5 +88,7 @@ describe("isGrokUnknownSessionError", () => {
   it("detects stale resume failures", () => {
     expect(isGrokUnknownSessionError("", "session not found")).toBe(true);
     expect(isGrokUnknownSessionError("", "everything fine")).toBe(false);
+    expect(isGrokUnknownSessionError("Unknown session abc", "")).toBe(true);
+    expect(isGrokUnknownSessionError("", "invalid session id")).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { hermesGatewayE2eAdapterConfig } from "./hermes-gateway-fixture";
 import {
@@ -8,6 +8,35 @@ import {
 
 const AGENT_NAME = "Chief of staff";
 const TASK_TITLE = "Paperclip onboarding";
+
+// The planning-mode toggle this spec captures (`task-chat-composer-mode`) lives in the chat-style
+// task view, which is behind an experimental flag that is off by default. Enable it for this spec
+// and put the previous value back afterwards, because every spec shares one server.
+let restoreTaskChatRedesign: (() => Promise<void>) | null = null;
+
+test.afterEach(async () => {
+  await restoreTaskChatRedesign?.();
+  restoreTaskChatRedesign = null;
+});
+
+async function enableTaskChatRedesign(request: APIRequestContext, baseOrigin: string) {
+  const settingsUrl = `${baseOrigin}/api/instance/settings/experimental`;
+  const currentRes = await request.get(settingsUrl);
+  expect(currentRes.ok()).toBe(true);
+  const current = await currentRes.json();
+  const previous = {
+    enableTaskChatRedesign: current.enableTaskChatRedesign === true,
+    enableClassicTaskInterface: current.enableClassicTaskInterface === true,
+  };
+  const enableRes = await request.patch(settingsUrl, {
+    data: { enableTaskChatRedesign: true, enableClassicTaskInterface: false },
+  });
+  expect(enableRes.ok()).toBe(true);
+  restoreTaskChatRedesign = async () => {
+    const restoreRes = await request.patch(settingsUrl, { data: previous });
+    expect(restoreRes.ok()).toBe(true);
+  };
+}
 
 test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   const timestamp = Date.now();
@@ -115,6 +144,8 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
       .toBe(mode);
   };
 
+  // Enable after onboarding so the wizard and its landing checks run on default settings.
+  await enableTaskChatRedesign(page.request, baseOrigin);
   await setMode("planning");
 
   await page.goto(issuePath);

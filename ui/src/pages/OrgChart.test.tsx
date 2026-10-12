@@ -128,6 +128,13 @@ describe("OrgChart mobile gestures", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   let queryClient: QueryClient;
+  const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+
+  function restoreDescriptor(name: "clientWidth" | "clientHeight", descriptor: PropertyDescriptor | undefined) {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+  }
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -188,6 +195,8 @@ describe("OrgChart mobile gestures", () => {
     document.body.innerHTML = "";
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    restoreDescriptor("clientWidth", originalClientWidth);
+    restoreDescriptor("clientHeight", originalClientHeight);
   });
 
   async function renderOrgChart() {

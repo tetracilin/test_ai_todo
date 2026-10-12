@@ -923,12 +923,13 @@ describe("command managed runtime", () => {
   });
 
   it("test_single_stream_writeFile_collapses_roundtrips_under_96MiB", async () => {
-    // Research A1: with single-stream enabled a ≤96 MiB write is ONE round-trip;
-    // without it, the chunked path is `2 + ceil(bytes / 3 MiB)`. Same payload,
-    // same client API — only the runner capability flag differs.
+    // Research A1: with single-stream enabled a ≤96 MiB write is one upload
+    // round-trip plus one cleanup exec (2 execs); without it, the chunked path is
+    // `3 + ceil(bytes / 3 MiB)` execs (init temp, final mv, cleanup, plus one per
+    // chunk). Same payload, same client API — only the runner capability flag differs.
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-single-stream-collapse-"));
     cleanupDirs.push(rootDir);
-    const payload = Buffer.alloc(9 * 1024 * 1024, 7); // 9 MiB → chunked = 2 + 3 = 5 execs
+    const payload = Buffer.alloc(9 * 1024 * 1024, 7); // 9 MiB → chunked = 3 + 3 = 6 execs
 
     const single = makeSpawnRunner({ supportsSingleStreamStdinProgress: true });
     const singleClient = createCommandManagedRuntimeClient({ runner: single.runner, commandCwd: "/", timeoutMs: 30_000 });

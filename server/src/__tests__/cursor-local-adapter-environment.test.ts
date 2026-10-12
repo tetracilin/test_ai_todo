@@ -83,6 +83,9 @@ function createLocalSandboxRunner() {
   };
 }
 
+// POSIX-only: relies on executable shebang scripts, ":"-separated PATH and unprivileged symlinks (Windows lacks all three).
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("cursor environment diagnostics", () => {
   beforeEach(() => {
     vi.stubEnv("CURSOR_API_KEY", "");
@@ -116,7 +119,7 @@ describe("cursor environment diagnostics", () => {
     await fs.rm(path.dirname(cwd), { recursive: true, force: true });
   });
 
-  it("adds --yolo to hello probe args by default", async () => {
+  itPosix("adds --yolo to hello probe args by default", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-cursor-local-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -147,7 +150,7 @@ describe("cursor environment diagnostics", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("does not auto-add --yolo when extraArgs already bypass trust", async () => {
+  itPosix("does not auto-add --yolo when extraArgs already bypass trust", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-cursor-local-probe-extra-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -180,7 +183,7 @@ describe("cursor environment diagnostics", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("prefers ~/.local/bin/cursor-agent for remote sandbox probes when using the default command", async () => {
+  itPosix("prefers ~/.local/bin/cursor-agent for remote sandbox probes when using the default command", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-cursor-sandbox-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,

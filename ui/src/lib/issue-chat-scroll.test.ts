@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureComposerViewportSnapshot,
   isWindowScrollable,
@@ -23,6 +23,12 @@ function mockTop(element: HTMLElement, top: number) {
 }
 
 describe("issue-chat-scroll", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.style.overflow = "";
+    document.body.innerHTML = "";
+  });
+
   it("restores page scroll when the composer shifts in the viewport", () => {
     const composer = document.createElement("div");
     document.body.appendChild(composer);

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { createRunTracker, formatSummary, normalizeExitStatus } from "./vitest-run-summary.mjs";
 
 const repoRoot = process.cwd();
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -17,20 +18,24 @@ const serializedShardDurations = loadShardDurations(
 const serverRoot = path.join(repoRoot, "server");
 const serverSrcDir = path.join(repoRoot, "server", "src");
 const serverTestsDir = path.join(repoRoot, "server", "src", "__tests__");
-const nonServerProjects = [
-  "@paperclipai/shared",
-  "@paperclipai/skills-catalog",
-  "@paperclipai/db",
-  "@paperclipai/adapter-utils",
-  "@paperclipai/adapter-claude-local",
-  "@paperclipai/adapter-codex-local",
-  "@paperclipai/adapter-openclaw-gateway",
-  "@paperclipai/adapter-opencode-local",
-  "@paperclipai/plugin-sdk",
-  "@paperclipai/create-paperclip-plugin",
-  "@paperclipai/ui",
-  "paperclipai",
-];
+// Derived from vitest.config.ts so the runner cannot silently drop a project the
+// config declares (five adapter projects had drifted out of a hand-kept list).
+// A project's vitest name is its package.json name.
+function readConfiguredProjectNames() {
+  const config = readFileSync(path.join(repoRoot, "vitest.config.ts"), "utf8");
+  const block = /projects\s*:\s*\[([^\]]*)\]/.exec(config);
+  if (!block) {
+    throw new Error("[test:run] could not find the `projects: [...]` list in vitest.config.ts");
+  }
+  const dirs = [...block[1].replace(/\/\/.*$/gm, "").matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  return dirs.map((dir) => {
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, dir, "package.json"), "utf8"));
+    return pkg.name;
+  });
+}
+const nonServerProjects = readConfiguredProjectNames().filter(
+  (name) => name !== "@paperclipai/server",
+);
 const routeTestPattern = /[^/]*(?:route|routes|authz)[^/]*\.test\.ts$/;
 const additionalSerializedServerTests = new Set([
   "server/src/__tests__/approval-routes-idempotency.test.ts",
@@ -58,7 +63,19 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/project-routes-env.test.ts",
   "server/src/__tests__/redaction.test.ts",
   "server/src/__tests__/routines-e2e.test.ts",
+  // Spawns and health-probes several real local-service child processes with a
+  // 2s-per-attempt HTTP timeout (workspace-runtime.ts's adoption health check).
+  // In the general-server lane this file's async work interleaves with every
+  // other concurrently-running file's spawned processes, and under nightly's
+  // heavy CPU contention that occasionally starves both of the two allotted
+  // probe attempts past 2s each, failing "adopted: 0" instead of "1" (observed
+  // 2026-09-17/18, a different single test each night — see
+  // CICD/PLAN_AI_FACTORY.md §0.2). Serialized, this file runs alone with no
+  // sibling file's child processes competing for CPU.
+  "server/src/__tests__/workspace-runtime.test.ts",
 ]);
+const tracker = createRunTracker();
+let bail = false;
 let invocationIndex = 0;
 const serializedModeName = "serialized";
 const generalModeName = "general";
@@ -144,10 +161,16 @@ function parseCliOptions(argv) {
   let shardCount = null;
   let group = null;
   let dryRun = false;
+  let bailOnFailure = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--") {
+      continue;
+    }
+
+    if (arg === "--bail") {
+      bailOnFailure = true;
       continue;
     }
 
@@ -242,6 +265,7 @@ function parseCliOptions(argv) {
       shardCount: shardCount ?? 1,
       group: null,
       dryRun,
+      bail: bailOnFailure,
     };
   }
 
@@ -251,6 +275,7 @@ function parseCliOptions(argv) {
     shardCount,
     group,
     dryRun,
+    bail: bailOnFailure,
   };
 }
 
@@ -284,18 +309,30 @@ function runVitest(args, label) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-  });
+  const startedAt = Date.now();
+  // PAPERCLIP_VITEST_RUNNER_FAKE swaps pnpm for a node script; only the runner's own tests set it.
+  const fake = process.env.PAPERCLIP_VITEST_RUNNER_FAKE;
+  const vitestArgs = ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args];
+  const result = fake
+    ? spawnSync(process.execPath, [fake, ...vitestArgs], { cwd: repoRoot, env, stdio: "inherit" })
+    : spawnSync("pnpm", vitestArgs, { cwd: repoRoot, env, stdio: "inherit" });
   if (result.error) {
+    // Could not even start vitest: every later invocation would fail the same way.
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+  const status = normalizeExitStatus(result.status);
+  tracker.record(label, status, Date.now() - startedAt);
+  if (status !== 0 && bail) {
+    finish();
   }
+}
+
+// Run every invocation and report all failures at the end. --bail restores the
+// old stop-at-first-failure behaviour for quick local runs.
+function finish() {
+  console.log(formatSummary(tracker.results));
+  process.exit(tracker.failures().length === 0 ? 0 : 1);
 }
 
 function runGeneralSuites(routeTests) {
@@ -417,6 +454,7 @@ const generalServerTestFiles = walk(serverSrcDir)
   .sort((a, b) => a.localeCompare(b));
 
 const options = parseCliOptions(process.argv.slice(2));
+bail = options.bail;
 if (options.dryRun) {
   const serializedSuites =
     options.mode === serializedModeName
@@ -430,6 +468,8 @@ if (options.dryRun) {
         shardCount: options.shardCount,
         group: options.group,
         availableGeneralGroups: generalGroupNames,
+        nonServerProjects,
+        bail: options.bail,
         serializedSuiteCount: routeTests.length,
         selectedSerializedSuites: serializedSuites.map((routeTest) => routeTest.repoPath),
         generalServerSuiteCount: generalServerTestFiles.length,
@@ -475,3 +515,5 @@ if (options.mode === generalModeName || options.mode === allModeName) {
 if (options.mode === serializedModeName || options.mode === allModeName) {
   runSerializedSuites(routeTests, options.shardIndex ?? 0, options.shardCount ?? 1);
 }
+
+finish();
