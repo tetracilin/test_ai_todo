@@ -286,8 +286,10 @@ describeEmbedded("PAP-9522 QA: routine secrets end-to-end", () => {
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeTruthy();
-    const message = String((caught as Error)?.message ?? caught);
+    // Fails closed with a real Error carrying a non-empty, value-free message.
+    expect(caught).toBeInstanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message.length).toBeGreaterThan(0);
     expect(message).not.toContain("doomed-secret-value");
   });
 
@@ -355,7 +357,7 @@ describeEmbedded("PAP-9522 QA: routine secrets end-to-end", () => {
     expect(bindings[0]?.secretId).toBe(secretA.id);
   });
 
-  it("legacy run with null routine_revision_id falls back to the routine's current env (still resolves)", async () => {
+  it("resolves the routine's current env when a legacy run row has a null routine_revision_id (resolution layer only)", async () => {
     const { companyId, executorAgentId } = await seed();
     const secrets = secretService(db);
     const routines = routineService(db, { heartbeat: { wakeup: async () => null } });
@@ -388,8 +390,10 @@ describeEmbedded("PAP-9522 QA: routine secrets end-to-end", () => {
 
     // Simulate an old routine_run row (predating the migration) with no
     // routine_revision_id. The fallback path in `getRoutineEnvForExecutionIssue`
-    // should still resolve to the routine's current env. Here we exercise the
-    // resolution layer directly with routine.env to mirror that behavior.
+    // should still resolve to the routine's current env. That helper is private
+    // to heartbeatService, so this test only proves the resolution layer accepts
+    // routine.env while a revision-less run row exists; the lookup itself is not
+    // exercised here (coverage gap noted in the shard report).
     await db.insert(routineRuns).values({
       id: randomUUID(),
       companyId,

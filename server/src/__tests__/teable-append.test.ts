@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import {
@@ -230,6 +230,11 @@ describe("teableAppendService upstream failure mapping", () => {
 });
 
 describe("teableAppendService bot attribution (AC6)", () => {
+  // Restore the logger.warn spy even when an assertion throws before the inline mockRestore().
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("does not warn when the row's createdBy matches the configured bot account", async () => {
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
     const createRecords = vi.fn(async () => ({ ok: true as const, data: [botRecord({ createdBy: BOT_ACCOUNT_NAME })] }));
