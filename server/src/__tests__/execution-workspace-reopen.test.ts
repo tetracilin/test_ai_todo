@@ -298,12 +298,12 @@ describeEmbeddedPostgres("reopen archived isolated execution workspace", () => {
     expect(result.ok).toBe(true);
 
     const rows = await db.select().from(issues);
+    expect(rows.map((row) => row.id).sort()).toEqual([firstIssueId, secondIssueId].sort());
     for (const row of rows) {
       expect(row.executionWorkspaceId).toBe(workspaceId);
     }
     const workspace = await readWorkspace(workspaceId);
     expect(workspace?.status).toBe("active");
-    expect(firstIssueId).not.toBe(secondIssueId);
   });
 
   it("fails closed and keeps the row closed when the rebuild fails", async () => {

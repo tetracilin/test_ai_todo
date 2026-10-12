@@ -319,21 +319,18 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
     expect(container.textContent).not.toContain("Workspace name");
   });
 
-  it("shows loading and error states for plugin tab manifests", async () => {
+  it("shows a loading state while plugin tab manifests load", async () => {
     mockPluginSlotState.isLoading = true;
     mockRouteSearch.value = "?tab=plugin%3Apaperclip.quality%3Aquality-tab";
 
     await render();
 
     expect(container.textContent).toContain("Loading workspace plugin...");
+  });
 
-    act(() => root?.unmount());
-    root = null;
-    container.innerHTML = "";
-    vi.clearAllMocks();
-    mockProjectsApi.get.mockResolvedValue(project());
-    mockPluginSlotState.isLoading = false;
+  it("shows the error message when plugin tab manifests fail to load", async () => {
     mockPluginSlotState.errorMessage = "Plugin manifest failed";
+    mockRouteSearch.value = "?tab=plugin%3Apaperclip.quality%3Aquality-tab";
 
     await render();
 

@@ -1480,6 +1480,7 @@ describe("company portability", () => {
   it("infers portable git metadata from a local checkout without task warning fan-out", async () => {
     const portability = companyPortabilityService(emptyQueryDb());
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-portability-git-"));
+    try {
     execFileSync("git", ["init"], { cwd: repoDir, stdio: "ignore" });
     execFileSync("git", ["checkout", "-b", "main"], { cwd: repoDir, stdio: "ignore" });
     execFileSync("git", ["remote", "add", "origin", "https://github.com/paperclipai/paperclip.git"], {
@@ -1560,6 +1561,9 @@ describe("company portability", () => {
     expect(extension).toContain('projectWorkspaceKey: "paperclip"');
     expect(exported.warnings).not.toContainEqual(expect.stringContaining("does not have a portable repoUrl"));
     expect(exported.warnings).not.toContainEqual(expect.stringContaining("reference workspace workspace-1"));
+    } finally {
+      await fs.rm(repoDir, { recursive: true, force: true });
+    }
   });
 
   it("collapses repeated task workspace warnings into one summary per missing workspace", async () => {
@@ -5074,9 +5078,12 @@ describe("company portability", () => {
 
   it("rejects packages produced by a newer Paperclip", async () => {
     const portability = companyPortabilityService(emptyQueryDb());
+    const current = (await portability.exportBundle("company-1", {
+      include: { company: true, agents: false, projects: false, issues: false },
+    })).manifest.schemaVersion;
 
     await expect(portability.importBundle({
-      source: { type: "inline", rootPath: "future-package", files: legacyPackageFiles(["schemaVersion: 9"]) },
+      source: { type: "inline", rootPath: "future-package", files: legacyPackageFiles([`schemaVersion: ${current + 1}`]) },
       include: { company: true, agents: false, projects: false, issues: true },
       target: { mode: "new_company", newCompanyName: "Future Import" },
       agents: "all",
@@ -5208,7 +5215,8 @@ describe("company portability", () => {
 
     const extension = asTextFile(exported.files[".paperclip.yaml"]);
     expect(extension).toContain('authorType: "user"');
-    expect(extension).not.toContain("authorUserId: local-board");
+    expect(extension).not.toContain("authorUserId");
+    expect(extension).not.toContain("local-board");
   });
 
   it("downgrades user-authored imported comments to system when no importing user exists", async () => {
@@ -5795,8 +5803,8 @@ describe("company portability", () => {
     expect(exported.manifest.agents).toHaveLength(0);
     expect(exported.manifest.projects).toHaveLength(0);
     expect(exported.manifest.issues).toHaveLength(0);
-    // Skills should still be exported
-    expect(exported.manifest.skills.length).toBeGreaterThanOrEqual(0);
+    // Skills are still exported when nothing else is selected.
+    expect(exported.manifest.skills.map((skill) => skill.key).sort()).toEqual([companyPlaybookKey, paperclipKey].sort());
   });
 
   it("preview import detects no agents to import when agents are excluded", async () => {

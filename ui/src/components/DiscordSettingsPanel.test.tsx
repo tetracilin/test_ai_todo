@@ -97,6 +97,7 @@ describe("DiscordSettingsPanel", () => {
 
     expect(mockDiscordApi.createLinkCode).toHaveBeenCalledWith("company-1");
     expect(container.textContent).toContain("link-code-123");
+    expect(container.textContent).toContain("within 10 minutes");
     expect(container.textContent).not.toMatch(/bot token|client secret/i);
   });
 

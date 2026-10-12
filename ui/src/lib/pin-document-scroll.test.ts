@@ -5,6 +5,7 @@ import { pinDocumentScrollToZero } from "./pin-document-scroll";
 
 describe("pinDocumentScrollToZero", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
   });

@@ -38,13 +38,15 @@ describe("BlockedReasonChip", () => {
   });
 
   it("includes a severity dot for critical and high but not medium/low", () => {
-    const cases: Array<["critical" | "high" | "medium" | "low", boolean]> = [
-      ["critical", true],
-      ["high", true],
-      ["medium", false],
-      ["low", false],
+    // The dot is the only severity-coloured span; the icon is an svg, so the
+    // dot is identified by its colour class rather than by aria-hidden alone.
+    const cases: Array<["critical" | "high" | "medium" | "low", string | null]> = [
+      ["critical", "bg-red-500"],
+      ["high", "bg-orange-500"],
+      ["medium", null],
+      ["low", null],
     ];
-    for (const [severity, hasDot] of cases) {
+    for (const [severity, dotClass] of cases) {
       const local = document.createElement("div");
       document.body.appendChild(local);
       const root = createRoot(local);
@@ -52,14 +54,12 @@ describe("BlockedReasonChip", () => {
         root.render(<BlockedReasonChip reason="blocked_chain_stalled" severity={severity} />);
       });
       const chip = local.querySelector('[data-testid="blocked-reason-chip"]');
-      const dot = chip?.querySelector('[aria-hidden="true"]');
-      if (hasDot) {
-        expect(dot).not.toBeNull();
+      const dot = chip?.querySelector('span[aria-hidden="true"]');
+      if (dotClass) {
+        expect(dot, `${severity} dot`).not.toBeNull();
+        expect(dot?.className).toContain(dotClass);
       } else {
-        // The first inner span (icon) is always aria-hidden, but the dot is the first child.
-        // Distinguish by class name presence of bg-red-500/bg-orange-500.
-        const classy = chip?.querySelector('span[class*="bg-red-500"], span[class*="bg-orange-500"]');
-        expect(classy).toBeNull();
+        expect(dot, `${severity} dot`).toBeNull();
       }
       act(() => {
         root.unmount();

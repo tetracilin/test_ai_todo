@@ -84,6 +84,21 @@ describe("parseKimiStdoutLine", () => {
     expect(parseKimiStdoutLine(line, ts)).toEqual([]);
   });
 
+  it("renders error-role lines as stderr entries", () => {
+    const line = JSON.stringify({ role: "error", content: "boom" });
+    expect(parseKimiStdoutLine(line, ts)).toEqual([{ kind: "stderr", ts, text: "boom" }]);
+  });
+
+  it("keeps raw string arguments when tool_call arguments are not valid JSON", () => {
+    const line = JSON.stringify({
+      role: "assistant",
+      tool_calls: [{ type: "function", id: "t1", function: { name: "Bash", arguments: "not json" } }],
+    });
+    expect(parseKimiStdoutLine(line, ts)).toEqual([
+      { kind: "tool_call", ts, name: "Bash", input: "not json", toolUseId: "t1" },
+    ]);
+  });
+
   it("passes non-JSON lines through as stdout", () => {
     expect(parseKimiStdoutLine("plain output line", ts)).toEqual([
       { kind: "stdout", ts, text: "plain output line" },

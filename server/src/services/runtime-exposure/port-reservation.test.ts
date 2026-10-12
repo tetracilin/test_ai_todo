@@ -129,7 +129,7 @@ describe("regression 1: stopped-but-leased pair reuse is denied", () => {
     })).toBeNull();
   });
 
-  it("keeps the HMR companion reserved even when only the app port is claimed", () => {
+  it("defends the leased HMR port even when another workspace claims it as its app port", () => {
     const ledger = buildExposureReservationLedger({
       persistedRows: [stoppedTornDownRow()],
       activeExecutionWorkspaceIds: [LEASED_WORKSPACE],

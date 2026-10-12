@@ -71,7 +71,13 @@ describe("recovery classifier boundary", () => {
       ],
     };
 
-    expect(classifyIssueGraphLiveness(input)).toEqual(classifyIssueGraphLivenessCompat(input));
+    // The compatibility export is a re-export, so it must be the same function,
+    // and the classifier must still produce the concrete finding (an equality
+    // between two calls of one function could not fail).
+    expect(classifyIssueGraphLivenessCompat).toBe(classifyIssueGraphLiveness);
+    const findings = classifyIssueGraphLiveness(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ issueId, state: "blocked_by_unassigned_issue" });
   });
 
   it("treats a scheduled monitor as an explicit review action path", () => {
@@ -198,7 +204,46 @@ describe("recovery classifier boundary", () => {
       idempotentWakeExists: false,
     };
 
-    expect(decideRunLivenessContinuation(input)).toEqual(decideRunLivenessContinuationCompat(input));
+    expect(decideRunLivenessContinuationCompat).toBe(decideRunLivenessContinuation);
+    expect(decideRunLivenessContinuation(input)).toMatchObject({
+      kind: "enqueue",
+      nextAttempt: 1,
+      idempotencyKey: buildRunLivenessContinuationIdempotencyKey({
+        issueId,
+        sourceRunId: runId,
+        livenessState: "plan_only",
+        nextAttempt: 1,
+      }),
+    });
+  });
+
+  it("skips continuation when the budget is hard-stopped and reports exhaustion at the attempt cap", () => {
+    const base = {
+      run: { id: runId, companyId, agentId, continuationAttempt: 0 } as never,
+      issue: {
+        id: issueId,
+        companyId,
+        status: "in_progress",
+        assigneeAgentId: agentId,
+        executionState: null,
+      } as never,
+      agent: { id: agentId, companyId, status: "idle" } as never,
+      livenessState: "plan_only" as const,
+      livenessReason: "Planned without acting",
+      nextAction: null,
+      budgetBlocked: false,
+      idempotentWakeExists: false,
+    };
+
+    expect(decideRunLivenessContinuation({ ...base, budgetBlocked: true })).toMatchObject({ kind: "skip" });
+    expect(decideRunLivenessContinuation({ ...base, idempotentWakeExists: true })).toMatchObject({ kind: "skip" });
+    expect(
+      decideRunLivenessContinuation({
+        ...base,
+        run: { id: runId, companyId, agentId, continuationAttempt: 2 } as never,
+        maxAttempts: 2,
+      }),
+    ).toMatchObject({ kind: "exhausted", attempt: 2, maxAttempts: 2 });
   });
 
   it("keeps recovery origin and idempotency keys stable", () => {

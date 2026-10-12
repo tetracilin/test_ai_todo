@@ -57,6 +57,7 @@ const sandboxTarget: AdapterExecutionTarget = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
   resolveInstanceRoot.throwError = null;
 });
 

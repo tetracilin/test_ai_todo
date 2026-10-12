@@ -50,4 +50,29 @@ describe("buildOpenClawGatewayConfig", () => {
     expect(config.role).toBe("operator");
     expect(config.scopes).toEqual(["operator.admin"]);
   });
+
+  it("parses comma-separated scopes, trimming blanks, and falls back to default when none remain", () => {
+    expect(buildOpenClawGatewayConfig({ ...baseValues(), scopes: " a , b,, " }).scopes).toEqual(["a", "b"]);
+    expect(buildOpenClawGatewayConfig({ ...baseValues(), scopes: " , " }).scopes).toEqual(["operator.admin"]);
+  });
+
+  it("injects authToken into headers on top of parsed headersJson", () => {
+    const config = buildOpenClawGatewayConfig({
+      ...baseValues(),
+      authToken: "tok",
+      headersJson: '{"x-a":"1"}',
+    });
+    expect(config.authToken).toBe("tok");
+    expect(config.headers).toEqual({ "x-a": "1", "x-openclaw-token": "tok" });
+  });
+
+  it("ignores malformed or non-object JSON fields", () => {
+    const config = buildOpenClawGatewayConfig({
+      ...baseValues(),
+      headersJson: "[1]",
+      payloadTemplateJson: "{bad",
+    });
+    expect(config).not.toHaveProperty("headers");
+    expect(config).not.toHaveProperty("payloadTemplate");
+  });
 });

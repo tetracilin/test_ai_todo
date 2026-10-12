@@ -93,6 +93,7 @@ function renderManager(container: HTMLDivElement) {
 
 describe("IssueArtifactManager", () => {
   let container: HTMLDivElement;
+  const originalRequestSubmit = HTMLFormElement.prototype.requestSubmit;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -110,6 +111,8 @@ describe("IssueArtifactManager", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    HTMLFormElement.prototype.requestSubmit = originalRequestSubmit;
     container.remove();
   });
 

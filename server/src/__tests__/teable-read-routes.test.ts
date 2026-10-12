@@ -171,7 +171,7 @@ describeEmbeddedPostgres("GET /issues/:id/teable-rows (F-010-3)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("refuses a non-allowlisted table with 422 and never calls Teable", async () => {
+  it("maps a service allowlist refusal to 422", async () => {
     const { companyId, prefix } = await seedCompany();
     const issueId = await seedIssue(companyId, prefix);
     const app = createApp(

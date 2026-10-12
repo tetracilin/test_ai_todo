@@ -24,6 +24,10 @@ function probeResult(overrides: Record<string, unknown>) {
 }
 
 describe("ensureRemoteOpenCodeModelConfiguredAndAvailable", () => {
+  beforeEach(() => {
+    runProcessMock.mockReset();
+  });
+
   afterEach(() => {
     delete process.env.OPENCODE_ALLOW_ALL_MODELS;
   });
@@ -78,7 +82,8 @@ describe("ensureRemoteOpenCodeModelConfiguredAndAvailable", () => {
         timeoutSec: 30,
         graceSec: 5,
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("OpenCode requires `adapterConfig.model`");
+    expect(runProcessMock).not.toHaveBeenCalled();
   });
 });
 

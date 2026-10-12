@@ -99,6 +99,9 @@ describe("useTaskChatRedesignEnabled", () => {
     rejectFetch(new Error("settings unavailable"));
     await flushReact();
 
+    // Prove the failure actually settled, so the closed gate below is the
+    // error path and not just the still-loading path again.
+    expect(queryClient.getQueryState(queryKeys.instance.experimentalSettings)?.status).toBe("error");
     expect(readGate()).toEqual({ enabled: "false", loaded: "false" });
   });
 

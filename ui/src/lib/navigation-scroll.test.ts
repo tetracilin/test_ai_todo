@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyMainContentScrollTop,
   NavigationScrollMemory,
@@ -10,6 +10,15 @@ import {
 } from "./navigation-scroll";
 
 describe("navigation-scroll", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    document.documentElement.scrollTop = 0;
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollTop = 0;
+    document.body.scrollLeft = 0;
+  });
+
   it("resets scroll only for flagged sidebar navigation", () => {
     expect(
       shouldResetScrollOnNavigation({

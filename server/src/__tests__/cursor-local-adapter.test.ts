@@ -64,6 +64,12 @@ describe("cursor stale session detection", () => {
     expect(isCursorUnknownSessionError("", "unknown session id chat_123")).toBe(true);
     expect(isCursorUnknownSessionError("", "chat abc not found")).toBe(true);
   });
+
+  it("does not treat unrelated failures or empty output as an unknown session", () => {
+    expect(isCursorUnknownSessionError("", "")).toBe(false);
+    expect(isCursorUnknownSessionError("", "network timeout while contacting model provider")).toBe(false);
+    expect(isCursorUnknownSessionError("session started", "model access denied")).toBe(false);
+  });
 });
 
 describe("cursor ui stdout parser", () => {

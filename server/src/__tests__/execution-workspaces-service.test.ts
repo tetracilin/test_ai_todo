@@ -2397,7 +2397,8 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     // An empty tree keeps the worktree clean even after its branch ref is
     // deleted, so this exercises the adoption gate rather than cleanliness.
-    const emptyTreeSha = (await readGit(repoRoot, ["hash-object", "-t", "tree", "/dev/null"]))!;
+    // The well-known SHA-1 empty tree. Hashing /dev/null would be POSIX-only.
+    const emptyTreeSha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     const emptyCommitSha = (await readGit(repoRoot, ["commit-tree", emptyTreeSha, "-m", "empty base"]))!;
     await runGit(repoRoot, ["branch", "empty-base", emptyCommitSha]);
     await runGit(repoRoot, ["worktree", "add", "-b", "feature/current", worktreePath, "empty-base"]);
@@ -4157,7 +4158,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         companyId,
         projectId,
         projectWorkspaceId,
-        mode: "dedicated_worktree",
+        mode: "isolated_workspace",
         strategyType: "git_worktree",
         name: "Exposed workspace",
         status: "idle",
@@ -4169,7 +4170,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         companyId,
         projectId,
         projectWorkspaceId,
-        mode: "dedicated_worktree",
+        mode: "isolated_workspace",
         strategyType: "git_worktree",
         name: "Provisioning workspace",
         status: "idle",

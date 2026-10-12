@@ -236,6 +236,10 @@ describe("issue update comment wakeups", () => {
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
     mockIssueService.getCurrentScheduledRetry.mockResolvedValue(null);
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
+    // vi.clearAllMocks() keeps implementations, so reset the ones individual tests override.
+    mockHeartbeatService.getRun.mockResolvedValue(null);
+    mockHeartbeatService.cancelRun.mockResolvedValue(null);
+    mockIssueThreadInteractionService.expireRequestConfirmationsSupersededByComment.mockResolvedValue([]);
   });
 
   it("includes the new comment in assignment wakes from issue updates", async () => {
@@ -509,7 +513,9 @@ describe("issue update comment wakeups", () => {
       });
 
     expect(res.status).toBe(200);
-    await new Promise((resolve) => setImmediate(resolve));
+    // Post-response comment processing is async; wait for its mention scan so the
+    // negative assertion below is evaluated after the wake decision was made.
+    await vi.waitFor(() => expect(mockIssueService.findMentionedAgents).toHaveBeenCalled());
     const issueCommentedWakeCalls = mockHeartbeatService.wakeup.mock.calls.filter(
       ([, wakeup]: [string, { reason?: string }]) => wakeup?.reason === "issue_commented",
     );

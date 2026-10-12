@@ -140,8 +140,8 @@ describe("scheduleSyncOperations", () => {
 
   for (const mode of MODE_TABLE) {
     it(`returns settled results in input order in ${mode.name}`, async () => {
-      // The tasks settle out of order: index 2 first, then index 0, then a
-      // rejection at index 1. The result array must still keep input order.
+      // Index 1 rejects between two fulfilled tasks. The result array must keep
+      // input order and report the rejection at its own index.
       const failure = new Error("index one failed");
       const tasks: Array<() => Promise<string>> = [
         () => Promise.resolve("zero"),
@@ -155,6 +155,31 @@ describe("scheduleSyncOperations", () => {
         { status: "fulfilled", value: "zero" },
         { status: "rejected", reason: failure },
         { status: "fulfilled", value: "two" },
+      ]);
+    });
+  }
+
+  // A bad bound must never stall or over-start the scheduler: it falls back to one.
+  for (const badBound of [0, -3, Number.NaN, 0.5]) {
+    it(`runs one task at a time in concurrent mode when the bound is ${badBound}`, async () => {
+      const deferreds = [makeDeferred<number>(), makeDeferred<number>()];
+      const scheduled = scheduleSyncOperations(
+        deferreds.map((deferred) => deferred.task),
+        true,
+        badBound,
+      );
+      await flush();
+
+      expect(deferreds[0].started()).toBe(true);
+      expect(deferreds[1].started()).toBe(false);
+
+      deferreds[0].resolve(0);
+      await flush();
+      expect(deferreds[1].started()).toBe(true);
+      deferreds[1].resolve(1);
+      await expect(scheduled).resolves.toEqual([
+        { status: "fulfilled", value: 0 },
+        { status: "fulfilled", value: 1 },
       ]);
     });
   }

@@ -5,7 +5,8 @@ const ensureCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const maybeInstallMock = vi.hoisted(() => vi.fn(async () => null));
 const runProcessMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@paperclipai/adapter-utils/execution-target", () => ({
+vi.mock("@paperclipai/adapter-utils/execution-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@paperclipai/adapter-utils/execution-target")>()),
   describeAdapterExecutionTarget: () => "local",
   ensureAdapterExecutionTargetCommandResolvable: ensureCommandMock,
   ensureAdapterExecutionTargetDirectory: ensureDirectoryMock,

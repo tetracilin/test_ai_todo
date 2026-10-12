@@ -566,7 +566,7 @@ describe("teable private-network guard", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("allows the self-hosted sibling container when the flag is on, and checks once", async () => {
+  it("allows the self-hosted sibling container when the flag is on, without a DNS check", async () => {
     const lookup = vi.fn(async () => [{ address: "10.0.0.5", family: 4 }]);
     const fetch = vi.fn(async () => response(exchange("list-records-ok").response.body));
     const instance = createTeableClient({} as never, {
@@ -582,6 +582,7 @@ describe("teable private-network guard", () => {
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
+    expect(lookup).not.toHaveBeenCalled(); // the guard short-circuits when private network is allowed
   });
 });
 

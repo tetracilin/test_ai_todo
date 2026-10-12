@@ -12,6 +12,11 @@ const mockIssueService = vi.hoisted(() => ({
   update: vi.fn(),
   checkout: vi.fn(),
   addComment: vi.fn(),
+  getByIdForUpdate: vi.fn(),
+  findMentionedAgents: vi.fn(),
+  getRelationSummaries: vi.fn(),
+  listWakeableBlockedDependents: vi.fn(),
+  getWakeableParentAfterChildCompletion: vi.fn(),
 }));
 
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
@@ -210,6 +215,17 @@ describe.sequential("closed isolated workspace issue routes", () => {
     registerServiceMocks();
     vi.clearAllMocks();
     mockIssueService.getById.mockResolvedValue(makeIssue());
+    mockIssueService.getByIdForUpdate.mockImplementation(async () => mockIssueService.getById());
+    mockIssueService.findMentionedAgents.mockResolvedValue([]);
+    mockIssueService.getRelationSummaries.mockResolvedValue({ blockedBy: [], blocks: [] });
+    mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
+    mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
+    mockIssueService.addComment.mockResolvedValue({
+      id: "comment-1",
+      issueId,
+      companyId: "company-1",
+      body: "hello",
+    });
     mockExecutionWorkspaceService.getById.mockResolvedValue(makeClosedWorkspace());
     // The guard reopens a closed isolated workspace and lets the request
     // continue. The default is a successful reopen.
@@ -231,17 +247,19 @@ describe.sequential("closed isolated workspace issue routes", () => {
       issue: { id: issueId, companyId: "company-1", projectId: null },
       actor: expect.objectContaining({ actorType: "user" }),
     });
-    // The closed-workspace dead end is gone.
-    expect(res.status).not.toBe(409);
+    // The closed-workspace dead end is gone and the comment is persisted.
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockIssueService.addComment).toHaveBeenCalledTimes(1);
   });
 
   it("reopens the closed isolated workspace and accepts a comment update", async () => {
+    mockIssueService.update.mockResolvedValue(makeIssue());
     const res = await request(await createApp())
       .patch(`/api/issues/${issueId}`)
       .send({ comment: "hello" });
 
     expect(mockExecutionWorkspaceService.reopenClosedIsolatedExecutionWorkspaceForIssue).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toBe(409);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
   });
 
   it("reopens the closed isolated workspace and accepts a checkout", async () => {
@@ -253,7 +271,8 @@ describe.sequential("closed isolated workspace issue routes", () => {
       });
 
     expect(mockExecutionWorkspaceService.reopenClosedIsolatedExecutionWorkspaceForIssue).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toBe(409);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockIssueService.checkout).toHaveBeenCalledTimes(1);
   });
 
   it("returns 409 and blocks the comment when the workspace cannot be reopened", async () => {

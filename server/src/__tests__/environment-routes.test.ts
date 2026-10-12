@@ -305,6 +305,10 @@ describe("environment routes", () => {
     mockSecretService.remove.mockResolvedValue(null);
     mockSecretService.resolveSecretValueForEphemeralAccess.mockResolvedValue("resolved-provider-key");
     delete process.env.PAPERCLIP_SECRETS_PROVIDER;
+    // Keep the suite hermetic on hosts/CI runners that export these.
+    delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
+    delete process.env.PAPERCLIP_MANAGED_CONFIG;
+    delete process.env.PAPERCLIP_EXECUTION_MODE;
     mockValidatePluginEnvironmentDriverConfig.mockReset();
     mockValidatePluginEnvironmentDriverConfig.mockImplementation(async ({ config }) => config);
     mockValidatePluginSandboxProviderConfig.mockReset();
@@ -2466,6 +2470,8 @@ describe("environment routes", () => {
     expect(mockEnvironmentService.listLeases).toHaveBeenCalledWith(environment.id, {
       status: "active",
     });
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ id: "lease-1", environmentId: environment.id });
   });
 
   it("returns a single lease after company access is confirmed", async () => {

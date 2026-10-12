@@ -39,4 +39,25 @@ describe("readBuildCommit", () => {
       }),
     ).toBe("0123456789abcdef0123456789abcdef01234567");
   });
+
+  it("ignores a malformed environment commit and falls back to the marker file", () => {
+    expect(
+      readBuildCommit({
+        environmentCommit: "abcdef0",
+        readTextFile: () => "0123456789abcdef0123456789abcdef01234567\n",
+      }),
+    ).toBe("0123456789abcdef0123456789abcdef01234567");
+  });
+
+  it("returns null when the marker is unreadable or malformed", () => {
+    expect(
+      readBuildCommit({
+        environmentCommit: null,
+        readTextFile: () => {
+          throw new Error("ENOENT");
+        },
+      }),
+    ).toBeNull();
+    expect(readBuildCommit({ environmentCommit: null, readTextFile: () => "garbage" })).toBeNull();
+  });
 });

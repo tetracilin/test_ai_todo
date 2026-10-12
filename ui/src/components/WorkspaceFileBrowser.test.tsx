@@ -620,14 +620,15 @@ describe("WorkspaceFileBrowser", () => {
       nativeSetter?.call(input, "FileViewerSheet");
       input.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
     });
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
 
-    expect(onBrowseStateChange).toHaveBeenLastCalledWith({
-      q: "FileViewerSheet",
-      folderPath: "ui/src/components",
-      projectId: null,
-      workspaceId: null,
-    });
+    await waitForExpectation(() =>
+      expect(onBrowseStateChange).toHaveBeenLastCalledWith({
+        q: "FileViewerSheet",
+        folderPath: "ui/src/components",
+        projectId: null,
+        workspaceId: null,
+      }),
+    );
   });
 
   it("shows the remote-workspace state without file rows", () => {
