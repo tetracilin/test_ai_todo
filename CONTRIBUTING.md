@@ -24,7 +24,7 @@ Affirm that you did this search by checking the dedup-search box in the PR templ
 - Touch the **smallest possible number of files**
 - Make sure the change is very targeted and easy to review
 - All tests pass and CI is green
-- Greptile score is 5/5 with all comments addressed
+- Greptile Review check green on the current head, every Greptile thread resolved
 - Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
 
 These almost always get merged quickly when they're clean.
@@ -39,7 +39,7 @@ These almost always get merged quickly when they're clean.
   - Clear description of what & why
   - Proof it works (manual testing notes)
   - All tests passing and CI green
-  - Greptile score 5/5 with all comments addressed
+  - Greptile Review check green on the current head, every Greptile thread resolved
   - [PR template](.github/PULL_REQUEST_TEMPLATE.md) fully filled out
 
 PRs that follow this path are **much** more likely to be accepted, even when they're large.
@@ -112,13 +112,12 @@ All Paperclip CI gates (lint, typecheck, tests, build, and any other required ch
 
 ### Greptile Review
 
-We use [Greptile](https://greptile.com) for automated code review. Your PR must achieve a **5/5 Greptile score** before it can be merged, with:
+We use [Greptile](https://greptile.com) for automated code review. The gate for this fork is not a score. Before a PR can be merged:
 
-- **No open P2 (or higher) comments**
-- **No open recommendations**
-- **No open follow-ups**
+- The **"Greptile Review" check-run must succeed on the PR's current head** (a green run on an older commit does not count).
+- **Every Greptile review thread must be resolved** — either fixed, or answered with a one-sentence reason and then resolved.
 
-We hold the bar high here on purpose — we want code quality to be as high as possible. If Greptile leaves comments, fix them (or, if a comment is wrong, reply explaining why) and request a re-review.
+We hold the bar high here on purpose — we want code quality to be as high as possible. If Greptile leaves comments, fix them (or, if a comment is wrong, reply explaining why) and request a re-review. `node .claude/skills/pr-loop/scripts/pr-readiness.mjs <pr-number>` reports both conditions and prints `verdict: fix_review` until they hold.
 
 ## Helping Other Contributors
 
