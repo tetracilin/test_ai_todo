@@ -1,11 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { preparePiRuntimeConfig } from "./runtime-config.js";
 
 const cleanupPaths = new Set<string>();
+const savedProvidersEnv = process.env.PAPERCLIP_PI_PROVIDERS;
+
+beforeEach(() => {
+  // Isolate from an ambient PAPERCLIP_PI_PROVIDERS on the host/CI runner.
+  delete process.env.PAPERCLIP_PI_PROVIDERS;
+});
 
 afterEach(async () => {
+  if (savedProvidersEnv === undefined) delete process.env.PAPERCLIP_PI_PROVIDERS;
+  else process.env.PAPERCLIP_PI_PROVIDERS = savedProvidersEnv;
   await Promise.all(
     [...cleanupPaths].map(async (filepath) => {
       await fs.rm(filepath, { recursive: true, force: true });

@@ -28,6 +28,6 @@ describe("pi models", () => {
       ensurePiModelConfiguredAndAvailable({
         model: "xai/grok-4",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Failed to start command "__paperclip_missing_pi_command__"/);
   });
 });
