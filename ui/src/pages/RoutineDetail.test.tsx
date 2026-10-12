@@ -15,4 +15,13 @@ describe("RoutineDetail project selector options", () => {
       { id: "active-project", label: "Active Project", searchText: "Visible" },
     ]);
   });
+
+  it("excludes projects archived with an ISO string and defaults a missing description to empty search text", () => {
+    expect(buildRoutineProjectOptions([
+      { id: "no-description", name: "No Description" },
+      { id: "archived-string", name: "Archived", archivedAt: "2026-04-02T00:00:00.000Z" },
+    ])).toEqual([
+      { id: "no-description", label: "No Description", searchText: "" },
+    ]);
+  });
 });

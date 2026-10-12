@@ -41,6 +41,14 @@ const companyState = vi.hoisted(() => ({
   },
 }));
 
+const defaultCompany = vi.hoisted(() => ({
+  id: "company-1",
+  name: "Paperclip",
+  status: "active",
+  brandColor: "#123456",
+  issuePrefix: "PAP",
+}));
+
 const toastState = vi.hoisted(() => ({
   pushToast: vi.fn(),
 }));
@@ -281,10 +289,13 @@ async function typeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   await flush();
 }
 
-async function waitForAssertion(assertion: () => void, attempts = 20) {
+async function waitForAssertion(assertion: () => void, timeoutMs = 5_000) {
+  // Bound by time, not iterations: lazy-loaded children can take far longer than a
+  // fixed number of flush cycles to settle on a loaded CI runner.
+  const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  do {
     try {
       assertion();
       return;
@@ -292,7 +303,7 @@ async function waitForAssertion(assertion: () => void, attempts = 20) {
       lastError = error;
       await flush();
     }
-  }
+  } while (Date.now() < deadline);
 
   throw lastError;
 }
@@ -361,6 +372,9 @@ describe("NewIssueDialog", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     mockMissingUserSecretsBannerRender.mockReset();
     localStorage.clear();
+    // Restore the default company: the PAP-8501 test overrides these.
+    companyState.companies = [defaultCompany];
+    companyState.selectedCompany = defaultCompany;
     mockIssuesApi.create.mockResolvedValue({
       id: "issue-2",
       companyId: "company-1",

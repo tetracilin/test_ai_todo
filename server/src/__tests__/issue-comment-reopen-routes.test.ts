@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 
 const mockIssueService = vi.hoisted(() => ({
@@ -46,6 +46,7 @@ const mockTx = vi.hoisted(() => ({
 const mockDbSelectOrderBy = vi.hoisted(() => vi.fn(async () => []));
 const mockDbSelectWhere = vi.hoisted(() => vi.fn(() => ({
   orderBy: mockDbSelectOrderBy,
+  limit: async () => [],
   then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
     Promise.resolve([]).then(onFulfilled, onRejected),
 })));
@@ -263,6 +264,14 @@ async function waitForWakeup(assertion: () => void) {
 }
 
 describe.sequential("issue comment reopen routes", () => {
+  // The first request lazily imports the very large routes/issues module; on a cold
+  // transform cache that alone can exceed the per-test timeout (observed 20s on Windows) and
+  // fail whichever test happens to run first. Pay the one-time cost here, under a hook-sized
+  // timeout, so test timeouts keep bounding only the behaviour under test.
+  beforeAll(async () => {
+    await Promise.all([import("../routes/issues.js"), import("../middleware/index.js")]);
+  }, 120_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockIssueService.getById.mockReset();
@@ -312,6 +321,7 @@ describe.sequential("issue comment reopen routes", () => {
     mockDbSelectOrderBy.mockResolvedValue([]);
     mockDbSelectWhere.mockImplementation(() => ({
       orderBy: mockDbSelectOrderBy,
+      limit: async () => [],
       then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
         Promise.resolve([]).then(onFulfilled, onRejected),
     }));
@@ -796,9 +806,9 @@ describe.sequential("issue comment reopen routes", () => {
       .send({ body: "log line", reopen: true });
 
     // Cancelled issues are rejected at assertExplicitResumeIntentAllowed for
-    // agent actors with reopen=true (409). The guard runs after that, but
-    // either way no reopen wakeup must fire and no status update to todo.
-    expect([200, 201, 409]).toContain(res.status);
+    // agent actors with reopen=true (409), so nothing is written and no reopen
+    // wakeup fires.
+    expect(res.status, JSON.stringify(res.body)).toBe(409);
     expect(mockIssueService.update).not.toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({ status: "todo" }),

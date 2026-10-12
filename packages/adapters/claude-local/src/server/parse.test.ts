@@ -554,4 +554,31 @@ describe("parseClaudeStreamJson usage extraction", () => {
     });
     expect(parsed.usageBasis).toBe("per_run");
   });
+
+  it("returns assistant text, session and model without usage when no result event arrived", () => {
+    const parsed = parseClaudeStreamJson(
+      [
+        JSON.stringify({ type: "system", subtype: "init", session_id: "sess-2", model: "claude-sonnet" }),
+        "not json at all",
+        JSON.stringify({
+          type: "assistant",
+          session_id: "sess-2",
+          message: { content: [{ type: "text", text: "first" }, { type: "tool_use", name: "Bash" }] },
+        }),
+        JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "second" }] } }),
+      ].join("\n"),
+    );
+    expect(parsed.sessionId).toBe("sess-2");
+    expect(parsed.model).toBe("claude-sonnet");
+    expect(parsed.summary).toBe("first\n\nsecond");
+    expect(parsed.usage).toBeNull();
+    expect(parsed.usageBasis).toBeNull();
+    expect(parsed.costUsd).toBeNull();
+    expect(parsed.resultJson).toBeNull();
+  });
+
+  it("reports a null cost when total_cost_usd is absent or not a finite number", () => {
+    expect(parseClaudeStreamJson(resultEvent({ total_cost_usd: undefined })).costUsd).toBeNull();
+    expect(parseClaudeStreamJson(resultEvent({ total_cost_usd: "1.25" })).costUsd).toBeNull();
+  });
 });

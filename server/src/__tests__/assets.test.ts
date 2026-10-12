@@ -162,7 +162,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
         .attach("file", Buffer.from("png"), "logo.png"),
     );
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.contentPath).toBe("/api/assets/asset-1/content");
     expect(createAssetMock).toHaveBeenCalledTimes(1);
     expect(png.__calls.putFileInputs[0]).toMatchObject({
@@ -191,7 +191,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
         .attach("file", Buffer.from("hello"), { filename: "note.txt", contentType: "text/plain" }),
     );
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.contentPath).toBe("/api/assets/asset-1/content");
     expect(res.body.contentType).toBe("text/plain");
   });

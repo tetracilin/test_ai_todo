@@ -48,12 +48,18 @@ describe("IssueFiltersPopover", () => {
     document.body.appendChild(container);
   });
 
+  const roots: Array<ReturnType<typeof createRoot>> = [];
+
   afterEach(() => {
+    act(() => {
+      for (const root of roots.splice(0)) root.unmount();
+    });
     document.body.innerHTML = "";
   });
 
   it("uses a scrollable popover and a three-column desktop grid", () => {
     const root = createRoot(container);
+    roots.push(root);
 
     act(() => {
       root.render(
@@ -84,6 +90,7 @@ describe("IssueFiltersPopover", () => {
 
   it("hides the Priority filter section while priority UI is off (PAP-411)", () => {
     const root = createRoot(container);
+    roots.push(root);
 
     act(() => {
       root.render(

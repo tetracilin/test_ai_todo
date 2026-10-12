@@ -121,11 +121,11 @@ describe("POST /bootstrap/claim", () => {
   });
 
   it.each([
-    [{ type: "none", source: "none" }, "anonymous caller"],
-    [{ type: "agent", source: "agent_key", agentId: "agent-1" }, "agent key"],
-    [{ type: "board", source: "board_key", userId: "user-1" }, "board API key"],
-    [{ type: "board", source: "local_implicit", userId: "local-board" }, "local implicit board"],
-  ])("rejects %s before opening the first-admin transaction", async (actor) => {
+    { label: "anonymous caller", actor: { type: "none", source: "none" } },
+    { label: "agent key", actor: { type: "agent", source: "agent_key", agentId: "agent-1" } },
+    { label: "board API key", actor: { type: "board", source: "board_key", userId: "user-1" } },
+    { label: "local implicit board", actor: { type: "board", source: "local_implicit", userId: "local-board" } },
+  ])("rejects $label before opening the first-admin transaction", async ({ actor }) => {
     const app = createApp({ actor });
 
     const res = await request(app).post("/api/bootstrap/claim").send({});

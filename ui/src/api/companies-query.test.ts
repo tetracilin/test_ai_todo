@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { companyListQueryOptions, resolveAccountUserId } from "./companies-query";
 import { ApiError } from "./client";
 import { queryKeys } from "../lib/queryKeys";
@@ -20,6 +20,12 @@ const mockCompaniesApi = vi.hoisted(() => ({
 vi.mock("./companies", () => ({
   companiesApi: mockCompaniesApi,
 }));
+
+beforeEach(() => {
+  mockAuthApi.getSession.mockReset();
+  mockCompaniesApi.list.mockReset();
+  mockCompaniesApi.detachInflightList.mockReset();
+});
 
 describe("companyListQueryOptions", () => {
   it.each([401, 403])("treats %s company-list failures as unauthorized bootstrap state", async (status) => {
@@ -48,9 +54,16 @@ describe("company list cache keys", () => {
   // under the previous session would otherwise answer this one and land the
   // wrong account's list in an account-keyed entry.
   it("refuses to join an in-flight request issued for another account", async () => {
-    mockCompaniesApi.list.mockResolvedValueOnce([]);
+    const order: string[] = [];
+    mockCompaniesApi.detachInflightList.mockImplementation(() => order.push("detach"));
+    mockCompaniesApi.list.mockImplementationOnce(async () => {
+      order.push("list");
+      return [];
+    });
     await companyListQueryOptions("user-2").queryFn();
-    expect(mockCompaniesApi.detachInflightList).toHaveBeenCalled();
+    expect(mockCompaniesApi.detachInflightList).toHaveBeenCalledTimes(1);
+    // Detach must happen before the request so it cannot join a stale one.
+    expect(order).toEqual(["detach", "list"]);
   });
 });
 

@@ -176,7 +176,6 @@ describe("workspace Git scan route load regression", () => {
       peakQueued: loadedSnapshot.queuedCount,
       outcomes: outcomeCounts,
       healthP99Ms: Math.round(healthP99Ms * 100) / 100,
-      unreapedChildCount: 0,
     });
   }, 60_000);
 

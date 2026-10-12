@@ -116,8 +116,13 @@ function createLocalSandboxRunner() {
   };
 }
 
+// The fake Codex CLI is a #!/usr/bin/env node script spawned directly; Windows cannot
+// exec shebang scripts, so these end-to-end spawn tests only run on POSIX hosts
+// (same convention as cursor-local-execute.test.ts).
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("codex execute", () => {
-  it("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
+  itPosix("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-default-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -219,7 +224,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("writes managed MCP gateways into Codex config and warns on overlapping direct entries without logging tokens", async () => {
+  itPosix("writes managed MCP gateways into Codex config and warns on overlapping direct entries without logging tokens", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-managed-mcp-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -336,7 +341,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("emits a command note that Codex auto-applies repo-scoped AGENTS.md files", async () => {
+  itPosix("emits a command note that Codex auto-applies repo-scoped AGENTS.md files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-notes-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -394,7 +399,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("logs HOME and the resolved executable path in invocation metadata", async () => {
+  itPosix("logs HOME and the resolved executable path in invocation metadata", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-meta-"));
     const workspace = path.join(root, "workspace");
     const binDir = path.join(root, "bin");
@@ -460,7 +465,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("injects bridge env into sandbox-managed remote runs", async () => {
+  itPosix("injects bridge env into sandbox-managed remote runs", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-sandbox-"));
     const localWorkspace = path.join(root, "workspace");
     const remoteWorkspace = path.join(root, "sandbox");
@@ -536,7 +541,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("injects structured Paperclip wake payloads into env and prompt", async () => {
+  itPosix("injects structured Paperclip wake payloads into env and prompt", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -646,7 +651,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("classifies remote-compaction high-demand failures as retryable transient upstream errors", async () => {
+  itPosix("classifies remote-compaction high-demand failures as retryable transient upstream errors", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-transient-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -698,7 +703,7 @@ describe("codex execute", () => {
     }
   });
 
-  it("classifies mid-turn harness crashes as retryable transient upstream errors", async () => {
+  itPosix("classifies mid-turn harness crashes as retryable transient upstream errors", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-harness-crash-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -760,7 +765,7 @@ process.exit(1);
     }
   });
 
-  it("persists retry-not-before metadata for codex provider quota failures", async () => {
+  itPosix("persists retry-not-before metadata for codex provider quota failures", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-usage-limit-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -825,7 +830,7 @@ process.exit(1);
     }
   });
 
-  it("classifies Codex refresh-token auth failures without credential telemetry", async () => {
+  itPosix("classifies Codex refresh-token auth failures without credential telemetry", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-refresh-token-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -875,7 +880,7 @@ process.exit(1);
     }
   });
 
-  it("uses safer invocation settings and a fresh-session handoff for codex transient fallback retries", async () => {
+  itPosix("uses safer invocation settings and a fresh-session handoff for codex transient fallback retries", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-fallback-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -953,7 +958,7 @@ process.exit(1);
     }
   });
 
-  it("renders execution-stage wake instructions for reviewer and executor roles", async () => {
+  itPosix("renders execution-stage wake instructions for reviewer and executor roles", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-stage-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -1110,7 +1115,7 @@ process.exit(1);
     }
   });
 
-  it("renders an issue-scoped wake prompt even when the wake has no comments yet", async () => {
+  itPosix("renders an issue-scoped wake prompt even when the wake has no comments yet", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-issue-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -1210,7 +1215,7 @@ process.exit(1);
     }
   });
 
-  it("uses a compact wake delta instead of the full heartbeat prompt when resuming a session", async () => {
+  itPosix("uses a compact wake delta instead of the full heartbeat prompt when resuming a session", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-resume-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -1322,7 +1327,7 @@ process.exit(1);
       await fs.rm(root, { recursive: true, force: true });
     }
   });
-  it("uses a worktree-isolated CODEX_HOME while preserving shared auth and config", async () => {
+  itPosix("uses a worktree-isolated CODEX_HOME while preserving shared auth and config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -1443,7 +1448,7 @@ process.exit(1);
     }
   });
 
-  it("respects an explicit CODEX_HOME config override even in worktree mode", async () => {
+  itPosix("respects an explicit CODEX_HOME config override even in worktree mode", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-explicit-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");

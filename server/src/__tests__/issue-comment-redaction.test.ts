@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   companies,
@@ -273,7 +273,7 @@ describeEmbeddedPostgres("deleted issue comment redaction", () => {
       deletedAt: new Date("2026-06-03T12:00:00.000Z"),
       deletedByType: "user",
       deletedByUserId: "board-user-1",
-    });
+    }).where(eq(issueComments.id, commentId));
     await refs.syncComment(commentId);
 
     expect((await refs.listIssueReferenceSummary(sourceIssueId)).outbound).toEqual([]);

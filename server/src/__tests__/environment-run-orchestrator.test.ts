@@ -11,6 +11,8 @@ const mockUpdateLeaseMetadata = vi.hoisted(() => vi.fn());
 const mockUpdateExecutionWorkspace = vi.hoisted(() => vi.fn());
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockLoggerInfo = vi.hoisted(() => vi.fn());
+const mockEnsureLocalEnvironment = vi.hoisted(() => vi.fn());
+const mockGetEnvironmentById = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/environment-execution-target.js", () => ({
   resolveEnvironmentExecutionTarget: mockResolveEnvironmentExecutionTarget,
@@ -27,8 +29,8 @@ vi.mock("../services/workspace-realization.js", () => ({
 
 vi.mock("../services/environments.js", () => ({
   environmentService: vi.fn(() => ({
-    ensureLocalEnvironment: vi.fn(),
-    getById: vi.fn(),
+    ensureLocalEnvironment: mockEnsureLocalEnvironment,
+    getById: mockGetEnvironmentById,
     acquireLease: vi.fn(),
     releaseLease: vi.fn(),
     updateLeaseMetadata: mockUpdateLeaseMetadata,
@@ -218,6 +220,11 @@ describe("environmentRunOrchestrator — realizeForRun", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations; reset the ones tests configure so
+    // no test inherits a resolved/rejected value from an earlier one.
+    mockResolveEnvironmentExecutionTarget.mockReset();
+    mockEnsureLocalEnvironment.mockReset();
+    mockGetEnvironmentById.mockReset();
 
     mockBuildWorkspaceRealizationRequest.mockReturnValue({
       version: 1,
@@ -356,7 +363,7 @@ describe("environmentRunOrchestrator — realizeForRun", () => {
     );
   });
 
-  it("non-sandbox driver skips workspace realization and goes straight to target resolution", async () => {
+  it("plugin driver skips workspace realization and goes straight to target resolution", async () => {
     const environment = makeEnvironment("plugin" as Environment["driver"]);
     const executionTarget = null;
 
@@ -489,6 +496,8 @@ describe("environmentRunOrchestrator — realizeForRun", () => {
       env: {
         SHELL: "/bin/bash",
       },
+      timeoutMs: 300_000,
+      bypassSession: true,
     }));
     // The sandbox skip log is specific to the sandbox driver; ssh stays quiet.
     expect(mockLoggerInfo).not.toHaveBeenCalled();
@@ -727,5 +736,252 @@ describe("environmentRunOrchestrator — realizeForRun", () => {
     );
 
     expect(mockResolveEnvironmentExecutionTarget).not.toHaveBeenCalled();
+  });
+});
+
+describe("environmentRunOrchestrator — resolveEnvironment", () => {
+  const mockDb = {} as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEnsureLocalEnvironment.mockReset();
+    mockGetEnvironmentById.mockReset();
+  });
+
+  it("ensures the built-in local environment when the selected id is the local fallback id", async () => {
+    mockEnsureLocalEnvironment.mockResolvedValue(makeEnvironment("local"));
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: makeMockRuntime() });
+
+    const environment = await orchestrator.resolveEnvironment({
+      companyId: "company-1",
+      selectedEnvironmentId: "local-env",
+      localEnvironmentId: "local-env",
+    });
+
+    expect(environment.id).toBe("env-1");
+    expect(mockEnsureLocalEnvironment).toHaveBeenCalledWith("company-1");
+    expect(mockGetEnvironmentById).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the local environment when no environment id is selected", async () => {
+    mockEnsureLocalEnvironment.mockResolvedValue(makeEnvironment("local"));
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: makeMockRuntime() });
+
+    await orchestrator.resolveEnvironment({
+      companyId: "company-1",
+      selectedEnvironmentId: "",
+      localEnvironmentId: "local-env",
+    });
+
+    expect(mockEnsureLocalEnvironment).toHaveBeenCalledWith("company-1");
+  });
+
+  it("looks up a non-local selection by id", async () => {
+    mockGetEnvironmentById.mockResolvedValue(makeEnvironment("ssh"));
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: makeMockRuntime() });
+
+    const environment = await orchestrator.resolveEnvironment({
+      companyId: "company-1",
+      selectedEnvironmentId: "env-1",
+      localEnvironmentId: "local-env",
+    });
+
+    expect(environment.driver).toBe("ssh");
+    expect(mockGetEnvironmentById).toHaveBeenCalledWith("env-1");
+    expect(mockEnsureLocalEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("throws environment_not_found when the selected environment does not exist", async () => {
+    mockGetEnvironmentById.mockResolvedValue(null);
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: makeMockRuntime() });
+
+    await expect(orchestrator.resolveEnvironment({
+      companyId: "company-1",
+      selectedEnvironmentId: "missing",
+      localEnvironmentId: "local-env",
+    })).rejects.toMatchObject({ name: "EnvironmentRunError", code: "environment_not_found", environmentId: "missing" });
+  });
+
+  it("throws environment_inactive for an environment that is not active", async () => {
+    mockGetEnvironmentById.mockResolvedValue({ ...makeEnvironment("ssh"), status: "archived" });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: makeMockRuntime() });
+
+    await expect(orchestrator.resolveEnvironment({
+      companyId: "company-1",
+      selectedEnvironmentId: "env-1",
+      localEnvironmentId: "local-env",
+    })).rejects.toMatchObject({ code: "environment_inactive", environmentId: "env-1", driver: "ssh" });
+  });
+});
+
+describe("environmentRunOrchestrator — acquireForRun", () => {
+  const mockDb = {} as any;
+  const baseInput = {
+    companyId: "company-1",
+    selectedEnvironmentId: "env-1",
+    localEnvironmentId: "local-env",
+    adapterType: "claude_local",
+    issueId: null,
+    heartbeatRunId: "run-1",
+    agentId: "agent-1",
+    persistedExecutionWorkspace: null,
+    executionWorkspaceSettings: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEnsureLocalEnvironment.mockReset();
+    mockGetEnvironmentById.mockReset();
+    mockLogActivity.mockResolvedValue(undefined);
+    mockGetEnvironmentById.mockResolvedValue(makeEnvironment("ssh"));
+  });
+
+  it("acquires a lease, records a lease_acquired activity and returns the lease context", async () => {
+    const lease = makeLease({ leasePolicy: "ephemeral", provider: "ssh" });
+    const leaseContext = { executionWorkspaceId: null, executionWorkspaceMode: null };
+    const runtime = makeMockRuntime({
+      acquireRunLease: vi.fn().mockResolvedValue({ environment: makeEnvironment("ssh"), lease, leaseContext }),
+    });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    const result = await orchestrator.acquireForRun(baseInput);
+
+    expect(result.lease).toBe(lease);
+    expect(result.leaseContext).toEqual(leaseContext);
+    expect(result.executionTransport).toBeNull();
+    expect(runtime.acquireRunLease).toHaveBeenCalledWith(expect.objectContaining({
+      companyId: "company-1",
+      heartbeatRunId: "run-1",
+      agentId: "agent-1",
+      adapterType: "claude_local",
+    }));
+    expect(mockLogActivity).toHaveBeenCalledOnce();
+    expect(mockLogActivity).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+      companyId: "company-1",
+      action: "environment.lease_acquired",
+      entityType: "environment_lease",
+      entityId: "lease-1",
+      runId: "run-1",
+      details: expect.objectContaining({ environmentId: "env-1", driver: "ssh", provider: "ssh" }),
+    }));
+  });
+
+  it("wraps runtime acquire failures as lease_acquire_failed and records no activity", async () => {
+    const runtime = makeMockRuntime({
+      acquireRunLease: vi.fn().mockRejectedValue(new Error("no capacity")),
+    });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    await expect(orchestrator.acquireForRun(baseInput)).rejects.toMatchObject({
+      name: "EnvironmentRunError",
+      code: "lease_acquire_failed",
+      environmentId: "env-1",
+      driver: "ssh",
+      message: expect.stringContaining("no capacity"),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("does not touch the runtime when the environment is not found", async () => {
+    mockGetEnvironmentById.mockResolvedValue(null);
+    const runtime = makeMockRuntime();
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    await expect(orchestrator.acquireForRun(baseInput)).rejects.toMatchObject({ code: "environment_not_found" });
+    expect(runtime.acquireRunLease).not.toHaveBeenCalled();
+  });
+});
+
+describe("environmentRunOrchestrator — releaseForRun", () => {
+  const mockDb = {} as any;
+  const releaseInput = { heartbeatRunId: "run-1", companyId: "company-1", agentId: "agent-1" };
+  const leaseContext = { executionWorkspaceId: null, executionWorkspaceMode: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLogActivity.mockReset();
+    mockLogActivity.mockResolvedValue(undefined);
+  });
+
+  it("releases leases, logs one lease_released activity per lease and defaults the status to released", async () => {
+    const released = {
+      environment: makeEnvironment("ssh"),
+      lease: makeLease({ status: "released", provider: "ssh" }),
+      leaseContext,
+    };
+    const runtime = makeMockRuntime({ releaseRunLeases: vi.fn().mockResolvedValue([released]) });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    const result = await orchestrator.releaseForRun(releaseInput);
+
+    expect(runtime.releaseRunLeases).toHaveBeenCalledWith("run-1", "released", expect.any(Function));
+    expect(result.released).toEqual([released]);
+    expect(result.errors).toEqual([]);
+    expect(mockLogActivity).toHaveBeenCalledOnce();
+    expect(mockLogActivity).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+      action: "environment.lease_released",
+      entityId: "lease-1",
+      details: expect.objectContaining({ driver: "ssh", status: "released" }),
+    }));
+  });
+
+  it("prefers the caller's failureReason in the activity details", async () => {
+    const released = {
+      environment: makeEnvironment("local"),
+      lease: makeLease({ status: "failed", failureReason: "driver reason" }),
+      leaseContext,
+    };
+    const runtime = makeMockRuntime({ releaseRunLeases: vi.fn().mockResolvedValue([released]) });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    await orchestrator.releaseForRun({ ...releaseInput, status: "failed", failureReason: "run crashed" });
+
+    expect(runtime.releaseRunLeases).toHaveBeenCalledWith("run-1", "failed", expect.any(Function));
+    expect(mockLogActivity).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+      details: expect.objectContaining({ failureReason: "run crashed" }),
+    }));
+  });
+
+  it("captures a runtime release failure instead of throwing", async () => {
+    const boom = new Error("db down");
+    const runtime = makeMockRuntime({ releaseRunLeases: vi.fn().mockRejectedValue(boom) });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    const result = await orchestrator.releaseForRun(releaseInput);
+
+    expect(result.released).toEqual([]);
+    expect(result.errors).toEqual([{ leaseId: "*", error: boom }]);
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("collects per-lease errors reported by the runtime callback", async () => {
+    const leaseError = new Error("cleanup failed");
+    const runtime = makeMockRuntime({
+      releaseRunLeases: vi.fn().mockImplementation(async (_runId, _status, onError) => {
+        onError("lease-9", leaseError);
+        return [];
+      }),
+    });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    const result = await orchestrator.releaseForRun(releaseInput);
+
+    expect(result.errors).toEqual([{ leaseId: "lease-9", error: leaseError }]);
+  });
+
+  it("still reports a lease as released when activity logging fails", async () => {
+    mockLogActivity.mockRejectedValue(new Error("activity store down"));
+    const released = {
+      environment: makeEnvironment("local"),
+      lease: makeLease({ status: "released" }),
+      leaseContext,
+    };
+    const runtime = makeMockRuntime({ releaseRunLeases: vi.fn().mockResolvedValue([released]) });
+    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
+
+    const result = await orchestrator.releaseForRun(releaseInput);
+
+    expect(result.released).toEqual([released]);
+    expect(result.errors).toEqual([]);
   });
 });

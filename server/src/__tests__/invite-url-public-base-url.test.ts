@@ -1,15 +1,13 @@
 /**
- * TDD: authPublicBaseUrl takes precedence over request-derived host when building invite URLs.
- * These tests are written first (will fail until the implementation lands).
+ * authPublicBaseUrl takes precedence over request-derived host when building invite URLs.
  */
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const logActivityMock = vi.fn();
+const logActivityMock = vi.hoisted(() => vi.fn());
 
-function registerModuleMocks() {
-  vi.doMock("../services/index.js", () => ({
+vi.mock("../services/index.js", () => ({
     accessService: () => ({
       isInstanceAdmin: vi.fn(),
       canUser: vi.fn(),
@@ -27,8 +25,12 @@ function registerModuleMocks() {
     deduplicateAgentName: vi.fn(),
     logActivity: (...args: unknown[]) => logActivityMock(...args),
     notifyHireApproved: vi.fn(),
-  }));
-}
+}));
+
+// Static imports after vi.mock: evaluate the route graph once per file rather
+// than re-transforming it per test via vi.resetModules().
+import { accessRoutes } from "../routes/access.js";
+import { errorHandler } from "../middleware/index.js";
 
 function createDbStub() {
   const createdInvite = {
@@ -81,10 +83,6 @@ function createDbStub() {
 }
 
 async function createApp(authPublicBaseUrl?: string) {
-  const [{ accessRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/access.js"),
-    import("../middleware/index.js"),
-  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -112,12 +110,6 @@ async function createApp(authPublicBaseUrl?: string) {
 
 describe("invite URL: authPublicBaseUrl precedence", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../routes/access.js");
-    vi.doUnmock("../routes/authz.js");
-    vi.doUnmock("../middleware/index.js");
-    registerModuleMocks();
     vi.clearAllMocks();
     logActivityMock.mockReset();
   });

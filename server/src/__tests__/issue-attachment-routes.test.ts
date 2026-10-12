@@ -276,7 +276,7 @@ describe("issue attachment routes", () => {
       .post("/api/companies/company-1/issues/11111111-1111-4111-8111-111111111111/attachments")
       .attach("file", Buffer.from("zip"), { filename: "bundle.zip", contentType: "application/zip" });
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status).toBe(201);
     const putFileCall = storage.__calls.putFile;
     expect(putFileCall).toMatchObject({
       companyId: "company-1",
@@ -492,10 +492,7 @@ describe("issue attachment routes", () => {
       .parse(parseBinaryResponse);
 
     expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'attachment; filename="report.html"',
-    ]).toContain(res.headers["content-disposition"]);
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="report.html"');
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
@@ -553,10 +550,7 @@ describe("issue attachment routes", () => {
     const res = await request(app).get("/api/attachments/attachment-1/content");
 
     expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'inline; filename="preview.png"',
-    ]).toContain(res.headers["content-disposition"]);
+    expect(res.headers["content-disposition"]).toBe('inline; filename="preview.png"');
   });
 
   it("serves video attachments inline with byte-range support", async () => {

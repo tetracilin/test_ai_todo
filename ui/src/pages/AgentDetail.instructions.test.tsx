@@ -97,15 +97,18 @@ async function flushReact() {
 }
 
 async function waitFor<T>(assertion: () => T): Promise<T> {
+  // Bound by time, not iterations: each flush is a ~0ms tick, so a fixed iteration
+  // count gives a lazy-loaded editor almost no real time to mount on a loaded runner.
+  const deadline = Date.now() + 5_000;
   let lastError: unknown;
-  for (let i = 0; i < 20; i++) {
+  do {
     try {
       return assertion();
     } catch (error) {
       lastError = error;
       await flushReact();
     }
-  }
+  } while (Date.now() < deadline);
   throw lastError;
 }
 

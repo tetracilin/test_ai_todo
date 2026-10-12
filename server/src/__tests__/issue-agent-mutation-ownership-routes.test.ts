@@ -1996,12 +1996,7 @@ describe("agent issue mutation checkout ownership", () => {
   });
 
   it("uses the authorization decision path for assignment changes", async () => {
-    const decide = vi.fn(async () => ({
-      allowed: false,
-      action: "tasks:assign",
-      reason: "deny_policy_restricted",
-      explanation: "Target agent requires approval before task assignment.",
-    }));
+    const decide = mockAccessService.decide;
     decide.mockImplementation(async (input: { action: string }) => ({
       allowed: input.action === "issue:mutate",
       action: input.action,
@@ -2011,7 +2006,6 @@ describe("agent issue mutation checkout ownership", () => {
           ? "Allowed because the actor owns the assigned issue."
           : "Target agent requires approval before task assignment.",
     }));
-    (mockAccessService as any).decide = decide;
     mockIssueService.getById.mockResolvedValue(makeIssue({ assigneeAgentId: ownerAgentId }));
     mockAgentService.resolveByReference.mockResolvedValue({
       ambiguous: false,

@@ -34,6 +34,7 @@ describe("agent lifecycle commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

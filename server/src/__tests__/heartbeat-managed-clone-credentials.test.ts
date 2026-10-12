@@ -141,7 +141,10 @@ describe("ensureManagedProjectWorkspace clone credentials", () => {
   });
 
   it("leaves neither the target nor temp directories behind when the clone fails", async () => {
-    const missingRepo = path.join(os.tmpdir(), "paperclip-definitely-missing", "repo.git");
+    // A scheme-less relative path is not URL-parseable on any platform, so no repo name is
+    // derived and the managed dir is the _default slot. An absolute Windows path (C:\x\repo.git)
+    // parses as a URL and derives a name, which would make the ENOENT check below vacuous.
+    const missingRepo = "paperclip-definitely-missing/repo.git";
     const companyId = "company-cleanup";
     const projectId = "project-1";
     await expect(ensureManagedProjectWorkspace({
@@ -159,22 +162,17 @@ describe("ensureManagedProjectWorkspace clone credentials", () => {
   it("keeps using a pre-existing non-git directory as-is without attempting a clone", async () => {
     const companyId = "company-existing";
     const projectId = "project-1";
-    const sourceRepo = await createLocalSourceRepo();
-    try {
-      const cwd = resolveManagedProjectWorkspaceDir({ companyId, projectId });
-      await fs.mkdir(cwd, { recursive: true });
-      await fs.writeFile(path.join(cwd, "keep.txt"), "operator data\n", "utf8");
-      const result = await ensureManagedProjectWorkspace({
-        companyId,
-        projectId,
-        repoUrl: sourceRepo,
-      });
-      expect(result.cwd).toBe(cwd);
-      expect(result.warning).toContain("Using it as-is");
-      await expect(fs.readFile(path.join(cwd, "keep.txt"), "utf8")).resolves.toBe("operator data\n");
-    } finally {
-      await fs.rm(sourceRepo, { recursive: true, force: true });
-    }
+    // Scheme-less and unreachable: URL parsing fails on every platform (so the managed dir is the
+    // _default slot), and any attempted clone would fail the test instead of silently succeeding.
+    const repoUrl = "paperclip-definitely-missing/repo.git";
+    const cwd = resolveManagedProjectWorkspaceDir({ companyId, projectId });
+    await fs.mkdir(cwd, { recursive: true });
+    await fs.writeFile(path.join(cwd, "keep.txt"), "operator data\n", "utf8");
+    const result = await ensureManagedProjectWorkspace({ companyId, projectId, repoUrl });
+    expect(result.cwd).toBe(cwd);
+    expect(result.warning).toContain("Using it as-is");
+    await expect(fs.readFile(path.join(cwd, "keep.txt"), "utf8")).resolves.toBe("operator data\n");
+    await expect(fs.stat(path.join(cwd, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps the credential env alive through the sanitizer spread order", () => {

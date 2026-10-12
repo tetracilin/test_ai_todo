@@ -11,7 +11,7 @@
 import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -61,8 +61,14 @@ vi.mock("./components/OnboardingWizardVariant", () => ({
 }));
 
 // Sentinel pages so we can assert *which* route resolved.
-vi.mock("./pages/Cases", () => ({ Cases: () => <div>CASES_LIST_PAGE</div> }));
-vi.mock("./pages/CaseDetail", () => ({ CaseDetail: () => <div>CASE_DETAIL_PAGE</div> }));
+// They also report the resolved pathname so the redirect target (company prefix
+// included) is asserted, not just that some route rendered the sentinel.
+vi.mock("./pages/Cases", () => ({
+  Cases: () => <div>{`CASES_LIST_PAGE@${useLocation().pathname}`}</div>,
+}));
+vi.mock("./pages/CaseDetail", () => ({
+  CaseDetail: () => <div>{`CASE_DETAIL_PAGE@${useLocation().pathname}`}</div>,
+}));
 
 // Cloud access is unrelated to the route-table regression. Let it fall through
 // synchronously so this test does not poll its three query transitions.
@@ -131,14 +137,14 @@ describe("App Cases routing (PAP-13002)", () => {
 
   it("redirects unprefixed /cases to the company-prefixed list page", async () => {
     const root = await renderAppAt(container, "/cases");
-    await waitForRoute(container, "CASES_LIST_PAGE");
+    await waitForRoute(container, "CASES_LIST_PAGE@/PAP/cases");
     expect(container.textContent).not.toContain("No company matches prefix");
     flushSync(() => root.unmount());
   });
 
   it("redirects unprefixed /cases/:id to the company-prefixed detail page", async () => {
     const root = await renderAppAt(container, "/cases/PAP-C5");
-    await waitForRoute(container, "CASE_DETAIL_PAGE");
+    await waitForRoute(container, "CASE_DETAIL_PAGE@/PAP/cases/PAP-C5");
     expect(container.textContent).not.toContain("No company matches prefix");
     flushSync(() => root.unmount());
   });

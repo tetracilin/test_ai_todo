@@ -62,7 +62,9 @@ describe("AppsExperimentalGate", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableApps: false });
     await renderGate();
 
-    expect(container.querySelector('[data-testid="navigate"]')?.getAttribute("data-to")).toBe("/dashboard");
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="navigate"]')?.getAttribute("data-to")).toBe("/dashboard"),
+    );
     expect(container.querySelector('[data-testid="apps-content"]')).toBeNull();
   });
 
@@ -70,7 +72,7 @@ describe("AppsExperimentalGate", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableApps: true });
     await renderGate();
 
-    expect(container.querySelector('[data-testid="apps-content"]')).not.toBeNull();
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="apps-content"]')).not.toBeNull());
     expect(container.querySelector('[data-testid="navigate"]')).toBeNull();
   });
 

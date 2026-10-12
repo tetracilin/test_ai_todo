@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isUniqueViolation } from "../db-errors.js";
+import { isForeignKeyViolation, isUniqueViolation } from "../db-errors.js";
 
 const CONSTRAINT = "issues_open_routine_execution_uq";
 
@@ -47,5 +47,30 @@ describe("isUniqueViolation", () => {
     const looped: { cause?: unknown } = {};
     looped.cause = looped;
     expect(isUniqueViolation(looped, CONSTRAINT)).toBe(false);
+  });
+});
+
+describe("isForeignKeyViolation", () => {
+  it("matches a bare foreign-key violation", () => {
+    expect(isForeignKeyViolation({ code: "23503" })).toBe(true);
+  });
+
+  it("matches the error Drizzle wraps around the driver failure", () => {
+    const wrapped = new Error("Failed query: delete from \"issues\"");
+    (wrapped as { cause?: unknown }).cause = { code: "23503" };
+    expect(isForeignKeyViolation(wrapped)).toBe(true);
+  });
+
+  it("ignores unique violations, plain errors and non-objects", () => {
+    expect(isForeignKeyViolation({ cause: { code: "23505" } })).toBe(false);
+    expect(isForeignKeyViolation(new Error("boom"))).toBe(false);
+    expect(isForeignKeyViolation(null)).toBe(false);
+    expect(isForeignKeyViolation("23503")).toBe(false);
+  });
+
+  it("stops walking a self-referential cause chain", () => {
+    const looped: { cause?: unknown } = {};
+    looped.cause = looped;
+    expect(isForeignKeyViolation(looped)).toBe(false);
   });
 });

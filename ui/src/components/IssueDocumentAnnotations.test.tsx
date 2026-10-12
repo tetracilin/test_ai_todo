@@ -338,6 +338,18 @@ describe("IssueDocumentAnnotations", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValue/mockRejectedValue implementations, so a
+    // rejection set by one test would leak into the next. Reset only the leaf API mocks; the
+    // *ForTarget adapters must keep their forwarding implementations.
+    for (const leaf of [
+      mockAnnotationsApi.list,
+      mockAnnotationsApi.get,
+      mockAnnotationsApi.create,
+      mockAnnotationsApi.addComment,
+      mockAnnotationsApi.updateStatus,
+    ]) {
+      leaf.mockReset();
+    }
   });
 
   afterEach(async () => {

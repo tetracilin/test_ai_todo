@@ -315,6 +315,45 @@ describe("POST /invites/:token/accept", () => {
     expect(updateMock).not.toHaveBeenCalled();
   });
 
+  it.each(["openclaw_gateway", "process", undefined])(
+    "rejects agent joins whose adapterType is %s because Hermes Gateway is the sole agent adapter",
+    async (adapterType) => {
+      const updateValues: unknown[] = [];
+      const agentInvite = {
+        id: "invite-1",
+        companyId: "company-1",
+        inviteType: "company_join",
+        allowedJoinTypes: "agent",
+        tokenHash: "hash",
+        defaultsPayload: null,
+        expiresAt: new Date("2027-03-10T00:00:00.000Z"),
+        invitedByUserId: "inviter-user",
+        revokedAt: null,
+        acceptedAt: null,
+        createdAt: new Date("2026-03-07T00:00:00.000Z"),
+        updatedAt: new Date("2026-03-07T00:00:00.000Z"),
+      };
+      const selectResponses: unknown[][] = [[agentInvite]];
+      const insert = vi.fn();
+      const db = {
+        select: () => createQuery(selectResponses.shift() ?? []),
+        update: () => createQuery([], { onSet: (value) => updateValues.push(value) }),
+        insert,
+        transaction: (callback: (tx: unknown) => unknown) => callback(db),
+      };
+      const app = createApp(db);
+
+      const res = await request(app)
+        .post("/api/invites/pcp_invite_test/accept")
+        .send({ requestType: "agent", agentName: "Rogue Agent", ...(adapterType ? { adapterType } : {}) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Hermes Gateway is the only available agent adapter");
+      expect(insert).not.toHaveBeenCalled();
+      expect(updateValues).toEqual([]);
+    },
+  );
+
   it("grants company access immediately for a human invite", async () => {
     const { db, insertedValues, updateValues } = createDirectHumanInviteDbStub();
     const app = createAppWithActor(db, {
