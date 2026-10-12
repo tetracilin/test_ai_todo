@@ -278,4 +278,91 @@ describe("createRuntimeProgressReporter", () => {
     expect(failLines).toHaveLength(2);
     expect(failLines.at(-1)).toContain("failed at 20%");
   });
+
+  it("honours a custom stepPercent and minIntervalMs", async () => {
+    const clock = makeClock();
+    const lines: string[] = [];
+    const reporter = createRuntimeProgressReporter({
+      sink: (line) => {
+        lines.push(line);
+      },
+      phase: "Syncing",
+      label: "workspace",
+      direction: "to",
+      target: "sandbox",
+      stepPercent: 50,
+      minIntervalMs: 500,
+      now: clock.now,
+    });
+
+    await reporter.report(1 * MB, 100 * MB); // first report always emits
+    await reporter.report(30 * MB, 100 * MB); // 30% is still inside the 50% step -> suppressed
+    expect(lines).toHaveLength(1);
+    clock.advance(500); // exactly the custom interval -> time threshold met
+    await reporter.report(31 * MB, 100 * MB);
+    expect(lines).toHaveLength(2);
+    await reporter.report(60 * MB, 100 * MB); // crosses the 50% step -> emits without time passing
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).toBe("[paperclip] Syncing workspace to sandbox: 60% (60.0/100.0 MB)\n");
+  });
+
+  it("treats a zero total as unknown instead of dividing by zero", async () => {
+    const lines: string[] = [];
+    const reporter = createRuntimeProgressReporter({
+      sink: (line) => {
+        lines.push(line);
+      },
+      phase: "Restoring",
+      direction: "from",
+      target: "sandbox",
+    });
+
+    await reporter.report(2 * MB, 0);
+
+    expect(lines).toEqual(["[paperclip] Restoring from sandbox: 2.0 MB\n"]);
+  });
+
+  it("clamps the percentage to 100 when more bytes than the total are reported", async () => {
+    const lines: string[] = [];
+    const reporter = createRuntimeProgressReporter({
+      sink: (line) => {
+        lines.push(line);
+      },
+      phase: "Syncing",
+      direction: "to",
+      target: "ssh",
+    });
+
+    await reporter.report(12 * MB, 10 * MB);
+
+    expect(lines).toEqual(["[paperclip] Syncing to ssh: 100% (12.0/10.0 MB)\n"]);
+  });
+
+  it("complete() and fail() use explicit byte counts over the last reported ones", async () => {
+    const completed: string[] = [];
+    const completeReporter = createRuntimeProgressReporter({
+      sink: (line) => {
+        completed.push(line);
+      },
+      phase: "Syncing",
+      direction: "to",
+      target: "ssh",
+    });
+    await completeReporter.report(1 * MB, 100 * MB);
+    await completeReporter.complete(50 * MB, 50 * MB);
+    expect(completed.at(-1)).toBe("[paperclip] Syncing to ssh: 100% (50.0/50.0 MB)\n");
+
+    const failed: string[] = [];
+    const failReporter = createRuntimeProgressReporter({
+      sink: (line) => {
+        failed.push(line);
+      },
+      phase: "Syncing",
+      direction: "to",
+      target: "ssh",
+    });
+    await failReporter.report(1 * MB, 100 * MB);
+    await failReporter.fail(25 * MB, 100 * MB);
+    expect(failed.at(-1)).toBe("[paperclip] Syncing to ssh: failed at 25% (25.0/100.0 MB)\n");
+  });
 });
