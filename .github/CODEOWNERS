@@ -1,18 +1,28 @@
-# Replace @cryppadotta if a different maintainer or team should own release infrastructure.
+# CICD/PLAN_AI_FACTORY.md Phase 2.4: this file previously named three upstream
+# paperclipai/paperclip maintainers (@cryppadotta, @devinfoley, @nickyleach), none of
+# whom have access to this fork. A "require review from code owners" branch-protection
+# rule built on those names would have blocked every matching PR forever. Replace
+# @tetracilin below if a different maintainer or team should own this fork's pipeline
+# and release infrastructure.
+#
+# Enabling "require review from code owners" on `develop`/`main` is a repo setting this
+# file does not itself apply — see CICD/PLAN_AI_FACTORY.md Phase 2.4.
 
-.github/** @cryppadotta @devinfoley @nickyleach
-scripts/release*.sh @cryppadotta @devinfoley @nickyleach
-scripts/release-*.mjs @cryppadotta @devinfoley @nickyleach
-scripts/create-github-release.sh @cryppadotta @devinfoley @nickyleach
-scripts/rollback-latest.sh @cryppadotta @devinfoley @nickyleach
-doc/RELEASING.md @cryppadotta @devinfoley @nickyleach
-doc/PUBLISHING.md @cryppadotta @devinfoley @nickyleach
-doc/RELEASE-AUTOMATION-SETUP.md @cryppadotta @devinfoley @nickyleach
-skills/** @cryppadotta @devinfoley @nickyleach
+.github/** @tetracilin
+deploy/** @tetracilin
+CICD/** @tetracilin
+scripts/release*.sh @tetracilin
+scripts/release-*.mjs @tetracilin
+scripts/create-github-release.sh @tetracilin
+scripts/rollback-latest.sh @tetracilin
+doc/RELEASING.md @tetracilin
+doc/PUBLISHING.md @tetracilin
+doc/RELEASE-AUTOMATION-SETUP.md @tetracilin
+skills/** @tetracilin
 
 # Package files — dependency changes require review
 # package.json matches recursively at all depths (covers root + all workspaces)
-package.json @cryppadotta @devinfoley @nickyleach
-pnpm-lock.yaml @cryppadotta @devinfoley @nickyleach
-pnpm-workspace.yaml @cryppadotta @devinfoley @nickyleach
-.npmrc @cryppadotta @devinfoley @nickyleach
+package.json @tetracilin
+pnpm-lock.yaml @tetracilin
+pnpm-workspace.yaml @tetracilin
+.npmrc @tetracilin
