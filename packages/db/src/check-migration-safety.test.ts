@@ -489,4 +489,24 @@ describe("migration safety check", () => {
 
     expect(result.newFindings).toEqual([]);
   });
+
+  it("ignores a suppression that names a rule but gives no reason", () => {
+    const result = analyze(`
+      -- paperclip:migration-safety-ignore full-table-mutation-large-table
+      UPDATE "issue_comments"
+      SET "derived_author_source" = NULL;
+    `);
+
+    expect(result.newFindings.map((f) => f.rule)).toContain("full-table-mutation-large-table");
+  });
+
+  it("ignores a suppression that names a different rule", () => {
+    const result = analyze(`
+      -- paperclip:migration-safety-ignore loop-mutation-large-table: wrong rule for this statement
+      UPDATE "issue_comments"
+      SET "derived_author_source" = NULL;
+    `);
+
+    expect(result.newFindings.map((f) => f.rule)).toContain("full-table-mutation-large-table");
+  });
 });

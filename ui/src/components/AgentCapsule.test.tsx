@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentCapsule } from "./AgentCapsule";
 
@@ -9,6 +9,7 @@ import { AgentCapsule } from "./AgentCapsule";
 
 describe("AgentCapsule", () => {
   let container: HTMLDivElement;
+  let root: Root | null = null;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -16,13 +17,17 @@ describe("AgentCapsule", () => {
   });
 
   afterEach(() => {
+    if (root) act(() => root?.unmount());
+    root = null;
     container.remove();
   });
 
   function render(node: React.ReactElement) {
-    const root = createRoot(container);
+    // One root per container: replace (and unmount) the previous render.
+    if (root) act(() => root?.unmount());
+    root = createRoot(container);
     act(() => {
-      root.render(node);
+      root?.render(node);
     });
     return container.querySelector('[role="img"]') as HTMLElement;
   }

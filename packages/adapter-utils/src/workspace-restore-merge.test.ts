@@ -60,9 +60,42 @@ describe("workspace restore merge", () => {
     ).resolves.toBe("ssh codex\n");
   });
 
-  it("ignores non-file entries when capturing snapshots", async () => {
-    if (process.platform === "win32") return;
+  it("removes a baseline file deleted in the source when the target still matches the baseline", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    const targetDir = path.join(rootDir, "target");
+    const sourceDir = path.join(rootDir, "source");
+    await mkdir(targetDir, { recursive: true });
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(path.join(targetDir, "gone.txt"), "old\n", "utf8");
+    await writeFile(path.join(targetDir, "kept.txt"), "kept\n", "utf8");
+    await writeFile(path.join(sourceDir, "kept.txt"), "kept\n", "utf8");
 
+    const baseline = await captureDirectorySnapshot(targetDir, { exclude: [] });
+    await mergeDirectoryWithBaseline({ baseline, sourceDir, targetDir });
+
+    await expect(readFile(path.join(targetDir, "gone.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(targetDir, "kept.txt"), "utf8")).resolves.toBe("kept\n");
+  });
+
+  it("keeps a source-deleted file when the target changed it after the baseline", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    const targetDir = path.join(rootDir, "target");
+    const sourceDir = path.join(rootDir, "source");
+    await mkdir(targetDir, { recursive: true });
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(path.join(targetDir, "shared.txt"), "base\n", "utf8");
+
+    const baseline = await captureDirectorySnapshot(targetDir, { exclude: [] });
+    // A concurrent restore edited the file after the baseline was captured.
+    await writeFile(path.join(targetDir, "shared.txt"), "concurrent edit\n", "utf8");
+    await mergeDirectoryWithBaseline({ baseline, sourceDir, targetDir });
+
+    await expect(readFile(path.join(targetDir, "shared.txt"), "utf8")).resolves.toBe("concurrent edit\n");
+  });
+
+  it.skipIf(process.platform === "win32")("ignores non-file entries when capturing snapshots", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
     cleanupDirs.push(rootDir);
     const socketPath = path.join(rootDir, "runtime.sock");

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
@@ -32,6 +32,15 @@ function TestHarness({
 
 describe("useKeyboardShortcuts", () => {
   let container: HTMLDivElement;
+  const roots: Root[] = [];
+
+  // Every test mounts through here so a failed assertion cannot leave a root's
+  // document-level keydown listener attached for the tests that follow.
+  function mount() {
+    const root = createRoot(container);
+    roots.push(root);
+    return root;
+  }
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -39,11 +48,15 @@ describe("useKeyboardShortcuts", () => {
   });
 
   afterEach(() => {
+    act(() => {
+      for (const root of roots.splice(0)) root.unmount();
+    });
+    document.querySelectorAll("[data-page-search-target]").forEach((node) => node.remove());
     container.remove();
   });
 
   it("ignores events already claimed by another handler", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onNewIssue = vi.fn();
 
     act(() => {
@@ -66,7 +79,7 @@ describe("useKeyboardShortcuts", () => {
   });
 
   it("focuses the current page search target on slash", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onSearch = vi.fn();
     const input = document.createElement("input");
     input.setAttribute("data-page-search-target", "true");
@@ -93,7 +106,7 @@ describe("useKeyboardShortcuts", () => {
   });
 
   it("falls back to quick search when the page has no search target", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onSearch = vi.fn();
 
     act(() => {
@@ -114,7 +127,7 @@ describe("useKeyboardShortcuts", () => {
   });
 
   it("fires onToggleCollapse on Cmd/Ctrl+B", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onToggleCollapse = vi.fn();
 
     act(() => {
@@ -149,7 +162,7 @@ describe("useKeyboardShortcuts", () => {
   };
 
   it("navigates to the inbox on the g \u2192 i chord", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onGoToInbox = vi.fn();
     const onNewIssue = vi.fn();
 
@@ -177,7 +190,7 @@ describe("useKeyboardShortcuts", () => {
   });
 
   it("swallows armed chord keys instead of firing bare shortcuts", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onGoToInbox = vi.fn();
     const onNewIssue = vi.fn();
 
@@ -202,7 +215,7 @@ describe("useKeyboardShortcuts", () => {
   });
 
   it("does not fire onToggleCollapse for a bare 'b' keypress", () => {
-    const root = createRoot(container);
+    const root = mount();
     const onToggleCollapse = vi.fn();
 
     act(() => {

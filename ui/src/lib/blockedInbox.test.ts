@@ -117,7 +117,8 @@ describe("blockedInbox", () => {
   it("ranks severity critical first and low last", () => {
     const order: IssueBlockedInboxSeverity[] = ["critical", "high", "medium", "low"];
     const ranks = order.map((s) => blockedSeverityRank(s));
-    expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
+    // Strictly ascending: a non-strict check would also pass if every severity ranked equal.
+    for (let i = 1; i < ranks.length; i += 1) expect(ranks[i]).toBeGreaterThan(ranks[i - 1]!);
   });
 
   it("compares by severity first, then stoppedSinceAt", () => {

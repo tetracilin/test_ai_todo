@@ -109,7 +109,20 @@ const populatedTimeline: WorkTimelineResult = {
   },
 };
 
+let queryClient: QueryClient;
+
 async function flushReact() {
+  // Wait (bounded by time) for the timeline query to be requested and to settle,
+  // rather than assuming a fixed number of macrotasks is enough.
+  const deadline = Date.now() + 5_000;
+  do {
+    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  } while (
+    (mockWorkTimelineApi.get.mock.calls.length === 0 || queryClient.isFetching() > 0) &&
+    Date.now() < deadline
+  );
+  // A few extra cycles let React commit the settled query result.
   for (let index = 0; index < 3; index += 1) {
     await Promise.resolve();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -120,7 +133,6 @@ async function flushReact() {
 describe("Timeline", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot> | null;
-  let queryClient: QueryClient;
 
   beforeEach(() => {
     container = document.createElement("div");
