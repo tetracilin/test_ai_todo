@@ -49,12 +49,6 @@ afterEach(async () => {
   );
 });
 
-async function pathExists(candidate: string): Promise<boolean> {
-  return fs.access(candidate).then(() => true).catch(() => false);
-}
-
-void pathExists;
-
 function createLocalSandboxRunner(
   onExecute?: (input: {
     command: string;
@@ -354,104 +348,100 @@ describe("ACPX engine startup characterization", () => {
       expect(fpOf(newWake.result)).toBe(fpOf(first.result));
     });
 
-    it("busts the fingerprint when any representative folded dimension changes", async () => {
-      const root = await makeTempRoot();
-      const cwd = path.join(root, "workspace");
-      const stateDir = path.join(root, "state");
-      const context = { context: { taskId: "issue-1", wakeReason: "issue_assigned" } };
-      const base = { agent: "custom", agentCommand: "node ./fake-acp.js", stateDir, cwd };
-
-      const baseFp = fpOf((await runExecutor(base, context)).result);
-      expect(baseFp).toBeTruthy();
-
-      // Each edit changes exactly one folded dimension and must bust the fingerprint.
-      // agentCommand.
-      expect(fpOf((await runExecutor({ ...base, agentCommand: "node ./other-acp.js" }, context)).result)).not.toBe(baseFp);
-      // cwd.
-      expect(fpOf((await runExecutor({ ...base, cwd: path.join(root, "other-cwd") }, context)).result)).not.toBe(baseFp);
-      // requestedModel.
-      expect(fpOf((await runExecutor({ ...base, model: "some-model" }, context)).result)).not.toBe(baseFp);
-      // requestedThinkingEffort.
-      expect(fpOf((await runExecutor({ ...base, thinkingEffort: "high" }, context)).result)).not.toBe(baseFp);
-      // mode.
-      expect(fpOf((await runExecutor({ ...base, mode: "oneshot" }, context)).result)).not.toBe(baseFp);
-      // adapterEnvHash (a resolved adapter env value).
-      expect(fpOf((await runExecutor({ ...base, env: { FOO: "bar" } }, context)).result)).not.toBe(baseFp);
-      // mcpServers identity (injected runtime MCP set).
-      expect(
-        fpOf(
-          (
-            await runExecutor(base, {
-              ...context,
-              runtimeMcp: {
-                getServers: () => [
-                  { name: "github", url: "https://x.test/mcp", connectionId: "c-1", token: "t-1" },
+    // Each case changes exactly one folded dimension against an otherwise identical
+    // run and must bust the fingerprint. One case per dimension keeps each failure
+    // attributable and each run well inside the per-test timeout.
+    type FingerprintCase = {
+      dimension: string;
+      agent?: string;
+      override?: (root: string) => Record<string, unknown>;
+      options?: (cwd: string) => Record<string, unknown>;
+    };
+    const taskContext = { taskId: "issue-1", wakeReason: "issue_assigned" };
+    const fingerprintCases: FingerprintCase[] = [
+      { dimension: "agentCommand", override: () => ({ agentCommand: "node ./other-acp.js" }) },
+      { dimension: "cwd", override: (root) => ({ cwd: path.join(root, "other-cwd") }) },
+      { dimension: "requestedModel", override: () => ({ model: "some-model" }) },
+      { dimension: "requestedThinkingEffort", override: () => ({ thinkingEffort: "high" }) },
+      { dimension: "mode", override: () => ({ mode: "oneshot" }) },
+      { dimension: "adapterEnvHash", override: () => ({ env: { FOO: "bar" } }) },
+      {
+        dimension: "mcpServers identity",
+        options: () => ({
+          runtimeMcp: {
+            getServers: () => [
+              { name: "github", url: "https://x.test/mcp", connectionId: "c-1", token: "t-1" },
+            ],
+          },
+        }),
+      },
+      {
+        dimension: "secretManifestHash",
+        options: () => ({
+          context: {
+            ...taskContext,
+            paperclipSecrets: {
+              manifest: [
+                {
+                  configPath: "env.API_TOKEN",
+                  envKey: "API_TOKEN",
+                  secretId: "secret-1",
+                  bindingId: "binding-1",
+                  secretKey: "api-token",
+                  version: 1,
+                  provider: "local_encrypted",
+                },
+              ],
+            },
+          },
+        }),
+      },
+      {
+        dimension: "additionalSourcesIdentity",
+        options: (cwd) => ({
+          context: {
+            ...taskContext,
+            paperclipWorkspace: {
+              cwd,
+              realization: {
+                additional: [
+                  {
+                    path: "/host/project-a",
+                    projectId: "a",
+                    projectWorkspaceId: "ws-a",
+                    repoUrl: "https://example.test/a.git",
+                    repoRef: "ref-a-1",
+                  },
                 ],
               },
-            })
-          ).result,
-        ),
-      ).not.toBe(baseFp);
-      // secretManifestHash.
-      expect(
-        fpOf(
-          (
-            await runExecutor(base, {
-              ...context,
-              context: {
-                taskId: "issue-1",
-                wakeReason: "issue_assigned",
-                paperclipSecrets: {
-                  manifest: [
-                    {
-                      configPath: "env.API_TOKEN",
-                      envKey: "API_TOKEN",
-                      secretId: "secret-1",
-                      bindingId: "binding-1",
-                      secretKey: "api-token",
-                      version: 1,
-                      provider: "local_encrypted",
-                    },
-                  ],
-                },
-              },
-            })
-          ).result,
-        ),
-      ).not.toBe(baseFp);
-      // additionalSourcesIdentity (referenced-project set).
-      expect(
-        fpOf(
-          (
-            await runExecutor(base, {
-              ...context,
-              context: {
-                taskId: "issue-1",
-                wakeReason: "issue_assigned",
-                paperclipWorkspace: {
-                  cwd,
-                  realization: {
-                    additional: [
-                      {
-                        path: "/host/project-a",
-                        projectId: "a",
-                        projectWorkspaceId: "ws-a",
-                        repoUrl: "https://example.test/a.git",
-                        repoRef: "ref-a-1",
-                      },
-                    ],
-                  },
-                },
-              },
-            })
-          ).result,
-        ),
-      ).not.toBe(baseFp);
+            },
+          },
+        }),
+      },
+      // fastMode folds only for codex, so it is pinned with a codex-vs-codex pair.
+      { dimension: "fastMode (codex)", agent: "codex", override: () => ({ fastMode: true }) },
+    ];
 
-      // fastMode folds only for codex, so pin it with a codex-vs-codex pair.
-      const codexBase = { agent: "codex", agentCommand: "node ./fake-acp.js", stateDir, cwd };
-      const codexFp = fpOf((await runExecutor(codexBase, context)).result);
-      expect(fpOf((await runExecutor({ ...codexBase, fastMode: true }, context)).result)).not.toBe(codexFp);
+    it.each(fingerprintCases)("busts the fingerprint when $dimension changes", async (testCase) => {
+      const root = await makeTempRoot();
+      const cwd = path.join(root, "workspace");
+      const base = {
+        agent: testCase.agent ?? "custom",
+        agentCommand: "node ./fake-acp.js",
+        stateDir: path.join(root, "state"),
+        cwd,
+      };
+      const baseOptions = { context: taskContext };
+
+      const baseFp = fpOf((await runExecutor(base, baseOptions)).result);
+      expect(baseFp).toBeTruthy();
+
+      const variantConfig = { ...base, ...(testCase.override?.(root) ?? {}) };
+      const variantOptions = { ...baseOptions, ...(testCase.options?.(cwd) ?? {}) };
+      const variantFp = fpOf((await runExecutor(variantConfig, variantOptions)).result);
+
+      expect(variantFp).toBeTruthy();
+      expect(variantFp).not.toBe(baseFp);
     });
   });
 

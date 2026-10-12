@@ -414,7 +414,16 @@ describe("ssh env-lab fixture", () => {
     await mkdir(sourceDir, { recursive: true });
     await mkdir(localDir, { recursive: true });
     await writeFile(path.join(sourceDir, "auth.json"), "{\"token\":\"secret\"}\n", "utf8");
-    await symlink(path.join(sourceDir, "auth.json"), path.join(localDir, "auth.json"));
+    try {
+      await symlink(path.join(sourceDir, "auth.json"), path.join(localDir, "auth.json"));
+    } catch (error) {
+      // Windows without Developer Mode / admin rights cannot create symlinks.
+      if ((error as NodeJS.ErrnoException).code === "EPERM") {
+        console.warn("Skipping SSH symlink sync test: symlink creation not permitted (EPERM)");
+        return;
+      }
+      throw error;
+    }
 
     const started = await startSshEnvLabFixtureOrSkip(statePath, "SSH symlink sync test");
     if (!started) return;
