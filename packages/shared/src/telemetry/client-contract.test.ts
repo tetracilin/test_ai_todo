@@ -52,6 +52,7 @@ function sentRawBodies(): string[] {
 describe("telemetry client wire contract", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("emits only allow-set keys with schemaVersion '1' on every POST", async () => {
@@ -128,6 +129,7 @@ describe("telemetry client wire contract — retry semantics", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("retries a 429 and re-sends the identical batchId (server idempotency)", async () => {
@@ -171,6 +173,7 @@ describe("telemetry client wire contract — retry semantics", () => {
 describe("telemetry client wire contract — batchId identity", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("derives a different batchId for the same events under a different installId", async () => {
