@@ -1,12 +1,21 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { resolveServerDevWatchIgnorePaths } from "../dev-watch-ignore.js";
+
+const tempRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of tempRoots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe("resolveServerDevWatchIgnorePaths", () => {
   it("includes both the worktree UI paths and their real shared targets", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-dev-watch-"));
+    tempRoots.push(tempRoot);
     const sharedUiRoot = path.join(tempRoot, "shared-ui");
     const worktreeRoot = path.join(tempRoot, "repo", ".paperclip", "worktrees", "PAP-884");
     const serverRoot = path.join(worktreeRoot, "server");
@@ -18,9 +27,10 @@ describe("resolveServerDevWatchIgnorePaths", () => {
     fs.mkdirSync(serverRoot, { recursive: true });
     fs.mkdirSync(worktreeUiRoot, { recursive: true });
 
-    fs.symlinkSync(path.join(sharedUiRoot, "node_modules"), path.join(worktreeUiRoot, "node_modules"));
-    fs.symlinkSync(path.join(sharedUiRoot, ".vite"), path.join(worktreeUiRoot, ".vite"));
-    fs.symlinkSync(path.join(sharedUiRoot, "dist"), path.join(worktreeUiRoot, "dist"));
+    // "junction" is ignored on POSIX and avoids the Windows symlink privilege requirement.
+    fs.symlinkSync(path.join(sharedUiRoot, "node_modules"), path.join(worktreeUiRoot, "node_modules"), "junction");
+    fs.symlinkSync(path.join(sharedUiRoot, ".vite"), path.join(worktreeUiRoot, ".vite"), "junction");
+    fs.symlinkSync(path.join(sharedUiRoot, "dist"), path.join(worktreeUiRoot, "dist"), "junction");
 
     const ignorePaths = resolveServerDevWatchIgnorePaths(serverRoot);
 

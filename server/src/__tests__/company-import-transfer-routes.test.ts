@@ -275,6 +275,23 @@ describeEmbeddedPostgres("company import transfer routes", () => {
     });
   });
 
+  // Poll an async import job until it settles. Bounded by wall-clock time (not an
+  // iteration count) so a slow or contended host cannot make a correct job look
+  // unfinished; returns the terminal job so the caller asserts its status.
+  async function waitForTerminalJob(statusUrl: string): Promise<Record<string, any>> {
+    return vi.waitFor(
+      async () => {
+        const polled = await request(app).get(statusUrl);
+        const job = polled.body.job as Record<string, any> | undefined;
+        if (job?.status !== "succeeded" && job?.status !== "failed") {
+          throw new Error(`import job still ${job?.status ?? "unknown"}`);
+        }
+        return job;
+      },
+      { timeout: 10_000, interval: 10 },
+    );
+  }
+
   function putPart(transferId: string, index: number, bytes: Buffer, userId?: string) {
     let req = request(app)
       .put(`/api/companies/import/transfers/${transferId}/parts/${index}`)
@@ -520,13 +537,7 @@ describeEmbeddedPostgres("company import transfer routes", () => {
       .send(importMeta);
     expect(accepted.status).toBe(202);
     const statusUrl = accepted.body.statusUrl as string;
-    let job: Record<string, any> | undefined;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const polled = await request(app).get(statusUrl);
-      job = polled.body.job;
-      if (job?.status === "succeeded" || job?.status === "failed") break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    const job = await waitForTerminalJob(statusUrl);
     expect(job?.status).toBe("succeeded");
     expect(job?.result?.companyId).toBe(companyId);
 
@@ -581,13 +592,7 @@ describeEmbeddedPostgres("company import transfer routes", () => {
     expect((await companyTransferRunService.getRun(db, secondId))!.status).toBe("failed");
 
     releaseImport!();
-    let job: Record<string, any> | undefined;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const polled = await request(app).get(accepted.body.statusUrl as string);
-      job = polled.body.job;
-      if (job?.status === "succeeded" || job?.status === "failed") break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    const job = await waitForTerminalJob(accepted.body.statusUrl as string);
     expect(job?.status).toBe("succeeded");
     expect((await companyTransferRunService.getRun(db, firstId))!.status).toBe("completed");
 
@@ -612,13 +617,16 @@ describeEmbeddedPostgres("company import transfer routes", () => {
     // the route must refuse before touching the spool, and the previously
     // uploaded part file must survive untouched for the apply to read.
     expect(await companyTransferRunService.claimApply(db, transferId)).toBe(true);
-    const frozen = await putPart(transferId, 0, slices[0]!);
-    expect(frozen.status).toBe(409);
-    expect(frozen.body.error).toContain("apply is in progress");
-    await expect(
-      fs.stat(path.join(spoolRoot, transferId, "part-0")),
-    ).resolves.toBeDefined();
-    await companyTransferRunService.releaseApplyClaim(db, transferId, "test release");
+    try {
+      const frozen = await putPart(transferId, 0, slices[0]!);
+      expect(frozen.status).toBe(409);
+      expect(frozen.body.error).toContain("apply is in progress");
+      await expect(
+        fs.stat(path.join(spoolRoot, transferId, "part-0")),
+      ).resolves.toBeDefined();
+    } finally {
+      await companyTransferRunService.releaseApplyClaim(db, transferId, "test release");
+    }
   });
 
   it("rejects declarations that are inconsistent or over the limits", async () => {

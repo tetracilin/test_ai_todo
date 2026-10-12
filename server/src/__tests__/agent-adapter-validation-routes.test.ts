@@ -221,7 +221,6 @@ describe("agent routes adapter validation", () => {
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
-    vi.doUnmock("../routes/agents.js");
     registerModuleMocks();
     vi.clearAllMocks();
     mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue([]);
@@ -469,7 +468,7 @@ describe("agent routes adapter validation", () => {
     const adapterConfig = patch.adapterConfig as Record<string, unknown>;
     const env = adapterConfig.env as Record<string, unknown>;
     expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(String(env.CODEX_HOME).replaceAll("\\", "/")).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
   });
 
   it("rejects creating codex_local agents with a shared host Codex home", async () => {
