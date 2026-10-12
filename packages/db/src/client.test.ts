@@ -117,7 +117,9 @@ describeEmbeddedPostgres("resetPostgresDatabase", () => {
   }, 30_000);
 });
 
-describeEmbeddedPostgres("applyPendingMigrations", () => {
+// Static guard over the migration files; it needs no database, so it must not
+// sit inside the embedded-Postgres describe (which is skipped on hosts without it).
+describe("migration updated_at backfill guard", () => {
   it("rejects unallowlisted migration backfills that bump updated_at on user-visible tables", async () => {
     const entries = await fs.promises.readdir(new URL("./migrations", import.meta.url), {
       withFileTypes: true,
@@ -146,7 +148,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
       ),
     ).toEqual(['9999_bad_backfill.sql: UPDATE "issues" sets updated_at']);
   });
+});
 
+describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "applies an inserted earlier migration without replaying later legacy migrations",
     async () => {

@@ -371,4 +371,31 @@ describe("cursor_cloud execute", () => {
       },
     });
   });
+
+  it("fails fast without calling the SDK when CURSOR_API_KEY is missing", async () => {
+    const ctx = createContext({
+      config: { repoUrl: "https://github.com/paperclipai/paperclip.git", env: {} },
+    });
+
+    const result = await execute(ctx);
+
+    expect(result).toMatchObject({
+      exitCode: 1,
+      errorMessage: "CURSOR_API_KEY is required for cursor_cloud.",
+    });
+    expect(createMock).not.toHaveBeenCalled();
+    expect(resumeMock).not.toHaveBeenCalled();
+  });
+
+  it("fails fast without calling the SDK when no repoUrl is configured", async () => {
+    const ctx = createContext({ config: { env: { CURSOR_API_KEY: "cursor-secret" } } });
+
+    const result = await execute(ctx);
+
+    expect(result).toMatchObject({
+      exitCode: 1,
+      errorMessage: "cursor_cloud requires repoUrl in adapterConfig or workspace context.",
+    });
+    expect(createMock).not.toHaveBeenCalled();
+  });
 });

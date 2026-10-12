@@ -66,7 +66,8 @@ describe("codex inactivity monitor (integration: real subprocess)", () => {
     10_000,
   );
 
-  it(
+  // proc.signal is always null on Windows (no POSIX signals), so the kill assertion is POSIX-only.
+  it.skipIf(process.platform === "win32")(
     "kills a codex child that goes silent after one event and surfaces a monitor failure",
     async () => {
       const runId = `monitor-integration-${Date.now()}`;

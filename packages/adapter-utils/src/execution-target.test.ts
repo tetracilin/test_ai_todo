@@ -9,6 +9,23 @@ import {
   runAdapterExecutionTargetShellCommand,
 } from "./execution-target.js";
 
+// One SSH target shared by the cases below; none of them mutate it.
+const sshTarget = {
+  kind: "remote" as const,
+  transport: "ssh" as const,
+  remoteCwd: "/srv/paperclip/workspace",
+  spec: {
+    host: "ssh.example.test",
+    port: 22,
+    username: "ssh-user",
+    remoteCwd: "/srv/paperclip/workspace",
+    remoteWorkspacePath: "/srv/paperclip/workspace",
+    privateKey: null,
+    knownHosts: null,
+    strictHostKeyChecking: true,
+  },
+};
+
 describe("runAdapterExecutionTargetShellCommand", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -23,21 +40,7 @@ describe("runAdapterExecutionTargetShellCommand", () => {
 
     await runAdapterExecutionTargetShellCommand(
       "run-1",
-      {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      sshTarget,
       `printf '%s\\n' "$HOME" && echo "it's ok"`,
       {
         cwd: "/tmp/local",
@@ -70,21 +73,7 @@ describe("runAdapterExecutionTargetShellCommand", () => {
 
     await runAdapterExecutionTargetShellCommand(
       "run-1b",
-      {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      sshTarget,
       "env",
       {
         cwd: "/tmp/local",
@@ -118,21 +107,7 @@ describe("runAdapterExecutionTargetShellCommand", () => {
 
     const result = await runAdapterExecutionTargetShellCommand(
       "run-2",
-      {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      sshTarget,
       "sleep 10",
       {
         cwd: "/tmp/local",
@@ -163,21 +138,7 @@ describe("runAdapterExecutionTargetShellCommand", () => {
 
     const result = await runAdapterExecutionTargetShellCommand(
       "run-3",
-      {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      sshTarget,
       "false",
       {
         cwd: "/tmp/local",
@@ -199,21 +160,7 @@ describe("runAdapterExecutionTargetShellCommand", () => {
 
   it("keeps managed homes disabled for both local and SSH targets", () => {
     expect(adapterExecutionTargetUsesManagedHome(null)).toBe(false);
-    expect(adapterExecutionTargetUsesManagedHome({
-      kind: "remote",
-      transport: "ssh",
-      remoteCwd: "/srv/paperclip/workspace",
-      spec: {
-        host: "ssh.example.test",
-        port: 22,
-        username: "ssh-user",
-        remoteCwd: "/srv/paperclip/workspace",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
-        privateKey: null,
-        knownHosts: null,
-        strictHostKeyChecking: true,
-      },
-    })).toBe(false);
+    expect(adapterExecutionTargetUsesManagedHome(sshTarget)).toBe(false);
   });
 });
 
@@ -239,21 +186,7 @@ describe("runAdapterExecutionTargetProcess", () => {
 
     await runAdapterExecutionTargetProcess(
       "run-ssh-process",
-      {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      sshTarget,
       "agent-cli",
       ["--json"],
       {
@@ -332,21 +265,7 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
 
     await ensureAdapterExecutionTargetRuntimeCommandInstalled({
       runId: "run-skip",
-      target: {
-        kind: "remote",
-        transport: "ssh",
-        remoteCwd: "/srv/paperclip/workspace",
-        spec: {
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
-          privateKey: null,
-          knownHosts: null,
-          strictHostKeyChecking: true,
-        },
-      },
+      target: sshTarget,
       installCommand: "npm install -g @google/gemini-cli",
       cwd: "/tmp/local",
       env: {},
@@ -357,22 +276,6 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
 });
 
 describe("resolveAdapterExecutionTargetCwd", () => {
-  const sshTarget = {
-    kind: "remote" as const,
-    transport: "ssh" as const,
-    remoteCwd: "/srv/paperclip/workspace",
-    spec: {
-      host: "ssh.example.test",
-      port: 22,
-      username: "ssh-user",
-      remoteCwd: "/srv/paperclip/workspace",
-      remoteWorkspacePath: "/srv/paperclip/workspace",
-      privateKey: null,
-      knownHosts: null,
-      strictHostKeyChecking: true,
-    },
-  };
-
   it("falls back to the remote cwd when no adapter cwd is configured", () => {
     expect(resolveAdapterExecutionTargetCwd(sshTarget, "", "/Users/host/repo/server")).toBe(
       "/srv/paperclip/workspace",

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import {
   getEmbeddedPostgresTestSupport,
@@ -39,5 +39,12 @@ describeEmbeddedPostgres("status card migrations", () => {
       );
       await sql.unsafe(migrationSql);
     }
+
+    // The replay must leave the schema intact, not merely avoid throwing.
+    const [tables] = await sql<{ cards: string | null; updates: string | null }[]>`
+      SELECT to_regclass('public.status_cards')::text AS cards,
+             to_regclass('public.status_card_updates')::text AS updates
+    `;
+    expect(tables).toEqual({ cards: "status_cards", updates: "status_card_updates" });
   }, 30_000);
 });

@@ -158,8 +158,9 @@ function createServerEnv(
   env.PAPERCLIP_MIGRATION_AUTO_APPLY = "true";
   env.PAPERCLIP_UI_DEV_MIDDLEWARE = "false";
   // This suite creates a claude_local agent to prove an adapter-bearing agent
-  // survives export and import. listSelectableServerAdapters() defaults to
-  // hermes_gateway alone, so the instance has to declare claude_local.
+  // survives export and import. Pin the selectable set explicitly so the test
+  // does not depend on the registry default (hermes_gateway, claude_local,
+  // hermes_local), which may change again.
   env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway,claude_local";
 
   return env;
