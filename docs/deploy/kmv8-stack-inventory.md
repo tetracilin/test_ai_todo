@@ -224,9 +224,13 @@ Recorded rather than guessed, so the next reader knows what was never establishe
    gates on them and has never run, so the first production release may stop there.
    The equivalent question for **nightly** is answered: the two artifact-key files were
    missing from 2026-09-04 until the operator created them on 2026-09-08.
-4. Which process deployed `t3-prod`'s current containers, and whether the Hermes cron
-   (`8b51805f9dc5`, which `CICD/PLAN_CICD.md:229` says to retire) is still running. The
-   operator reports still receiving its morning build notifications, so it is not retired.
+4. Which process deployed `t3-prod`'s current containers is still unknown. Whether the Hermes
+   cron (`8b51805f9dc5`, which `CICD/PLAN_CICD.md:229` says to retire) is still running is now
+   confirmed, not just reported: its "T3 nightly build — FAILED" email (log path
+   `/root/.hermes/logs/t3-nightly-*.log`, `merged: N | skipped: N` summary) is distinct from
+   anything `t3-nightly.yml` produces and targets the same `:33130` stack Actions deploys to.
+   Retiring it is Phase 0.1 of `CICD/PLAN_AI_FACTORY.md`; until then it is a second, unmanaged
+   deployer on the staging port.
 5. What serves `:8642` (see above).
 
 ## Related

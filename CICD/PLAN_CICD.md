@@ -54,16 +54,24 @@ Open:
   - **e2e has never run at all.** `Install Chromium` and `E2E` are later steps in the same
     job as the vitest step and carry no `if: always()`, so the job aborts before them every
     time. There is zero e2e signal, not merely a red one.
+    **Resolved 2026-09-13/17:** PR #98 split `e2e` into its own job (no longer gated behind
+    `slow-tests`'s vitest step); PR #104 fixed the two specs that then failed. e2e has run and
+    passed on the last two nightly runs. `slow-tests` is still the routinely-red job, now on
+    one different timing-sensitive server test per night out of ~4,800 — see
+    `CICD/PLAN_AI_FACTORY.md` §0.2.
 - **`t3-release` has never run.** Tag `v0.1.0` exists on `main`, but no production deploy has
   gone through the pipeline. Note `t3-release.yml:102` carries the *same* fail-early gate
   against `/etc/t3/secrets/prod`; PR #78's message asserts prod already has both artifact
   keys, but that has not been checked on the host, so the first release may stop there too.
+  **Still true as of 2026-09-18** — see `CICD/PLAN_AI_FACTORY.md` Phase 3/4.
 - **No failure reaches Discord.** `DISCORD_WEBHOOK_URL` is unset. The deploy job logs
   `DISCORD_WEBHOOK_URL not set; skipping`; the `slow-tests` report step exits silently
   (`[[ -n "$WEBHOOK" ]] || exit 0`). Fix this first: it is the reason the items above went
   unnoticed for five days rather than one night. It must be a **repo**-level secret —
   `slow-tests` declares no `environment:`, so an environment-scoped secret is invisible to it
   and the alert that actually mattered would still never fire.
+  **Resolved 2026-09-17:** `DISCORD_WEBHOOK_URL` is now set as a repo secret. Confirmed via
+  the Actions API — the report step logs show `WEBHOOK: ***` from run `35201279125` onward.
 
 ---
 
@@ -291,21 +299,27 @@ Marks verified against the repo and the Actions API on 2026-09-07.
   — **done 2026-09-09.** Both branches require exactly `unit` / `build` / `build-image`.
   `develop` also requires an up-to-date branch and blocks force pushes. `main`'s
   `allow_force_pushes` and `required_linear_history` remain open; see §2.1.
-- [ ] Environments verified; `DISCORD_WEBHOOK_URL` set; fork-PR approval on
-  — **`DISCORD_WEBHOOK_URL` is not set.** Every nightly run logs
-  `DISCORD_WEBHOOK_URL not set; skipping` and passes an empty `WEBHOOK` to the report step,
-  so no failure has ever been announced. This is why seven consecutive red nightlies went
-  unnoticed for five days.
-- [ ] Runner `kmv8` idle as `ghrunner`, secrets under `/etc/t3/secrets`
-  — **half done.** The runner is serving jobs. `nightly/` is missing two of the four required
-  secret files, and `prod/` has not been checked (see §0 Open and §3).
+- [x] Environments verified; `DISCORD_WEBHOOK_URL` set; fork-PR approval on
+  — **`DISCORD_WEBHOOK_URL` set 2026-09-17.** Confirmed via the Actions API (see §0 above).
+- [x] Runner `kmv8` idle as `ghrunner`; **nightly** secrets under `/etc/t3/secrets/nightly/`
+  — **done.** `build-and-deploy-nightly` has been green on every run since 2026-09-08; all
+  four required secret files exist under `nightly/`.
+- [ ] **prod** secrets under `/etc/t3/secrets/prod/`
+  — **still unverified as of 2026-09-18.** `t3-release.yml` has never run, so whether all
+  four required files exist there is unconfirmed; see `CICD/PLAN_AI_FACTORY.md` §8 open
+  question 2. Do not mark this done until a run (or a direct `ls` on kmv8) confirms it —
+  the release workflow fails early if any is missing/empty.
 - [x] `t3-ci` green on a test PR
-- [ ] `t3-nightly` manual run: deploy + health + e2e green
-  — **no manual run has ever had a green deploy.** Both 2026-09-02 `workflow_dispatch` runs
-  failed in `build-and-deploy-nightly`. Deploy + health were green only in the 2026-09-02 and
-  2026-09-03 *scheduled* runs. e2e has never executed at all (see §0).
+- [x] `t3-nightly` manual run: deploy + health + e2e green
+  — **done, as of run `35201279125` (2026-09-17) and later.** Deploy + health have been
+  green since 2026-09-08; e2e has run and passed since PR #104. `slow-tests` is still
+  routinely red on a rotating single timing-sensitive test — see
+  `CICD/PLAN_AI_FACTORY.md` §0.2 and Phase 1.
 - [ ] `t3-release` deployed `v0.1.0` after approval — the workflow has never run.
-- [ ] Hermes cron disabled — not verifiable from the repo; check on kmv8.
+  **Still true as of 2026-09-18.**
+- [ ] Hermes cron disabled — **still running as of 2026-09-18.** It is what produces the
+  `T3 nightly build — FAILED / main worktree is dirty` email, a separate pipeline from
+  Actions entirely. Retiring it is Phase 0.1 of `CICD/PLAN_AI_FACTORY.md`.
 - [ ] A1–A8 confirmed or corrected in the PR description
 
 ---
