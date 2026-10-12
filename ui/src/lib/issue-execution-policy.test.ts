@@ -36,4 +36,29 @@ describe("buildExecutionPolicy", () => {
       expect(stage.participants[0]?.id).toMatch(UUID_PATTERN);
     }
   });
+
+  it("returns null when no reviewers, approvers, or monitor are configured", () => {
+    expect(buildExecutionPolicy({ existingPolicy: null, reviewerValues: [], approverValues: [] })).toBeNull();
+  });
+
+  it("keeps stage and participant ids stable for principals that remain selected", () => {
+    const first = buildExecutionPolicy({
+      existingPolicy: null,
+      reviewerValues: [`agent:${AGENT_ID}`],
+      approverValues: [],
+    });
+    expect(first).not.toBeNull();
+
+    const second = buildExecutionPolicy({
+      existingPolicy: first,
+      reviewerValues: [`agent:${AGENT_ID}`],
+      approverValues: ["user:local-board"],
+    });
+
+    const firstReview = first?.stages.find((stage) => stage.type === "review");
+    const secondReview = second?.stages.find((stage) => stage.type === "review");
+    expect(secondReview?.id).toBe(firstReview?.id);
+    expect(secondReview?.participants[0]?.id).toBe(firstReview?.participants[0]?.id);
+    expect(second?.stages.map((stage) => stage.type)).toEqual(["review", "approval"]);
+  });
 });

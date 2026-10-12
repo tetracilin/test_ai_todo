@@ -170,7 +170,8 @@ describe("ThemeContext", () => {
     act(() => {
       mql.dispatch(true);
     });
-    expect(observedTheme).not.toBe("dark");
+    expect(observedTheme).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
 
     act(() => {
       root.unmount();

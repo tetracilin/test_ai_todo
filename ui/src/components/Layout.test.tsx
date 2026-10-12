@@ -238,6 +238,24 @@ async function act(callback: () => void | Promise<void>) {
   await result;
 }
 
+// Layout schedules the hover-peek open after a 50ms debounce. Drive it with fake
+// timers instead of racing a real 80ms sleep (flaky under CI/Windows load).
+const PEEK_OPEN_DEBOUNCE_MS = 50;
+
+async function hoverAndAdvancePeekTimer(el: HTMLElement) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(PEEK_OPEN_DEBOUNCE_MS * 3);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 async function flushReact() {
   await act(async () => {
     await Promise.resolve();
@@ -350,8 +368,7 @@ describe("Layout", () => {
     // A lingering/spurious hover while collapsed must NOT re-open the peek.
     mockSetPeeking.mockClear();
     const railPanel = panel();
-    await act(async () => { hover(railPanel!); });
-    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+    await hoverAndAdvancePeekTimer(railPanel!);
     expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
 
     await act(async () => { root.unmount(); });
@@ -374,10 +391,7 @@ describe("Layout", () => {
       (el) => el.className.includes("inset-y-0") && el.className.includes("overflow-hidden"),
     );
     expect(panel).toBeTruthy();
-    await act(async () => {
-      panel!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
-    });
-    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+    await hoverAndAdvancePeekTimer(panel!);
     // A normal collapsed-rail hover (not just-collapsed) opens the peek.
     expect(mockSetPeeking).toHaveBeenCalledWith(true);
 

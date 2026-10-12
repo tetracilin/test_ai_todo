@@ -108,12 +108,13 @@ describe("WorkspaceServiceControlBar", () => {
     };
 
     const stoppedSegment = await renderService("stopped", null);
-    expect(stoppedSegment).not.toBeNull();
+    // `parentElement` of a missing node is undefined, which `not.toBeNull()` would accept.
+    expect(stoppedSegment).toBeTruthy();
     expect(stoppedSegment?.classList.contains("w-56")).toBe(true);
     expect(stoppedSegment?.classList.contains("shrink-0")).toBe(true);
 
     const runningSegment = await renderService("running", "http://127.0.0.1:3100");
-    expect(runningSegment).not.toBeNull();
+    expect(runningSegment).toBeTruthy();
     expect(runningSegment?.className).toBe(stoppedSegment?.className);
   });
 

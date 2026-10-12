@@ -4,11 +4,13 @@ const { getCommentMock } = vi.hoisted(() => ({
   getCommentMock: vi.fn(),
 }));
 
-vi.mock("../api/issues", () => ({
-  issuesApi: {
-    getComment: getCommentMock,
-  },
-}));
+vi.mock("../api/issues", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/issues")>();
+  return {
+    ...actual,
+    issuesApi: { ...actual.issuesApi, getComment: getCommentMock },
+  };
+});
 
 import { describe, expect, it, vi } from "vitest";
 import { __liveUpdatesTestUtils } from "./LiveUpdatesProvider";

@@ -262,39 +262,41 @@ describe("DocumentAnnotationLayer", () => {
     };
     (globalThis as { Highlight?: unknown }).Highlight = MockHighlight;
 
-    const body = document.createElement("div");
-    body.textContent = "Annotated body text.";
-    root = createRoot(container);
+    try {
+      const body = document.createElement("div");
+      body.textContent = "Annotated body text.";
+      root = createRoot(container);
 
-    await act(async () => {
-      root?.render(
-        <DocumentAnnotationLayer
-          containerRef={{ current: body }}
-          markdown="Annotated body text."
-          threads={[
-            { id: "active", selectedText: "Annotated", status: "open", anchorState: "active" },
-          ]}
-          focusedThreadId={null}
-          onThreadFocus={vi.fn()}
-          pendingAnchor={null}
-          onPendingAnchorChange={vi.fn()}
-          onRequestComment={vi.fn()}
-        />,
-      );
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    });
+      await act(async () => {
+        root?.render(
+          <DocumentAnnotationLayer
+            containerRef={{ current: body }}
+            markdown="Annotated body text."
+            threads={[
+              { id: "active", selectedText: "Annotated", status: "open", anchorState: "active" },
+            ]}
+            focusedThreadId={null}
+            onThreadFocus={vi.fn()}
+            pendingAnchor={null}
+            onPendingAnchorChange={vi.fn()}
+            onRequestComment={vi.fn()}
+          />,
+        );
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      });
 
-    expect(container.querySelector(".paperclip-doc-annotation-highlight")).toBeNull();
-    expect(container.querySelector(".paperclip-doc-annotation-hit-target")).not.toBeNull();
-    const openHighlightCall = setHighlight.mock.calls.find(([name]) => name === "paperclip-doc-annotation-open");
-    expect(openHighlightCall).toBeTruthy();
-    expect((openHighlightCall?.[1] as MockHighlight).ranges).toHaveLength(1);
+      expect(container.querySelector(".paperclip-doc-annotation-highlight")).toBeNull();
+      expect(container.querySelector(".paperclip-doc-annotation-hit-target")).not.toBeNull();
+      const openHighlightCall = setHighlight.mock.calls.find(([name]) => name === "paperclip-doc-annotation-open");
+      expect(openHighlightCall).toBeTruthy();
+      expect((openHighlightCall?.[1] as MockHighlight).ranges).toHaveLength(1);
 
-    await act(async () => root?.unmount());
-    root = null;
-    expect(deleteHighlight).toHaveBeenCalledWith("paperclip-doc-annotation-open");
-
-    (globalThis as { CSS?: unknown }).CSS = originalCss;
-    (globalThis as { Highlight?: unknown }).Highlight = originalHighlight;
+      await act(async () => root?.unmount());
+      root = null;
+      expect(deleteHighlight).toHaveBeenCalledWith("paperclip-doc-annotation-open");
+    } finally {
+      (globalThis as { CSS?: unknown }).CSS = originalCss;
+      (globalThis as { Highlight?: unknown }).Highlight = originalHighlight;
+    }
   });
 });
