@@ -4,7 +4,7 @@ This guide describes the current, implemented way to create a Paperclip plugin i
 
 It is intentionally narrower than [PLUGIN_SPEC.md](./PLUGIN_SPEC.md). The spec includes future ideas; this guide only covers the alpha surface that exists now.
 
-> **New to plugins?** Start with the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) — it walks the CLI happy path (`plugin init` → `pnpm dev` → `plugin install <path>`) end to end. Come back here for the full manifest surface, worker capabilities, and UI components.
+> **New to plugins?** Start with the short Local Plugin Development guide — it walks the CLI happy path (`plugin init` → `pnpm dev` → `plugin install <path>`) end to end. Come back here for the full manifest surface, worker capabilities, and UI components.
 
 ## Current reality
 
@@ -71,7 +71,7 @@ Outside this monorepo, the scaffold snapshots `@paperclipai/plugin-sdk` from the
 
 ## Local development workflow
 
-See the short [Local Plugin Development guide](./LOCAL_PLUGIN_DEVELOPMENT.md) for the full happy path (`pnpm dev` → `paperclipai plugin install <absolute-path>` → `paperclipai plugin list`) and reload semantics.
+See the short Local Plugin Development guide for the full happy path (`pnpm dev` → `paperclipai plugin install <absolute-path>` → `paperclipai plugin list`) and reload semantics.
 
 Minimum verification from the generated plugin folder:
 

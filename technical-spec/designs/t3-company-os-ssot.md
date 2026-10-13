@@ -123,7 +123,7 @@ decision rather than pushing adoption uphill).
   joins the migration list alongside `DESIGN.md`'s.
 - Windows case-insensitivity: `design.md` IS `DESIGN.md`, which AGENTS.md, CLAUDE.md, and
   `check:token-gates` reference as the UI token source of truth — its content must be
-  relocated (e.g. `docs/designs/DESIGN-UI.md`) and every reference updated in the same change.
+  relocated (e.g. `technical-spec/designs/DESIGN-UI.md`) and every reference updated in the same change.
 - Confidential (defense/B2G) content never enters chat bridges or the repo (AD-021, C16).
 - Language boundary: engineer-facing conversation is Vietnamese; the official language
   for development, prompts, and docs is English (efficiency). The switch is implemented
@@ -132,11 +132,11 @@ decision rather than pushing adoption uphill).
   tables without cause.
 
 **Glossary** (identifiers used in this doc): *K6 domain map* =
-`docs/migration/test-ai-todo-domain-map.md` (which Paperclip service owns each business
+`technical-spec/fork/migration/test-ai-todo-domain-map.md` (which Paperclip service owns each business
 concept); *AD-xxx* = architecture decisions from INFRA-DESIGN-v1 Patch Set 003; *C13/C14/
 C16* and *OQ-1..5* = open constraints/questions tracked in `backlog.md`; *PC-xxx* = the
 backlog's user-story IDs (PC-402 = the software-dev pilot card); *hermes-agent setup* =
-the agent-workspace pattern from `doc/HERMES_GATEWAY_ONBOARDING.md`; *Teable sync* =
+the agent-workspace pattern from `technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md`; *Teable sync* =
 PC-005, mirroring cards to the Teable board GUI; *CC* = Claude Code (AI-assisted
 implementation time, versus human-team time).
 
@@ -181,7 +181,7 @@ platform set to WhatsApp by owner decision after the review.
 ### Approach A: In-place rewrite (minimal viable)
 Overwrite the three files; relocate upstream roadmap to `doc/UPSTREAM-ROADMAP.md` (since
 removed outright — the fork keeps no upstream roadmap archive) and UI
-design principles to `docs/designs/DESIGN-UI.md`. Fast (CC ~10 min) but leaves dangling
+design principles to `technical-spec/designs/DESIGN-UI.md`. Fast (CC ~10 min) but leaves dangling
 references and no cross-linking. Rejected: reference breakage on DESIGN.md is a real cost.
 
 ### Approach B: Three-file SSoT + reference migration
@@ -237,7 +237,7 @@ Target shape:
   abstraction (Discord instance → WhatsApp next), gbrain memory, company skill repo
   (hermes-agent pattern), self-development pipeline and its charter + health metrics.
 - Relocations: upstream roadmap → `doc/UPSTREAM-ROADMAP.md` (later removed outright); UI design language →
-  `docs/designs/DESIGN-UI.md`; all references updated in the same commit.
+  `technical-spec/designs/DESIGN-UI.md`; all references updated in the same commit.
 
 ## Open Questions
 
@@ -269,7 +269,7 @@ diff-reviewed first — folded in if related to fork identity, committed separat
   rule is in place, `doc/UPSTREAM-SYNC.md` is **rewritten for the hard-fork cherry-pick
   model** (its merge-based workflow and is-ancestor invariant removed — OV-1), and the
   full referencing-doc sweep is done: README.md, CONTRIBUTING.md, cli/README.md,
-  `.github/` templates, `docs/migration/test-ai-todo-inventory.md`, `backlog.md`
+  `.github/` templates, `technical-spec/fork/migration/test-ai-todo-inventory.md`, `backlog.md`
   frontmatter, and `.claude/agents/*` files all consistent with the retired
   `integration/paperclip` and relocated `DESIGN.md`/`ROADMAP.md`.
 

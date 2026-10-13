@@ -174,8 +174,7 @@ paperclipai uninstall
 
 `upgrade` aliases `update`. `uninstall` removes managed code and the shim but
 preserves instance data under `~/.paperclip/instances/`. See
-`doc/INSTALLING.md` for installation methods, security notes, PATH setup, and
-the complete update and rollback behavior.
+`README.md` for installation methods and PATH setup.
 
 ## Onboarding And Service Management
 
@@ -210,7 +209,7 @@ addition to configuration, storage, database, logging, and port checks.
 
 ## Deployment Modes
 
-Mode taxonomy and design intent are documented in `doc/DEPLOYMENT-MODES.md`.
+Mode taxonomy and design intent are documented in `technical-spec/architecture/DEPLOYMENT-MODES.md`.
 
 Current CLI behavior:
 
@@ -220,7 +219,7 @@ Current CLI behavior:
 - runtime can override mode with `PAPERCLIP_DEPLOYMENT_MODE`
 - `paperclipai run` and `paperclipai doctor` still do not expose a direct low-level `--mode` flag
 
-Canonical behavior is documented in `doc/DEPLOYMENT-MODES.md`.
+Canonical behavior is documented in `technical-spec/architecture/DEPLOYMENT-MODES.md`.
 
 Allow an authenticated/private hostname (for example custom Tailscale DNS):
 
@@ -763,9 +762,8 @@ bootstrap credentials in Paperclip secrets.
 Per-company provider vaults (multiple vault instances per provider, default
 vault selection, coming-soon GCP/Vault) can be configured from the board UI under
 `Company Settings → Secrets → Provider vaults` or through the provider-config CLI
-commands above. See the
-[secrets deploy guide](../docs/deploy/secrets.md#provider-vaults) and
-[API reference](../docs/api/secrets.md#provider-vaults) for the contract.
+commands above. See
+`technical-spec/architecture/SECRETS-AWS-PROVIDER.md` for the contract.
 
 ## Approval Commands
 
@@ -883,7 +881,7 @@ Hermes gateway uses the generic invite/join commands above rather than
 `invite onboarding:text`, submit a join request with
 `adapterType: "hermes_gateway"` and `agentDefaultsPayload.apiBaseUrl` /
 `agentDefaultsPayload.apiKey`, then approve and claim the key with the `join`
-commands. See [HERMES_GATEWAY_ONBOARDING.md](./HERMES_GATEWAY_ONBOARDING.md).
+commands. See [HERMES_GATEWAY_ONBOARDING.md](../fork/hermes/HERMES_GATEWAY_ONBOARDING.md).
 
 ## Adapter, Asset, And Skill Commands
 

@@ -3,7 +3,7 @@ id: T3-AGENT-HOST-ACCESS
 role: design
 status: DRAFT
 owner: tetracilin
-derives_from: docs/designs/t3-company-os-ssot.md
+derives_from: technical-spec/designs/t3-company-os-ssot.md
 updated: 2026-09-08
 ---
 

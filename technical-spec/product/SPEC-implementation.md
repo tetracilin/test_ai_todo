@@ -38,17 +38,17 @@ These decisions close open questions from `SPEC.md` for V1.
 | Communication | Tasks + comments only (no separate chat system) |
 | Task ownership | Single assignee; atomic checkout required for `in_progress` transition |
 | Task watchdogs | A task watchdog is an explicitly configured, issue-subtree-scoped verification and recovery capacity. It may restore live task paths inside the watched subtree; for issue-thread interaction resolution it is an ordinary agent subject to the same audience and containment checks, not board authority, active-run output monitoring, or general liveness recovery. |
-| Recovery | Liveness/watchdog recovery preserves explicit ownership: retry lost execution continuity where safe, otherwise open visible source-scoped recovery actions by default, use issue-backed recovery only for independent repair work, or require human escalation (see `doc/execution-semantics.md`) |
+| Recovery | Liveness/watchdog recovery preserves explicit ownership: retry lost execution continuity where safe, otherwise open visible source-scoped recovery actions by default, use issue-backed recovery only for independent repair work, or require human escalation (see `technical-spec/architecture/execution-semantics.md`) |
 | Agent adapters | Built-in `process`, `http`, local CLI/session adapters, and OpenClaw gateway support; external adapters can also be loaded through the adapter plugin flow |
 | Plugin framework | Local/self-hosted early plugin runtime is in scope; cloud marketplace and packaged public distribution remain out of scope |
 | Auth | Mode-dependent human auth (`local_trusted` implicit board in current code; authenticated mode uses sessions), API keys for agents |
 | Budget period | Monthly UTC calendar window |
 | Budget enforcement | Soft alerts + hard limit auto-pause |
-| Deployment modes | Canonical model is `local_trusted` + `authenticated` with `private/public` exposure policy (see `doc/DEPLOYMENT-MODES.md`) |
+| Deployment modes | Canonical model is `local_trusted` + `authenticated` with `private/public` exposure policy (see `technical-spec/architecture/DEPLOYMENT-MODES.md`) |
 
 Low-trust agent presets are containment controls for hostile automated work, not
 general project or issue privacy controls. The core preset resolver contract is
-documented in `doc/LOW-TRUST-PRESETS.md`.
+documented in `technical-spec/architecture/LOW-TRUST-PRESETS.md`.
 
 ## 4. Current Baseline (Repo Snapshot)
 
@@ -522,7 +522,7 @@ V1 non-terminal liveness rule:
 - source-scoped recovery routing is cause-keyed: lost processes, missing successful-run dispositions, and output-inactivity terminations retry the original agent when invokable; provider-quota failures create/reuse a scheduled wait-recovery monitor without a takeover wake; workspace validation and unknown causes route to the manager ladder
 - recovery-scoped wakes replace the normal deliverable execution contract with a cause-specific recovery contract, and successful repair returns the issue to the recorded original owner by default while recording `handed_back` versus `owner_completed`
 
-Detailed ownership, execution, blocker, active-run watchdog, crash-recovery, and non-terminal liveness semantics are documented in `doc/execution-semantics.md`.
+Detailed ownership, execution, blocker, active-run watchdog, crash-recovery, and non-terminal liveness semantics are documented in `technical-spec/architecture/execution-semantics.md`.
 
 ## 8.3 Approval Status
 
@@ -1444,7 +1444,7 @@ V1 supports company import/export using a portable package contract:
 - markdown-first package rooted at `COMPANY.md`
 - implicit folder discovery by convention
 - `.paperclip.yaml` sidecar for Paperclip-specific fidelity
-- canonical base package is vendor-neutral and aligned with `docs/companies/companies-spec.md`
+- canonical base package is vendor-neutral and aligned with `technical-spec/product/companies-spec.md`
 - common conventions:
   - `agents/<slug>/AGENTS.md`
   - `teams/<slug>/TEAM.md`

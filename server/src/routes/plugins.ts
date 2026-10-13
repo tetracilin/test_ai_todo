@@ -16,7 +16,7 @@
  * Plugin tool discovery and execution routes allow both board and agent access.
  *
  * @module server/routes/plugins
- * @see doc/plugins/PLUGIN_SPEC.md for the full plugin specification
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md for the full plugin specification
  */
 
 import { access, readdir, readFile } from "node:fs/promises";

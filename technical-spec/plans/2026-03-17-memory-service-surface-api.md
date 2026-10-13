@@ -10,11 +10,11 @@ Define a Paperclip memory service and surface API that can sit above multiple me
 - budget and cost visibility
 - plugin-first extensibility
 
-This plan is based on the external landscape summarized in `doc/memory-landscape.md`, the AWS AgentCore comparison captured in [PAP-1274](/PAP/issues/PAP-1274), and the current Paperclip architecture in:
+This plan is based on the external landscape summarized in `doc/memory-landscape.md` (removed in the doc cleanup; see git history) (removed in the doc cleanup; see git history), the AWS AgentCore comparison captured in [PAP-1274](/PAP/issues/PAP-1274), and the current Paperclip architecture in:
 
-- `doc/SPEC-implementation.md`
-- `doc/plugins/PLUGIN_SPEC.md`
-- `doc/plugins/PLUGIN_AUTHORING_GUIDE.md`
+- `technical-spec/product/SPEC-implementation.md`
+- `technical-spec/architecture/plugins/PLUGIN_SPEC.md`
+- `technical-spec/architecture/plugins/PLUGIN_AUTHORING_GUIDE.md`
 - `packages/plugins/sdk/src/types.ts`
 
 ## Recommendation In One Sentence

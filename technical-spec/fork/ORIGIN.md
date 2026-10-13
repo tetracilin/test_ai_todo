@@ -79,12 +79,12 @@ rather than a discovery six months from now:
   release-bootstrap}.mjs`.
 - **Discord bridge staging deploys** (`discord-staging.yml`). `deploy-staging/` is still in
   the tree and still works, but has no automated deploy path; it is now a host-only manual
-  procedure. See the superseding note at the top of `docs/rollback-discord-integration.md`.
+  procedure. See the superseding note at the top of `technical-spec/fork/rollback-discord-integration.md`.
   Any GitHub Environment secrets that existed solely for this workflow now have no consumer
   and should be reviewed for revocation.
 - **Storybook visual baselines in CI** (`storybook-visual.yml`). `pnpm test:storybook-visual`
   is unchanged, but there is no longer a hosted Linux runner for pixel baselines, and
-  `doc/DEVELOPING.md` notes that baselines from macOS/Windows are unreliable.
+  `technical-spec/engineering/DEVELOPING.md` notes that baselines from macOS/Windows are unreliable.
 
 Restoring any of them means adding a fourth workflow and amending the "only `t3-*`
 workflows" rule in `CLAUDE.md`.

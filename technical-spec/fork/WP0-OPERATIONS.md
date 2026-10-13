@@ -14,16 +14,16 @@ Scope and sources:
 
 - `backlog.md` — Epic 0, WP-0 operational ACs 1–12 and the pilot protocol (the spec this
   page implements; owner-edited, never edited from here).
-- `docs/discord-integration.md` — authority split, data model, API contracts, bridge
+- `technical-spec/designs/discord-integration.md` — authority split, data model, API contracts, bridge
   runtime, security constraints.
-- `docs/rollback-discord-integration.md` — staging rollback and credential-rotation runbook.
-- `docs/deploy/staging-k16.md`, `deploy-staging/compose.yaml`,
+- `technical-spec/fork/rollback-discord-integration.md` — staging rollback and credential-rotation runbook.
+- `deploy-staging/compose.yaml`,
   `deploy-staging/scripts/healthcheck.sh` — the staging project (`t3-staging`) the pilot runs on.
-- `docs/deploy/minio-nas-artifact-storage.md` — the NAS MinIO store. **Read §8 before you
+- `technical-spec/designs/minio-nas-artifact-storage.md` — the NAS MinIO store. **Read §8 before you
   treat it as the evidence write path: staging runs the local-disk storage provider today.**
 - `packages/shared/src/wp0-phrases.ts` — the canonical Vietnamese phrase table. **Every
   Vietnamese line this page tells you to send comes from there**; never retype one by hand.
-- `doc/HERMES_GATEWAY_ONBOARDING.md`, `doc/TASK-WATCHDOG.md`, `doc/MCP-RUNTIME-OPERATIONS.md`
+- `technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md`, `technical-spec/architecture/TASK-WATCHDOG.md`, `technical-spec/architecture/MCP-RUNTIME-OPERATIONS.md`
   — adjacent runtime runbooks.
 
 Conventions used below — export these before you run anything on this page:
@@ -126,7 +126,7 @@ component that is not there yet.
 | --- | --- | --- |
 | Discord gateway, slash commands, delivery worker, outbox | **Yes** | `discord-bridge/`, `integration_event_outbox`, `discord_delivery_attempts` |
 | Account link / unlink, link codes | **Yes** | `POST /api/integrations/discord/link-codes`, `.../link-codes/consume`, `.../unlink` |
-| Object storage: the S3/MinIO provider exists in the server | **Yes** | `server/src/config.ts` (`PAPERCLIP_STORAGE_PROVIDER`, `PAPERCLIP_STORAGE_S3_*`), `docs/deploy/minio-nas-artifact-storage.md` |
+| Object storage: the S3/MinIO provider exists in the server | **Yes** | `server/src/config.ts` (`PAPERCLIP_STORAGE_PROVIDER`, `PAPERCLIP_STORAGE_S3_*`), `technical-spec/designs/minio-nas-artifact-storage.md` |
 | …but `t3-staging` is not running it — evidence bytes land on the container's **local disk** | **No — pilot-start gate item, §8** | `deploy-staging/paperclip-config.json` sets `storage.provider = "local_disk"` (`/paperclip/instances/default/data/storage`, on the `paperclip-data` volume); `deploy-staging/compose.yaml` sets only `PAPERCLIP_STORAGE_EXTERNAL_*` (the read-only open-file source), never `PAPERCLIP_STORAGE_PROVIDER` or `PAPERCLIP_STORAGE_S3_*` |
 | Agent runtime (`eng-<name>` via Hermes gateway) | **Yes** | `packages/adapters/hermes-gateway`, PC-003 |
 | Evidence gate on `done` | **Yes** | `server/src/services/issues.ts` (PC-001) |
@@ -213,7 +213,7 @@ Notifications stop arriving in mapped channels. Engineers report "bot chết r�
    error after an intent change — read the close code in the logs before rotating anything.
 4. Confirm the backlog drains: `pending` deliveries fall to zero within a few poll intervals
    (`POLL_INTERVAL_SECONDS`, default 30).
-5. If it does not recover in 15 minutes, roll back per `docs/rollback-discord-integration.md`.
+5. If it does not recover in 15 minutes, roll back per `technical-spec/fork/rollback-discord-integration.md`.
 
 **Who retries.** Answer it per direction, and **verify before you answer**:
 
@@ -401,7 +401,7 @@ hard-stop pauses agents by design, and that is a spend event, not an incident.
    If messages are not being persisted, captures are being **lost, not delayed**: tell the
    affected engineers to resend ("gửi lại giúp mình") and, if the surface was supposed to
    be live, treat it as a P1 and fix that first.
-2. Restart the Hermes relay / gateway per `doc/HERMES_GATEWAY_ONBOARDING.md`; restart the
+2. Restart the Hermes relay / gateway per `technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md`; restart the
    Paperclip service only if `/api/health` itself is failing.
 3. Watch the replay drain on recovery, then send `agent_recovered` from the phrase table to
    each affected engineer with the count of replayed messages.
@@ -597,7 +597,7 @@ sends the one-line `digest_empty` message so absence is visible.
 
 ## 11. Secrets rotation
 
-**Depends on:** shipped. Follows `docs/rollback-discord-integration.md` §6.
+**Depends on:** shipped. Follows `technical-spec/fork/rollback-discord-integration.md` §6.
 
 **Symptom.** Either scheduled rotation, or a credential incident: the bridge authenticates
 then immediately disconnects; `401 Discord bridge is not configured`; MinIO returns auth

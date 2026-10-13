@@ -6,7 +6,7 @@ Audience: Product and engineering
 
 This document explains how Paperclip interprets issue assignment, issue status, execution runs, wakeups, parent/sub-issue structure, and blocker relationships.
 
-`doc/SPEC-implementation.md` remains the V1 contract. This document is the detailed execution model behind that contract.
+`technical-spec/product/SPEC-implementation.md` remains the V1 contract. This document is the detailed execution model behind that contract.
 
 ## 1. Core Model
 
@@ -653,7 +653,7 @@ When the source issue is non-terminal and has no other live path, the product sh
 
 ### Watchdog authority during execution
 
-The watchdog agent acts in a scoped capacity, not as the original deliverable worker and not as the board. The server must enforce the authority contract in `doc/SPEC-implementation.md` from persisted watchdog context. Prompt text and custom instructions may guide the watchdog's judgment, but they cannot grant authority outside the watched subtree or widen an interaction's ordinary effective audience.
+The watchdog agent acts in a scoped capacity, not as the original deliverable worker and not as the board. The server must enforce the authority contract in `technical-spec/product/SPEC-implementation.md` from persisted watchdog context. Prompt text and custom instructions may guide the watchdog's judgment, but they cannot grant authority outside the watched subtree or widen an interaction's ordinary effective audience.
 
 Watchdogs must not create visible probe issues, comments, or throwaway tasks to discover capability boundaries. They should rely on the wake capability metadata and explicit API denials, then record any denied operation as evidence in the reusable watchdog issue.
 

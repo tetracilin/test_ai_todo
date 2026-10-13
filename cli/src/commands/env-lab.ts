@@ -213,7 +213,7 @@ export async function envLabDoctorCommand(opts: { instance?: string; json?: bool
   // version. The bundled build runs `dist/index.js`; a source checkout runs
   // `src/index.ts` through the checked-out tsx runner. The hint uses absolute
   // paths, so it works from any working directory. It passes an inert `argv`
-  // value, so no shell reads the argument. See `doc/CLI.md`, "safe invocation".
+  // value, so no shell reads the argument. See `technical-spec/engineering/CLI.md`, "safe invocation".
   //
   // The doctor diagnoses the instance that `resolvePaperclipInstanceId` selects
   // from `opts.instance` or the `PAPERCLIP_INSTANCE_ID` environment variable.

@@ -125,7 +125,7 @@ or `minio` takes Teable down.
 
 > **This `minio` is not Paperclip's artifact store.** Paperclip's evidence MinIO lives on a
 > *different host*: `http://nas-storage-t19.tail9831b.ts.net:9000`
-> (`docs/deploy/minio-nas-artifact-storage.md:13-14`), and
+> (`technical-spec/designs/minio-nas-artifact-storage.md:13-14`), and
 > `server/src/services/evidence-provider-minio.ts` calls it "the NAS MinIO evidence bucket."
 > Separately, neither deployed Paperclip stack uses S3 at all today:
 > `deploy/paperclip-config.json:35` selects `"provider": "local_disk"`, and its `s3` block has
@@ -232,6 +232,6 @@ Recorded rather than guessed, so the next reader knows what was never establishe
 ## Related
 
 - `CICD/PLAN_CICD.md` — pipeline plan, host provisioning runbook (§3), current status (§0)
-- `docs/deploy/minio-nas-artifact-storage.md` — the NAS MinIO, which is *not* on this host
+- `technical-spec/designs/minio-nas-artifact-storage.md` — the NAS MinIO, which is *not* on this host
 - `docs/deploy/tailscale-private-access.md` — tailnet access
-- `docs/operating-with-claude-code.md` — how to drive deployments and PRs safely
+- `technical-spec/fork/operating-with-claude-code.md` — how to drive deployments and PRs safely

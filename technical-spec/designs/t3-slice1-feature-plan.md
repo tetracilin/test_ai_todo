@@ -3,14 +3,14 @@ id: T3-SLICE1-FEATURE-PLAN
 role: plan
 status: APPROVED
 owner: tetracilin
-derives_from: docs/designs/t3-company-os-ssot.md
+derives_from: technical-spec/designs/t3-company-os-ssot.md
 targets: [backlog.md, roadmap.md]
 updated: 2026-09-07
 ---
 
 # T3 — Slice 1 feature decomposition (agent-implementable)
 
-Turns the design record `docs/designs/t3-company-os-ssot.md` and the PC-xxx story specs in
+Turns the design record `technical-spec/designs/t3-company-os-ssot.md` and the PC-xxx story specs in
 `backlog.md` into **feature units an agent can pick up cold**: one unit = one GitHub issue =
 one branch = one PR. Stories say *what the user gets*; this file says *what gets built, in
 what order, against which files, with which tests, and when it is done*.
@@ -45,7 +45,7 @@ So the table splits in two:
 
 - **Deployed and running on staging** — everything up to and including `c3c03e81`. That
   covers PR #40 (the PC-001 evidence gate) and PR #75 (`issue_evidence_links`, PC-011
-  provenance, `wp0-phrases`, `doc/WP0-OPERATIONS.md`); `git merge-base --is-ancestor`
+  provenance, `wp0-phrases`, `technical-spec/fork/WP0-OPERATIONS.md`); `git merge-base --is-ancestor`
   confirms both are ancestors of the deployed sha.
 - **Merged but never deployed** — the 11 commits in `c3c03e81..origin/develop`: PRs #78,
   #68, #79, #80, #81, #83, #84, #82, #85, #87, #88. That includes every evidence *provider*
@@ -70,7 +70,7 @@ Re-derive the split rather than trusting this paragraph:
 | Dossier renders in card UI (F-002-5) | **SHIPPED** — PR #100 | `ui/src/components/IssueDossierPanel.tsx`, rendered in the card's Activity tab next to `IssueContinuationHandoff`, reading the existing `GET /issues/:id/documents/dossier` route. The dossier's key, its PC-002 AC1 headings, and a read-only parser moved to `packages/shared/src/dossier-view.ts` so the writer and the renderer cannot declare the grammar separately; `server/src/__tests__/issue-dossier-view.test.ts` runs both parsers over the checked-in fixture and fails on any disagreement. Evidence log and Scope changes render as structured lists, the other three sections stay markdown (no closed server grammar exists for them), and a section the reader cannot fully parse falls back to raw markdown rather than dropping a line. |
 | Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
 | Teable client | **F-010-1 SHIPPED** — PR #102; **F-010-2 SHIPPED**; **F-005-1 SHIPPED** (this PR); F-010-3 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create/update records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row; `updateRecord`, added for F-005-1, is single-attempt for the same reason). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. F-010-2 (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`) adds the append-only agent write: one allowlisted table (per-company secret `TEABLE_WRITE_TABLE_ID`), the created row linked on the card + one dossier Evidence-log line, and a bot-account attribution marker (`TEABLE_BOT_ACCOUNT_NAME`, checked via the exported `isPaperclipBotAuthored` predicate) so F-005-1's conflict flagging skips the bot's own rows. F-005-1 (`server/src/services/teable-mirror.ts`) is the consumer: a heartbeat-scheduler sweep (same convention as `evidence-storage-reaper.ts`) that mirrors card create/status/assignee onto one `external_objects(provider=teable, objectType="issue_mirror")` row per issue via `createRecords`/`updateRecord`, flags a Teable-side edit as a conflict (reusing `isPaperclipBotAuthored`, scoped to `lastModifiedBy`) instead of overwriting it, and reuses `activity_log` itself as the retry-backoff state. Fixture/embedded-Postgres-verified, not live-verified, same as F-010-1/F-010-2. |
-| `doc/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
+| `technical-spec/fork/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
 | Vietnamese phrase table (F-VERB-0) | **SHIPPED** — PR #75 | `packages/shared/src/wp0-phrases.ts` + test. The branch-name auto-link matcher for F-007-3 (`matchesIssueBranch`) is shipped as a pure function only — nothing wires it to a live "watch for pushes" trigger yet. |
 | F-001-1 / F-001-2 (gate residue) | **SHIPPED** — already present when checked 2026-09-04, exact PR unclear (predates this session's PRs) | See PC-001 tests row above; `EVIDENCE_GATE_REJECTION_CODE`/`acceptedEvidenceTypes`/`chatPhraseKey` in `server/src/services/issues.ts` |
 
@@ -335,7 +335,7 @@ commits ahead of `develop`, **+4,885 lines across 19 files**, with **no PR open*
 | `server/src/services/evidence-provenance.ts` (199) + test (391) | F-011-2, F-011-3 |
 | `server/src/services/issue-dossier.ts` (412) + fixture + test (351) | F-002-1, F-002-4 |
 | `packages/shared/src/wp0-phrases.ts` (514) + test (356) | F-VERB-0 |
-| `doc/WP0-OPERATIONS.md` (757) | F-OPS-1 |
+| `technical-spec/fork/WP0-OPERATIONS.md` (757) | F-OPS-1 |
 
 Commits: `77e82e93` provenance, `988c5263` wedge-metric reader, `e6ca51e8` link/unlink/move
 routes, `00f6e9b4` dossier contract + fixture, `e5ddebd7` phrase table + runbook.
@@ -530,7 +530,7 @@ retrieval test, so all three agree on one concrete shape.
 **F-002-5 — Dossier renders in card UI**
 The only UI unit in Slice 1. Rides the existing `issue_documents` card surface.
 - DoD: `pnpm check:token-gates` green; tokens from `ui/src/index.css` only; no hex, no raw px
-  (`docs/designs/DESIGN-UI.md`).
+  (`technical-spec/designs/DESIGN-UI.md`).
 
 **F-001-1 — Comment-decision done-path gate test**
 Closes PC-001 AC6's "all three done-producing paths". The shipped suite covers PATCH and
@@ -795,7 +795,7 @@ unified, and the second implementation would drift (review finding 1.4).
 | F-003-2 | Environment pre-provisioning runbook | G-2 | human: 4h / CC: 30m |
 | F-003-3 | Per-engineer runbook + timed dry-run | F-003-1, F-DM-2 | human: 4h / CC: 30m |
 | F-003-4 | Vietnamese engineer quickstart (1 page) | F-VERB-0 | human: 3h / CC: 20m |
-| F-OPS-1 | `doc/WP0-OPERATIONS.md` runbook home | F-DM-2, F-010-1 | human: 1d / CC: 1h |
+| F-OPS-1 | `technical-spec/fork/WP0-OPERATIONS.md` runbook home | F-DM-2, F-010-1 | human: 1d / CC: 1h |
 | F-OPS-2 | Alert routing + adoption-drop alarm | F-DM-2 | human: 1d / CC: 1h |
 | F-OPS-3 | LLM/bot spend cap under budgets | F-CAP-1 | human: 1d / CC: 1h |
 | F-PILOT-1 | Band-call query + min-n guard | F-011-3 | human: 4h / CC: 30m |
@@ -898,12 +898,12 @@ Working protocol for an implementing agent, per feature unit:
    ```
    Three corrections over the obvious version, each verified: **`paperclipai` is not on PATH**
    (`command -v paperclipai` → nothing) — use `npx paperclipai` for the content-bearing
-   `--from-config <path>` argument (`doc/CLI.md`), not `pnpm paperclipai`. **Manual worktrees must
-   pass `--from-config`** (`doc/DEVELOPING.md:489`). And the path is anchored to the repo root,
+   `--from-config <path>` argument (`technical-spec/engineering/CLI.md`), not `pnpm paperclipai`. **Manual worktrees must
+   pass `--from-config`** (`technical-spec/engineering/DEVELOPING.md:489`). And the path is anchored to the repo root,
    because a bare `../t3-…` resolves against the current directory and lands in the wrong place
    when you are already inside a worktree.
    The init step is not optional: `pnpm dev` **fails fast** in a linked worktree when
-   `.paperclip/.env` is missing (`doc/DEVELOPING.md:479`), and it is what gives the worktree its
+   `.paperclip/.env` is missing (`technical-spec/engineering/DEVELOPING.md:479`), and it is what gives the worktree its
    own embedded Postgres instance. Two servers must never share one data directory. The
    `worktree env` line is the health check — do not start implementing until it answers.
    **Inside `discord-bridge/`, use npm, not pnpm** — it is not a pnpm-workspace member and
@@ -1510,7 +1510,7 @@ past a small tolerance blocks the band call rather than silently picking one.
 **8.3 — examined, covered.** Metrics (ratio, captures/day, structuring-failure rate, digest
 success, gate rejections); alerts (adoption drop, digest failure, gateway error rate) into one
 named channel tested end-to-end before pilot start; runbooks with one home in
-`doc/WP0-OPERATIONS.md`; and the message-id↔card-id correlation line in the dossier for
+`technical-spec/fork/WP0-OPERATIONS.md`; and the message-id↔card-id correlation line in the dossier for
 post-hoc reconstruction. The only gaps were 8.1 and 8.2.
 
 ### Section 9 — Deployment & rollout
@@ -1619,7 +1619,7 @@ different PR).
 **SKIPPED — no UI scope.** Grep over this plan returned two hits for view/rendering terms,
 both the false positive "form" (in "never fill a form" / "form-filling"). The single
 UI-touching unit, F-002-5, renders the dossier on the existing `issue_documents` card surface
-and is gated by `pnpm check:token-gates` against `docs/designs/DESIGN-UI.md` — a token
+and is gated by `pnpm check:token-gates` against `technical-spec/designs/DESIGN-UI.md` — a token
 compliance check, not a design decision, so a design review would have nothing to grade.
 
 ## Phase 2 — Design Review
@@ -1672,7 +1672,7 @@ say. Second stall.
 
 So I do what the plan tells me and run
 `git worktree add ../t3-PC-007-minio -b feature/PC-007-minio origin/develop`, then `pnpm dev`
-to see the thing run. It **fails fast**: `doc/DEVELOPING.md:478` says `pnpm dev` hard-fails in
+to see the thing run. It **fails fast**: `technical-spec/engineering/DEVELOPING.md:478` says `pnpm dev` hard-fails in
 a linked worktree when `.paperclip/.env` is missing, and tells you to run
 `paperclipai worktree init` first. The plan never mentions that command. Third stall, in the
 first five minutes, on the exact instruction the plan gave me.
@@ -1756,7 +1756,7 @@ PR batch → depends-on). One table beats a rename.
 
 **DX-6 — MEDIUM/HIGH — the worktree instruction produces a hard failure as written.**
 `git worktree add ... origin/develop` leaves a tree with no `node_modules` and no
-`.paperclip/.env`. Per `doc/DEVELOPING.md:478`, `pnpm dev` **fails fast** in exactly that
+`.paperclip/.env`. Per `technical-spec/engineering/DEVELOPING.md:478`, `pnpm dev` **fails fast** in exactly that
 state, and the repo already ships the fix: `paperclipai worktree init`, which creates an
 isolated instance so two servers never share one embedded Postgres data directory.
 → **Decision:** §B.6's step 1 becomes three commands — `git worktree add`, `pnpm install`,
@@ -1830,7 +1830,7 @@ plan has a named override.
 [x] Unit index maps ID -> story -> lane -> PR batch (DX-5)
 [x] Engineer-facing error strings written, not merely described (DX-7)
 [x] Every opinionated default has a named escape hatch (DX-8)
-[x] Docs: one runbook home (doc/WP0-OPERATIONS.md) + quickstart + fixtures
+[x] Docs: one runbook home (technical-spec/fork/WP0-OPERATIONS.md) + quickstart + fixtures
 [x] Upgrade: eval-gated prompts, additive migrations, flag rollback
 [x] Works in CI: new tests extend the existing vitest workspace — EXCEPT Lane C, see ENG-1
 [ ] Community channel — n/a (internal tool, one maintainer)

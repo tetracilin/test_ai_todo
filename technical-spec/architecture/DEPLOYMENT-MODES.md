@@ -174,6 +174,6 @@ future public-hosted setup design explicitly changes this policy.
 ## 11. Relationship to Other Docs
 
 - implementation plan: `doc/plans/deployment-auth-mode-consolidation.md`
-- V1 contract: `doc/SPEC-implementation.md`
-- operator workflows: `doc/DEVELOPING.md` and `doc/CLI.md`
-- invite/join state map: `doc/spec/invite-flow.md`
+- V1 contract: `technical-spec/product/SPEC-implementation.md`
+- operator workflows: `technical-spec/engineering/DEVELOPING.md` and `technical-spec/engineering/CLI.md`
+- invite/join state map: `technical-spec/architecture/invite-flow.md`

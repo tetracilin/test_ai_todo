@@ -106,7 +106,7 @@ knowledge about the host.
 ## `hermes_local` architecture — the decision and why
 
 Upstream (`paperclipai/paperclip`, read via `gh api`, not cloned/merged —
-see the new policy in `doc/ORIGIN.md` §"Feature-driven upstream import")
+see the new policy in `technical-spec/fork/ORIGIN.md` §"Feature-driven upstream import")
 ships two Hermes adapters:
 
 - `hermes_local` — runs the `hermes` CLI as a **child process on the
@@ -137,7 +137,7 @@ session-id-from-stdout, `--resume`).
 - **Credential handoff skill** — upstream ships a `paperclip-task-bridge`
   Hermes skill so Hermes can create/comment on Paperclip tasks using a
   claimed Paperclip agent key (invite → approve → claim-key flow in
-  `docs/deploy/agent-adapters.md`'s upstream-derived section). Not wired up
+  `technical-spec/fork/agent-adapters.md`'s upstream-derived section). Not wired up
   here yet.
 - **A real end-to-end run** (#124): create a `hermes_local` agent on a
   deployed instance, give it a real provider key as a Paperclip secret,
@@ -159,9 +159,9 @@ ended by fire time, nothing ran and this is still open work, tracked as
 1. This file.
 2. `docs/qa/2026-09-20-new-user-onboarding-report.md` — the QA run that
    started all of this.
-3. `docs/deploy/agent-adapters.md` — adapter prerequisites, the Hermes
+3. `technical-spec/fork/agent-adapters.md` — adapter prerequisites, the Hermes
    Gateway HTTPS/tailscale guide, and the new `hermes_local` section.
-4. `doc/ORIGIN.md` §"Feature-driven upstream import" — the policy that let
+4. `technical-spec/fork/ORIGIN.md` §"Feature-driven upstream import" — the policy that let
    this session read upstream's Hermes design.
 5. `gh issue list --state open` filtered to labels `qa`/`decision` for the
    punch list above.

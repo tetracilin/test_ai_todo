@@ -356,7 +356,7 @@ jobs:
         # Deliberately Playwright's bundled Chromium, NOT the runner's stable
         # Google Chrome. pr.yml and e2e.yml both pinned
         # PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome; this fork drops that on purpose
-        # (docs/migration/test-ai-todo-inventory.md: replace Google Chrome
+        # (technical-spec/fork/migration/test-ai-todo-inventory.md: replace Google Chrome
         # invocation with vendor-neutral browser tooling; see also the
         # check:no-google-runtime gate in t3-ci). Bundled Chromium is also
         # version-pinned by the Playwright dependency, so nightly results do

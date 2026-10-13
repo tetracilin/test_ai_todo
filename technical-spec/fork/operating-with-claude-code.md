@@ -121,7 +121,7 @@ Two shapes of change are forbidden and Claude Code should refuse them:
 - **A general sync from upstream.** This repo is a hard fork of `paperclipai/paperclip`. No
   upstream remote, no merges from upstream, no restoring upstream's workflows. One exception:
   Claude Code may download specific upstream files when the current feature requires them. The PR
-  must name the upstream commit and paths (see `doc/ORIGIN.md`).
+  must name the upstream commit and paths (see `technical-spec/fork/ORIGIN.md`).
 
 ### Claude Code gave me a command to run on the server
 
@@ -169,7 +169,7 @@ current by CI. A hostname and a port do not tell you which.
 
 Ask: *"which stack is this URL, and does any workflow deploy it?"*
 
-See `docs/deploy/kmv8-stack-inventory.md`. On 2026-09-08 four rounds of debugging went into an
+See `technical-spec/fork/kmv8-stack-inventory.md`. On 2026-09-08 four rounds of debugging went into an
 adapter that was configured perfectly, because the instance under test was a hand-built copy
 from a week earlier that could not read the setting at all.
 
@@ -247,7 +247,7 @@ Knowing the boundary saves you from waiting on something that will never happen.
   otherwise and was wrong.
 - **Trigger a workflow**, including a staging deploy, with `gh workflow run`.
 
-There is an approved design (`docs/designs/t3-agent-host-access.md`) to give it a narrow,
+There is an approved design (`technical-spec/designs/t3-agent-host-access.md`) to give it a narrow,
 audited way to run a fixed menu of operations on kmv8 through GitHub Actions. Until that ships,
 the "cannot reach your server" line above holds.
 
@@ -296,7 +296,7 @@ the thing itself, not the description of it.
 
 ## Related
 
-- `docs/deploy/kmv8-stack-inventory.md` — what runs on the host and what depends on it
-- `docs/designs/t3-agent-host-access.md` — the plan for safe agent access to kmv8
+- `technical-spec/fork/kmv8-stack-inventory.md` — what runs on the host and what depends on it
+- `technical-spec/designs/t3-agent-host-access.md` — the plan for safe agent access to kmv8
 - `CLAUDE.md` — the rules Claude Code follows in this repo
 - `CICD/PLAN_CICD.md` — pipeline plan and current known-broken list

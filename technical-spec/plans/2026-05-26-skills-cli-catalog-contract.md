@@ -408,7 +408,7 @@ Phase B, CLI MVP:
   APIs without schema or server changes.
 - Skill refs resolve by id, key, or unique slug.
 - Human and JSON output are covered by focused CLI tests.
-- `doc/CLI.md` documents company install vs agent desired sync vs runtime sync.
+- `technical-spec/engineering/CLI.md` documents company install vs agent desired sync vs runtime sync.
 
 Phase C, catalog package:
 
@@ -472,7 +472,7 @@ Phase J, QA and docs:
 - QA validates CLI, catalog APIs, UI install, agent sync, portability, and adapter
   snapshots against a dev instance.
 - Blocking defects are linked as first-class issues.
-- `doc/CLI.md`, `doc/DEVELOPING.md`, and skill workflow docs match shipped
+- `technical-spec/engineering/CLI.md`, `technical-spec/engineering/DEVELOPING.md`, and skill workflow docs match shipped
   behavior.
 
 ## Deferrals

@@ -29,7 +29,7 @@ Agents can stop work for the wrong reasons: misreading a blocker, accepting a st
 
 A task watchdog gives you a second pass on stopped work without rerunning the original assignee. It is verification-shaped, not execution-shaped: the watchdog reads what other agents claimed, checks it against the evidence in the thread, and either accepts the stop or restores a live path.
 
-It is **not** an output-silence monitor for active runs. That is a separate mechanism — the silent active-run watchdog described in [`doc/execution-semantics.md`](execution-semantics.md) §12. Task watchdog only fires when the whole watched subtree has come to rest.
+It is **not** an output-silence monitor for active runs. That is a separate mechanism — the silent active-run watchdog described in [`technical-spec/architecture/execution-semantics.md`](execution-semantics.md) §12. Task watchdog only fires when the whole watched subtree has come to rest.
 
 ---
 
@@ -111,7 +111,7 @@ The mandate also enforces safety constraints that custom instructions **cannot o
 - No creating another watchdog for the watched subtree. No waking itself. Exactly one reusable review task per watched issue.
 - Custom instructions can narrow focus or veto specific shortcuts. They cannot grant authority the server does not already give the watchdog.
 
-The formal authority contract (the full list of allowed and disallowed mutations, plus the ordinary interaction resolver contract) is in [`doc/SPEC-implementation.md`](SPEC-implementation.md) §§9.8.1–9.9.
+The formal authority contract (the full list of allowed and disallowed mutations, plus the ordinary interaction resolver contract) is in [`technical-spec/product/SPEC-implementation.md`](../product/SPEC-implementation.md) §§9.8.1–9.9.
 
 ### Writing custom instructions
 
@@ -176,9 +176,9 @@ If what you actually want is "wake me when this is done," use a routine or an is
 
 | Topic                            | File                                                                  |
 | -------------------------------- | --------------------------------------------------------------------- |
-| Authority contract (formal)      | [`doc/SPEC-implementation.md`](SPEC-implementation.md) §9.9           |
-| Execution semantics (formal)     | [`doc/execution-semantics.md`](execution-semantics.md) §11           |
-| Silent active-run watchdog       | [`doc/execution-semantics.md`](execution-semantics.md) §12           |
+| Authority contract (formal)      | [`technical-spec/product/SPEC-implementation.md`](../product/SPEC-implementation.md) §9.9           |
+| Execution semantics (formal)     | [`technical-spec/architecture/execution-semantics.md`](execution-semantics.md) §11           |
+| Silent active-run watchdog       | [`technical-spec/architecture/execution-semantics.md`](execution-semantics.md) §12           |
 | Database schema                  | `packages/db/src/schema/issue_watchdogs.ts`                           |
 | Server service                   | `server/src/services/task-watchdogs.ts`                               |
 | Scope enforcement                | `server/src/services/task-watchdog-scope.ts`                          |

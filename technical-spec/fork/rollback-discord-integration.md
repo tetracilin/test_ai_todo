@@ -6,7 +6,7 @@ never to the live host-network Paperclip (port 3100) or the production `deploy/`
 project. Target time to execute the full revert is under 15 minutes.
 
 > **Superseded (hard fork, 2026-09-02):** `.github/workflows/discord-staging.yml`
-> was deleted with the rest of the non-`t3-*` workflows (see `doc/ORIGIN.md`).
+> was deleted with the rest of the non-`t3-*` workflows (see `technical-spec/fork/ORIGIN.md`).
 > This fork now ships only `t3-ci`, `t3-nightly` and `t3-release`, so the automated
 > `Discord staging deploy` path described below **no longer exists**. The compose
 > project, secrets layout, healthcheck probe and the manual recovery commands in
@@ -20,7 +20,7 @@ Scope and sources:
   (manual `Discord staging deploy` workflow), removed at the hard fork.
 - Service definition: `deploy-staging/compose.yaml` (project `t3-staging`).
 - Verification probe: `deploy-staging/scripts/healthcheck.sh`.
-- Integration contract: `docs/discord-integration.md`.
+- Integration contract: `technical-spec/designs/discord-integration.md`.
 
 ## 1. What "known good" means here
 
@@ -129,7 +129,7 @@ ssh "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
   "cd '$STAGING_DEPLOY_PATH/deploy-staging' && docker compose -f compose.yaml stop discord-bridge"
 ```
 
-The bridge holds no durable state (transport only; see `docs/discord-integration.md`
+The bridge holds no durable state (transport only; see `technical-spec/designs/discord-integration.md`
 §1), so stopping it loses nothing. Paperclip and Postgres keep serving.
 
 ## 4. Restore the previous Docker Compose service state

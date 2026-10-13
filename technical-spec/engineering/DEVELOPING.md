@@ -4,7 +4,7 @@ This project can run fully in local dev without setting up PostgreSQL manually.
 
 ## Deployment Modes
 
-For mode definitions and intended CLI behavior, see `doc/DEPLOYMENT-MODES.md`.
+For mode definitions and intended CLI behavior, see `technical-spec/architecture/DEPLOYMENT-MODES.md`.
 
 Current implementation status:
 
@@ -64,7 +64,7 @@ onboarding wizard and the New Agent dialog, if the CLI is on your `PATH`. Instal
 
 To offer other adapters, set the variable before `pnpm dev`, for example
 `PAPERCLIP_SELECTABLE_ADAPTER_TYPES=claude_local,codex_local,hermes_local`.
-See [Agent adapters](../docs/deploy/agent-adapters.md) for CLI prerequisites and for connecting to a
+See [Agent adapters](../fork/agent-adapters.md) for CLI prerequisites and for connecting to a
 Hermes Gateway.
 
 ## Storybook
@@ -102,7 +102,7 @@ accepting or updating baselines.
 > **No CI path since the hard fork.** The `Storybook Visual` GitHub Actions
 > workflow (`.github/workflows/storybook-visual.yml`) was deleted along with the
 > rest of upstream's workflows; this fork keeps only `t3-ci`, `t3-nightly` and
-> `t3-release` (see `doc/ORIGIN.md`). There is therefore no `storybook-visual` PR
+> `t3-release` (see `technical-spec/fork/ORIGIN.md`). There is therefore no `storybook-visual` PR
 > label and no hosted `ubuntu-latest` baseline runner. `pnpm test:storybook-visual`
 > and the baseline tooling are unchanged and still work locally on Linux — they are
 > simply not run by CI. Treat baselines produced on macOS or Windows as unreliable.
@@ -322,11 +322,11 @@ Or use Compose:
 docker compose -f docker/docker-compose.quickstart.yml up --build
 ```
 
-See `doc/DOCKER.md` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
+See `docker/` and `Dockerfile` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
 
 ## Docker For Untrusted PR Review
 
-For a separate review-oriented container that keeps `codex`/`claude` login state in Docker volumes and checks out PRs into an isolated scratch workspace, see `doc/UNTRUSTED-PR-REVIEW.md`.
+A separate review-oriented container for untrusted PRs was documented in `doc/UNTRUSTED-PR-REVIEW.md` (removed in the doc cleanup; see git history).
 
 ## Local Instance Layout
 
@@ -411,7 +411,7 @@ skills/paperclip/scripts/paperclip-upload-artifact.sh out/walkthrough.webm \
 
 The helper uploads the file as an issue attachment, creates an artifact work
 product by default, and prints markdown links for the final issue comment. See
-`doc/AGENT-ARTIFACTS.md` for the full completion pattern and direct API shape.
+`technical-spec/engineering/AGENT-ARTIFACTS.md` for the full completion pattern and direct API shape.
 If a file intentionally remains workspace-only, create a work product with
 `metadata.resourceRef.kind: "workspace_file"` and include the workspace-relative
 path in the final comment. Use browse/search only as the fallback for recovering
@@ -780,7 +780,7 @@ under `pnpm --filter @paperclipai/skills-catalog test`. Validation fails when:
 Trust level is derived from inventory: `markdown_only` (markdown + references
 only), `assets` (other non-script files), or `scripts_executables` (any
 executable script). The build contract is documented in
-`doc/plans/2026-05-26-skills-cli-catalog-contract.md`.
+`technical-spec/plans/2026-05-26-skills-cli-catalog-contract.md`.
 
 CI runs `pnpm --filter @paperclipai/skills-catalog validate` and the package's
 vitest suite, so always regenerate the manifest in the same commit as the
@@ -928,7 +928,7 @@ CLI configuration support:
 Per-company provider vaults are configured in the board UI under
 `Company Settings → Secrets → Provider vaults`, backed by
 `/api/companies/{companyId}/secret-provider-configs`. The CLI does not own
-vault lifecycle today. See `docs/deploy/secrets.md` (`Provider Vaults` section)
+vault lifecycle today. See `technical-spec/architecture/SECRETS-AWS-PROVIDER.md`
 for the operator model.
 
 Migration helper for existing inline env secrets:
@@ -976,7 +976,7 @@ pnpm paperclipai issue list
 pnpm paperclipai dashboard get
 ```
 
-See full command reference in `doc/CLI.md`.
+See full command reference in `technical-spec/engineering/CLI.md`.
 
 ## Agent Invite Onboarding Endpoints
 
@@ -993,7 +993,7 @@ The board UI generates agent onboarding prompts from the add-agent modal (`+` in
 Hermes gateway agents use this same generic agent invite flow with
 `adapterType=hermes_gateway` and `agentDefaultsPayload.apiBaseUrl` /
 `agentDefaultsPayload.apiKey`. See
-[HERMES_GATEWAY_ONBOARDING.md](./HERMES_GATEWAY_ONBOARDING.md) for the full
+[HERMES_GATEWAY_ONBOARDING.md](../fork/hermes/HERMES_GATEWAY_ONBOARDING.md) for the full
 operator path, including Hermes credentials, invite approval, key claim, and
 fresh-state Docker smoke setup.
 
