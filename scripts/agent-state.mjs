@@ -5,7 +5,18 @@
  * Pure state rules for the agent issue-to-PR loop: which issues are eligible,
  * label transitions, the daily PR cap and the CI-fix round count.
  * Design: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md sections 4 and 5.
+ *
+ * CLI (JSON on stdin, JSON on stdout):
+ *   node scripts/agent-state.mjs eligible   {"labels": ["agent-ready"]}
+ *   node scripts/agent-state.mjs daily-cap  {"prs": [{"createdAt": "...", "labels": ["agent-pr"]}], "now": "..."}
+ *   node scripts/agent-state.mjs rounds     {"messages": ["fix\n\nT3-Agent-Round: 1"]}
+ * Exit 0 on success, 2 on bad input.
  */
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 export const LABELS = Object.freeze({
   ready: "agent-ready",
@@ -58,5 +69,54 @@ export function applyEvent(labels, event) {
       return replace(labels, [LABELS.ready, LABELS.working, LABELS.pr], [LABELS.blocked]);
     default:
       throw new Error(`unknown event: ${event}`);
+  }
+}
+
+function startOfUtcDay(now) {
+  const date = new Date(now);
+  if (Number.isNaN(date.getTime())) throw new Error(`invalid date: ${now}`);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+export function dailyCap({ prs, now, cap = DAILY_PR_CAP }) {
+  const dayStart = startOfUtcDay(now);
+  const count = prs.filter((pr) => {
+    if (!pr.labels.includes(LABELS.pr)) return false;
+    const created = new Date(pr.createdAt).getTime();
+    if (Number.isNaN(created)) throw new Error(`invalid createdAt: ${pr.createdAt}`);
+    return created >= dayStart;
+  }).length;
+  return { count, cap, reached: count >= cap };
+}
+
+const ROUND_TRAILER = /^T3-Agent-Round:[ \t]*(\d+)[ \t]*$/gm;
+
+export function ciRounds({ messages, max = MAX_CI_ROUNDS }) {
+  let used = 0;
+  for (const message of messages) {
+    for (const match of message.matchAll(ROUND_TRAILER)) {
+      used = Math.max(used, Number(match[1]));
+    }
+  }
+  return { used, max, exhausted: used >= max, next: used + 1 };
+}
+
+function isMainModule() {
+  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isMainModule()) {
+  const command = process.argv[2];
+  try {
+    const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+    let result;
+    if (command === "eligible") result = isEligible(input.labels ?? []);
+    else if (command === "daily-cap") result = dailyCap({ prs: input.prs ?? [], now: input.now, cap: input.cap });
+    else if (command === "rounds") result = ciRounds({ messages: input.messages ?? [], max: input.max });
+    else throw new Error("usage: node scripts/agent-state.mjs <eligible|daily-cap|rounds> < input.json");
+    console.log(JSON.stringify(result));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(2);
   }
 }
