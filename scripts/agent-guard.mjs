@@ -25,6 +25,23 @@ const AGENT_SCRIPT_TEST = /^scripts\/__tests__\/agent-[^/]+\.test\.mjs$/;
 const MIGRATIONS_PREFIX = "packages/db/src/migrations/";
 const SYMLINK_MODE = "120000";
 
+const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+  "bundledDependencies",
+  "bundleDependencies",
+  "overrides",
+  "resolutions",
+  "pnpm",
+];
+
+const TEST_CASE = /^\s*(?:it|test)(?:\.\w+(?:\([^)]*\))?)*\s*\(/;
+const TEST_FILE = /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+const SKIP_MARKER =
+  /\b(?:it|test|describe)\.(?:skip|skipIf|runIf|todo|only)\b|\b(?:xit|xtest|xdescribe)\s*\(|\bvi\.retryTimes\b|\bretry\s*:\s*[1-9]|\.retry\(\s*[1-9]/;
+
 function protectedReason(p) {
   if (PROTECTED_PREFIXES.some((prefix) => p.startsWith(prefix))) return "pipeline or deploy file";
   if (PROTECTED_EXACT.has(p)) return "protected file";
@@ -36,6 +53,43 @@ function protectedReason(p) {
 
 function escapesRepo(p) {
   return p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.includes("\\") || p.split("/").includes("..");
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function dependencySections(text) {
+  const parsed = JSON.parse(text);
+  const out = {};
+  for (const name of DEPENDENCY_SECTIONS) {
+    if (parsed[name] !== undefined) out[name] = parsed[name];
+  }
+  return stableStringify(out);
+}
+
+function checkPackageJson(file, readBefore, readAfter) {
+  if (!readBefore || !readAfter) {
+    return "cannot verify dependency sections (no file reader supplied)";
+  }
+  const before = file.status === "added" ? "{}" : readBefore(file.oldPath ?? file.path);
+  const after = file.status === "deleted" ? null : readAfter(file.newPath ?? file.path);
+  if (before === null || before === undefined) return "cannot read the base package.json";
+  if (after === null || after === undefined) return "package.json deleted or unreadable";
+  try {
+    return dependencySections(before) === dependencySections(after)
+      ? null
+      : "dependency sections changed";
+  } catch {
+    return "package.json is not valid JSON";
+  }
 }
 
 export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {}) {
@@ -65,7 +119,21 @@ export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {
     }
     if (file.mode === SYMLINK_MODE) add("symlink", file.path, "symbolic links are not allowed");
     if (file.binary) add("binary", file.path, "binary changes cannot be reviewed");
-    // Task 3 adds the package.json and test-weakening checks here.
+    if (touched.some((p) => path.posix.basename(p) === "package.json")) {
+      const problem = checkPackageJson(file, readBefore, readAfter);
+      if (problem) add("dependency-change", file.path, problem);
+    }
+
+    if (touched.some((p) => TEST_FILE.test(p))) {
+      const removedCases = file.removedLines.filter((line) => TEST_CASE.test(line)).length;
+      const addedCases = file.addedLines.filter((line) => TEST_CASE.test(line)).length;
+      if (addedCases < removedCases) {
+        add("test-weakening", file.path, `${removedCases - addedCases} fewer test cases`);
+      }
+      if (file.addedLines.some((line) => SKIP_MARKER.test(line))) {
+        add("test-weakening", file.path, "adds a skip, todo, only or retry marker");
+      }
+    }
   }
 
   if (files.length > limits.maxFiles) {

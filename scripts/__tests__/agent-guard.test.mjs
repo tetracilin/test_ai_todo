@@ -159,3 +159,125 @@ test("several violations are all reported", () => {
   const patch = modifyPatch(".github/workflows/x.yml") + modifyPatch("packages/db/src/migrations/1.sql");
   assert.deepEqual(rules(checkPatch({ patch })).sort(), ["migration", "protected-path"]);
 });
+
+const testRemoved = ['it("one", () => {});', 'it("two", () => {});'];
+
+test("removing test cases is rejected", () => {
+  const verdict = checkPatch({
+    patch: modifyPatch("server/src/__tests__/a.test.ts", testRemoved, ['it("one", () => {});']),
+  });
+  assert.ok(rules(verdict).includes("test-weakening"));
+});
+
+test("rewriting a test without losing cases passes", () => {
+  const verdict = checkPatch({
+    patch: modifyPatch("server/src/__tests__/a.test.ts", testRemoved, [
+      'it("one renamed", () => {});',
+      'it("two", () => {});',
+    ]),
+  });
+  assert.equal(verdict.ok, true, JSON.stringify(verdict));
+});
+
+test("adding skip, todo, only or retry markers is rejected", () => {
+  for (const marker of [
+    'it.skip("x", () => {});',
+    'it.skipIf(cond)("x", () => {});',
+    'it.todo("x");',
+    'it.only("x", () => {});',
+    'describe.skip("x", () => {});',
+    'xit("x", () => {});',
+    "vi.retryTimes(3);",
+    "{ retry: 2 }",
+  ]) {
+    const verdict = checkPatch({
+      patch: modifyPatch("ui/src/a.test.tsx", ['it("x", () => {});'], [marker]),
+    });
+    assert.ok(rules(verdict).includes("test-weakening"), marker);
+  }
+});
+
+test("a test name that contains the word retry is not a retry marker", () => {
+  const verdict = checkPatch({
+    patch: modifyPatch("ui/src/a.test.tsx", ['it("x", () => {});'], ['it("retries a failed write", () => {});']),
+  });
+  assert.equal(verdict.ok, true, JSON.stringify(verdict));
+});
+
+test("deleting a whole test file is rejected", () => {
+  const patch = [
+    "diff --git a/ui/src/a.test.tsx b/ui/src/a.test.tsx",
+    "deleted file mode 100644",
+    "--- a/ui/src/a.test.tsx",
+    "+++ /dev/null",
+    "@@ -1,2 +0,0 @@",
+    '-it("a", () => {});',
+    '-it("b", () => {});',
+    "",
+  ].join("\n");
+  assert.ok(rules(checkPatch({ patch })).includes("test-weakening"));
+});
+
+const pkg = (deps) => JSON.stringify({ name: "x", version: "1.0.0", dependencies: deps }, null, 2);
+
+test("package.json changes outside dependency sections pass (nested workspace path)", () => {
+  const verdict = checkPatch({
+    patch: modifyPatch("packages/shared/package.json"),
+    readBefore: () => JSON.stringify({ name: "x", version: "1.0.0", dependencies: { a: "1" } }),
+    readAfter: () => JSON.stringify({ name: "x", version: "1.0.1", dependencies: { a: "1" } }),
+  });
+  assert.equal(verdict.ok, true, JSON.stringify(verdict));
+});
+
+test("package.json dependency changes are rejected; key reordering is not a change", () => {
+  const changed = checkPatch({
+    patch: modifyPatch("package.json"),
+    readBefore: () => pkg({ a: "1" }),
+    readAfter: () => pkg({ a: "1", b: "2" }),
+  });
+  assert.ok(rules(changed).includes("dependency-change"));
+
+  const reordered = checkPatch({
+    patch: modifyPatch("package.json"),
+    readBefore: () => pkg({ a: "1", b: "2" }),
+    readAfter: () => pkg({ b: "2", a: "1" }),
+  });
+  assert.equal(reordered.ok, true, JSON.stringify(reordered));
+});
+
+test("pnpm overrides count as dependency sections", () => {
+  const verdict = checkPatch({
+    patch: modifyPatch("package.json"),
+    readBefore: () => JSON.stringify({ name: "x" }),
+    readAfter: () => JSON.stringify({ name: "x", pnpm: { overrides: { a: "1" } } }),
+  });
+  assert.ok(rules(verdict).includes("dependency-change"));
+});
+
+test("a package.json the guard cannot verify fails closed", () => {
+  assert.ok(rules(checkPatch({ patch: modifyPatch("package.json") })).includes("dependency-change"));
+  const invalid = checkPatch({
+    patch: modifyPatch("package.json"),
+    readBefore: () => "{}",
+    readAfter: () => "{ not json",
+  });
+  assert.ok(rules(invalid).includes("dependency-change"));
+});
+
+test("a new package.json that declares dependencies is rejected", () => {
+  const patch = [
+    "diff --git a/packages/new/package.json b/packages/new/package.json",
+    "new file mode 100644",
+    "--- /dev/null",
+    "+++ b/packages/new/package.json",
+    "@@ -0,0 +1 @@",
+    "+{}",
+    "",
+  ].join("\n");
+  const verdict = checkPatch({
+    patch,
+    readBefore: () => null,
+    readAfter: () => pkg({ a: "1" }),
+  });
+  assert.ok(rules(verdict).includes("dependency-change"));
+});
