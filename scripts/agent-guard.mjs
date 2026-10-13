@@ -18,7 +18,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { parsePatch } from "./agent-patch.mjs";
+import { parsePatchChecked } from "./agent-patch.mjs";
 
 export const LIMITS = Object.freeze({ maxFiles: 15, maxChangedLines: 400 });
 
@@ -43,8 +43,9 @@ const DEPENDENCY_SECTIONS = [
 
 const TEST_CASE = /^\s*(?:it|test)(?:\.\w+(?:\([^)]*\))?)*\s*\(/;
 const TEST_FILE = /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+const RUNNABLE_TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIP_MARKER =
-  /\b(?:it|test|describe)\.(?:skip|skipIf|runIf|todo|only)\b|\b(?:xit|xtest|xdescribe)\s*\(|\bvi\.retryTimes\b|\bretry\s*:\s*[1-9]|\.retry\(\s*[1-9]/;
+  /\b(?:it|test|describe)\.(?:skip|skipIf|runIf|todo|only|fails|fail|fixme)\b|\b(?:xit|xtest|xdescribe)\s*\(|\bvi\.retryTimes\b|\bretry\s*:\s*[1-9]|\.retry\(\s*[1-9]/;
 
 function protectedReason(p) {
   if (PROTECTED_PREFIXES.some((prefix) => p.startsWith(prefix))) return "pipeline or deploy file";
@@ -55,8 +56,16 @@ function protectedReason(p) {
   return null;
 }
 
+// A path must be canonical: git collapses "a//b" and rejects "./a", so a prefix rule
+// applied to the raw text would miss ".github//workflows/ci.yml".
 function escapesRepo(p) {
-  return p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.includes("\\") || p.split("/").includes("..");
+  return (
+    p.startsWith("/") ||
+    /^[A-Za-z]:/.test(p) ||
+    p.includes("\\") ||
+    /[\u0000-\u001f]/.test(p) ||
+    p.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  );
 }
 
 function stableStringify(value) {
@@ -97,9 +106,13 @@ function checkPackageJson(file, readBefore, readAfter) {
 }
 
 export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {}) {
-  const files = parsePatch(patch ?? "");
+  const { files, problems } = parsePatchChecked(patch ?? "");
   const violations = [];
   const add = (rule, filePath, detail) => violations.push({ rule, path: filePath ?? null, detail });
+
+  // Anything the parser could not attribute to a file might be a change git still
+  // applies, so it is a violation in its own right.
+  for (const problem of problems) add("malformed-patch", null, problem);
 
   if (files.length === 0) {
     add("empty-patch", null, "the patch changes no files");
@@ -108,7 +121,7 @@ export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {
   let changedLines = 0;
   for (const file of files) {
     changedLines += file.added + file.removed;
-    const touched = [file.oldPath, file.newPath].filter((p, i, all) => p && all.indexOf(p) === i);
+    const touched = file.paths;
 
     if (touched.some(escapesRepo)) {
       add("path-escape", file.path, "path is absolute or leaves the repository");
@@ -126,6 +139,10 @@ export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {
     if (touched.some((p) => path.posix.basename(p) === "package.json")) {
       const problem = checkPackageJson(file, readBefore, readAfter);
       if (problem) add("dependency-change", file.path, problem);
+    }
+
+    if (file.oldPath && file.newPath && RUNNABLE_TEST.test(file.oldPath) && !RUNNABLE_TEST.test(file.newPath)) {
+      add("test-weakening", file.path, "a runnable test file was renamed to a name no runner picks up");
     }
 
     if (touched.some((p) => TEST_FILE.test(p))) {

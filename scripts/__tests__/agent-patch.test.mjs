@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parsePatch } from "../agent-patch.mjs";
+import { parsePatch, parsePatchChecked } from "../agent-patch.mjs";
 
 const modify = [
   "diff --git a/src/a.ts b/src/a.ts",
@@ -149,4 +149,88 @@ test("binary changes are flagged", () => {
 test("an empty patch yields no files", () => {
   assert.deepEqual(parsePatch(""), []);
   assert.deepEqual(parsePatch("\n\n"), []);
+});
+
+// ---- Final-review regressions: the parser must never attribute a header to the
+// wrong file, and anything it cannot attribute must be reported, not skipped. ----
+
+const WORKFLOW = ".github/workflows/ci.yml";
+const workflowHunk = [
+  `diff --git a/${WORKFLOW} b/${WORKFLOW}`,
+  `--- a/${WORKFLOW}`,
+  `+++ b/${WORKFLOW}`,
+  "@@ -1 +1 @@",
+  "-name: ci",
+  "+name: pwned",
+];
+
+test("a well-formed patch reports no problems, including 'No newline' markers", () => {
+  assert.deepEqual(parsePatchChecked(modify).problems, []);
+  const withMarker = [...workflowHunk, "\\ No newline at end of file", ""].join("\n");
+  assert.deepEqual(parsePatchChecked(withMarker).problems, []);
+});
+
+test("C1: header lines after a hunk are a problem and never replace the file's path", () => {
+  for (const trailer of [
+    ["--- a/README.md", "+++ b/README.md"],
+    ["--- /dev/null", "+++ /dev/null"],
+    ["rename from README.md", "rename to README.md"],
+  ]) {
+    const { files, problems } = parsePatchChecked([...workflowHunk, ...trailer, ""].join("\n"));
+    assert.ok(problems.length > 0, trailer.join(" | "));
+    assert.ok(files[0].paths.includes(WORKFLOW), trailer.join(" | "));
+  }
+});
+
+test("C2: a plain unified diff before the first 'diff --git' is a problem", () => {
+  const plain = [
+    `--- a/${WORKFLOW}`,
+    `+++ b/${WORKFLOW}`,
+    "@@ -1 +1 @@",
+    "-name: ci",
+    "+name: pwned",
+    ...modify.split("\n"),
+  ].join("\n");
+  assert.ok(parsePatchChecked(plain).problems.length > 0);
+});
+
+test("C3: copy from/to is parsed and both paths are recorded", () => {
+  const patch = [
+    "diff --git a/README.md b/README.md",
+    "similarity index 100%",
+    "copy from README.md",
+    "copy to .github/workflows/evil.yml",
+    "",
+  ].join("\n");
+  const { files, problems } = parsePatchChecked(patch);
+  assert.deepEqual(problems, []);
+  assert.equal(files[0].status, "copied");
+  assert.equal(files[0].oldPath, "README.md");
+  assert.equal(files[0].newPath, ".github/workflows/evil.yml");
+  assert.ok(files[0].paths.includes(".github/workflows/evil.yml"));
+});
+
+test("every path a record mentions is in paths, even when headers disagree", () => {
+  const patch = [
+    "diff --git a/one.txt b/two.txt",
+    "--- a/three.txt",
+    "+++ b/four.txt",
+    "@@ -1 +1 @@",
+    "-a",
+    "+b",
+    "",
+  ].join("\n");
+  const [file] = parsePatchChecked(patch).files;
+  assert.deepEqual([...file.paths].sort(), ["four.txt", "one.txt", "three.txt", "two.txt"]);
+});
+
+test("unrecognised lines outside a hunk and truncated hunks are problems", () => {
+  const garbage = ["diff --git a/f.txt b/f.txt", "totally unknown header", "--- a/f.txt", "+++ b/f.txt", ""].join("\n");
+  assert.ok(parsePatchChecked(garbage).problems.length > 0);
+  const truncated = ["diff --git a/f.txt b/f.txt", "--- a/f.txt", "+++ b/f.txt", "@@ -1,3 +1,3 @@", " only one line", ""].join("\n");
+  assert.ok(parsePatchChecked(truncated).problems.length > 0);
+});
+
+test("parsePatch still returns just the files", () => {
+  assert.equal(parsePatch(modify).length, 1);
 });

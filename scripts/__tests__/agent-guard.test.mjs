@@ -343,3 +343,99 @@ test("the CLI exits 2 with usage when no patch file is given", () => {
     (error) => error.status === 2 && /usage/.test(error.stderr),
   );
 });
+
+// ---- Final-review regressions: patches git applies but a hand parser used to miss. ----
+
+const CI = ".github/workflows/ci.yml";
+const ciHunk = [
+  `diff --git a/${CI} b/${CI}`,
+  `--- a/${CI}`,
+  `+++ b/${CI}`,
+  "@@ -1 +1 @@",
+  "-name: ci",
+  "+name: pwned",
+];
+
+test("C1: header lines after a hunk cannot hide a workflow edit", () => {
+  for (const trailer of [
+    ["--- a/README.md", "+++ b/README.md"],
+    ["--- /dev/null", "+++ /dev/null"],
+    ["rename from README.md", "rename to README.md"],
+  ]) {
+    const verdict = checkPatch({ patch: [...ciHunk, ...trailer, ""].join("\n") });
+    assert.equal(verdict.ok, false, trailer.join(" | "));
+    assert.ok(rules(verdict).includes("protected-path"), trailer.join(" | "));
+    assert.ok(rules(verdict).includes("malformed-patch"), trailer.join(" | "));
+  }
+});
+
+test("C2: a plain unified diff in front of a normal one is rejected", () => {
+  const plain = [`--- a/${CI}`, `+++ b/${CI}`, "@@ -1 +1 @@", "-name: ci", "+name: pwned"].join("\n");
+  const verdict = checkPatch({ patch: plain + "\n" + modifyPatch("README.md") });
+  assert.equal(verdict.ok, false);
+  assert.ok(rules(verdict).includes("malformed-patch"));
+});
+
+test("C3: copying a file into a protected directory is rejected", () => {
+  const patch = [
+    "diff --git a/README.md b/README.md",
+    "similarity index 100%",
+    "copy from README.md",
+    "copy to .github/workflows/evil.yml",
+    "",
+  ].join("\n");
+  assert.ok(rules(checkPatch({ patch })).includes("protected-path"));
+});
+
+test("C4: doubled slashes and dot segments do not slip past prefix rules", () => {
+  for (const sneaky of [
+    ".github//workflows/ci.yml",
+    "deploy//compose.yaml",
+    "CICD//PLAN_CICD.md",
+    "scripts//agent-guard.mjs",
+    "packages/db/src//migrations/0099_x.sql",
+    ".github/./workflows/ci.yml",
+    "./README.md",
+    "docs/",
+  ]) {
+    const verdict = checkPatch({ patch: modifyPatch(sneaky) });
+    assert.equal(verdict.ok, false, sneaky);
+    assert.ok(rules(verdict).includes("path-escape"), sneaky);
+  }
+});
+
+test("I5: renaming a runnable test file to a non-test name is rejected", () => {
+  const patch = [
+    "diff --git a/src/__tests__/a.test.ts b/src/__tests__/a.test.ts.off",
+    "similarity index 100%",
+    "rename from src/__tests__/a.test.ts",
+    "rename to src/__tests__/a.test.ts.off",
+    "",
+  ].join("\n");
+  assert.ok(rules(checkPatch({ patch })).includes("test-weakening"));
+});
+
+test("renaming a test file to another test file name is allowed", () => {
+  const patch = [
+    "diff --git a/src/a.test.ts b/src/b.test.ts",
+    "similarity index 100%",
+    "rename from src/a.test.ts",
+    "rename to src/b.test.ts",
+    "",
+  ].join("\n");
+  assert.equal(checkPatch({ patch }).ok, true);
+});
+
+test("I6: marking a test as expected-to-fail is rejected", () => {
+  for (const marker of [
+    'it.fails("a", () => {});',
+    'test.fails("a", () => {});',
+    'test.fail("a", () => {});',
+    'test.fixme("a", () => {});',
+  ]) {
+    const verdict = checkPatch({
+      patch: modifyPatch("ui/src/a.test.tsx", ['it("a", () => {});'], [marker]),
+    });
+    assert.ok(rules(verdict).includes("test-weakening"), marker);
+  }
+});
