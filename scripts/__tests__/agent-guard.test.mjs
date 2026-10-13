@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { LIMITS, checkPatch } from "../agent-guard.mjs";
+import { LIMITS, checkPatch, runCheck } from "../agent-guard.mjs";
 
 // Builds a one-hunk "modified" patch for a path.
 function modifyPatch(file, removed = ["old"], added = ["new"]) {
@@ -280,4 +285,61 @@ test("a new package.json that declares dependencies is rejected", () => {
     readAfter: () => pkg({ a: "1" }),
   });
   assert.ok(rules(verdict).includes("dependency-change"));
+});
+
+// End to end with a real repository: init, commit, change files, run the guard.
+const guardScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "agent-guard.mjs");
+
+function git(cwd, ...args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8" });
+}
+
+function makeRepo() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "agent-guard-"));
+  git(dir, "init", "-q");
+  git(dir, "config", "user.email", "t@example.com");
+  git(dir, "config", "user.name", "t");
+  git(dir, "config", "core.autocrlf", "false");
+  mkdirSync(path.join(dir, "src"));
+  writeFileSync(path.join(dir, "src", "a.ts"), "old\n");
+  writeFileSync(path.join(dir, "package.json"), pkg({ a: "1" }) + "\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  return dir;
+}
+
+test("runCheck reads real before/after files from a repository", () => {
+  const dir = makeRepo();
+  writeFileSync(path.join(dir, "src", "a.ts"), "new\n");
+  writeFileSync(path.join(dir, "package.json"), pkg({ a: "1", b: "2" }) + "\n");
+  const patchText = git(dir, "diff");
+  const verdict = runCheck({ patchText, repoRoot: dir });
+  assert.deepEqual(rules(verdict), ["dependency-change"]);
+});
+
+test("the CLI exits 0 for a clean patch and 1 for a violation", () => {
+  const dir = makeRepo();
+  writeFileSync(path.join(dir, "src", "a.ts"), "new\n");
+  const clean = path.join(dir, "clean.patch");
+  writeFileSync(clean, git(dir, "diff"));
+  git(dir, "checkout", "-q", "--", "src/a.ts");
+  const ok = execFileSync(process.execPath, [guardScript, clean], { cwd: dir, encoding: "utf8" });
+  assert.equal(JSON.parse(ok).ok, true);
+
+  mkdirSync(path.join(dir, ".github", "workflows"), { recursive: true });
+  writeFileSync(path.join(dir, ".github", "workflows", "x.yml"), "a: 1\n");
+  git(dir, "add", "-N", ".github");
+  const bad = path.join(dir, "bad.patch");
+  writeFileSync(bad, git(dir, "diff"));
+  assert.throws(
+    () => execFileSync(process.execPath, [guardScript, bad], { cwd: dir, encoding: "utf8", stdio: "pipe" }),
+    (error) => error.status === 1 && JSON.parse(error.stdout).violations[0].rule === "protected-path",
+  );
+});
+
+test("the CLI exits 2 with usage when no patch file is given", () => {
+  assert.throws(
+    () => execFileSync(process.execPath, [guardScript], { encoding: "utf8", stdio: "pipe" }),
+    (error) => error.status === 2 && /usage/.test(error.stderr),
+  );
 });

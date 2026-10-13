@@ -12,7 +12,11 @@
  * Prints a JSON verdict. Exit 0 = ok, 1 = violations, 2 = usage error.
  */
 
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { parsePatch } from "./agent-patch.mjs";
 
@@ -148,4 +152,45 @@ export function checkPatch({ patch, readBefore, readAfter, limits = LIMITS } = {
     violations,
     stats: { files: files.length, changedLines },
   };
+}
+
+function gitShowHead(repoRoot, relativePath) {
+  try {
+    return execFileSync("git", ["show", `HEAD:${relativePath}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function runCheck({ patchText, repoRoot }) {
+  return checkPatch({
+    patch: patchText,
+    readBefore: (relativePath) => gitShowHead(repoRoot, relativePath),
+    readAfter: (relativePath) => {
+      try {
+        return readFileSync(path.join(repoRoot, relativePath), "utf8");
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
+function isMainModule() {
+  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isMainModule()) {
+  const patchFile = process.argv[2];
+  if (!patchFile) {
+    console.error("usage: node scripts/agent-guard.mjs <patch-file>");
+    process.exit(2);
+  }
+  const verdict = runCheck({ patchText: readFileSync(patchFile, "utf8"), repoRoot: process.cwd() });
+  console.log(JSON.stringify(verdict, null, 2));
+  process.exit(verdict.ok ? 0 : 1);
 }
