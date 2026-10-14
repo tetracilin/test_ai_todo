@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  createScheduledIssueSchema,
   createSchedulingRoutineSchema,
   generateSchedulingRoutineIssuesSchema,
   updateSchedulingRoutineSchema,
@@ -175,6 +176,63 @@ export function schedulingRoutes(db: Db) {
     const result = await svc.listScheduledIssues(companyId, { from, to, limit, cursor });
     res.json(result);
   });
+
+  router.post(
+    "/companies/:companyId/scheduled-issues",
+    validate(createScheduledIssueSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCanGenerate(req, companyId);
+      const actor = getActorInfo(req);
+      const publications: ActivityPublication[] = [];
+      const ids = actorIds(req);
+      const result = await svc.createScheduledIssue(
+        companyId,
+        req.body,
+        { agentId: ids.agentId ?? null, userId: ids.userId },
+        async (tx, created) => {
+            if (created.deduplicated) return;
+            const txDb = tx as unknown as Db;
+            const base = {
+              companyId,
+              actorType: actor.actorType,
+              actorId: actor.actorId,
+              agentId: actor.agentId,
+              runId: actor.runId,
+              agentApiKeyId: actor.agentApiKeyId,
+              entityType: "issue",
+              entityId: created.issueId,
+            };
+            await logActivity(
+              txDb,
+              { ...base, action: "issue.created", details: { title: created.title, identifier: created.identifier } },
+              publications,
+            );
+            await logActivity(
+              txDb,
+              {
+                ...base,
+                action: "issue.scheduling_updated",
+                details: {
+                  scheduledAt: created.scheduling.scheduledAt,
+                  deferUntil: created.scheduling.deferUntil,
+                  scheduledDurationMinutes: created.scheduling.scheduledDurationMinutes,
+                  _previous: null,
+                },
+              },
+              publications,
+            );
+        },
+      );
+      for (const publication of publications) publishActivity(publication);
+      res.status(result.deduplicated ? 200 : 201).json({
+        issueId: result.issueId,
+        identifier: result.identifier,
+        title: result.title,
+        scheduling: result.scheduling,
+      });
+    },
+  );
 
   // --- Recurring scheduling routines (templates) ---
 

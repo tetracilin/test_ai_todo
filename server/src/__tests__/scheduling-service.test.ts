@@ -139,6 +139,56 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(second.scheduling.scheduledDurationMinutes).toBe(45);
   });
 
+  it("creates an issue with an estimate and no time, atomically", async () => {
+    const { companyId, svc } = await seedFixture();
+    const result = await svc.createScheduledIssue(
+      companyId,
+      { title: "Quick task", estimateMinutes: 45 },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(result.deduplicated).toBe(false);
+    expect(result.title).toBe("Quick task");
+    expect(result.scheduling.scheduledAt).toBeNull();
+    expect(result.scheduling.scheduledDurationMinutes).toBe(45);
+    const rows = await db.select().from(issueScheduling).where(eq(issueScheduling.issueId, result.issueId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("returns the same issue for a repeated clientRequestId", async () => {
+    const { companyId, svc } = await seedFixture();
+    const clientRequestId = randomUUID();
+    const first = await svc.createScheduledIssue(
+      companyId,
+      { title: "Once", estimateMinutes: 30, clientRequestId },
+      { agentId: null, userId: "user-1" },
+    );
+    const second = await svc.createScheduledIssue(
+      companyId,
+      { title: "Once", estimateMinutes: 30, clientRequestId },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(second.issueId).toBe(first.issueId);
+    expect(second.deduplicated).toBe(true);
+    const rows = await db.select().from(issueScheduling).where(eq(issueScheduling.companyId, companyId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rolls back the issue when the after-write hook fails", async () => {
+    const { companyId, svc } = await seedFixture();
+    await expect(
+      svc.createScheduledIssue(
+        companyId,
+        { title: "Rolled back", estimateMinutes: 30 },
+        { agentId: null, userId: "user-1" },
+        async () => {
+          throw new Error("activity failed");
+        },
+      ),
+    ).rejects.toThrow("activity failed");
+    const rows = await db.select().from(issues).where(eq(issues.companyId, companyId));
+    expect(rows).toHaveLength(0);
+  });
+
   it("rejects scheduling lookups for an issue in a different company", async () => {
     const { issueSvc, svc } = await seedFixture();
     const other = await seedFixture();

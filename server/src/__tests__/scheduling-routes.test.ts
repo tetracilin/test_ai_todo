@@ -9,6 +9,7 @@ const mockSchedulingService = vi.hoisted(() => ({
   upsertIssueScheduling: vi.fn(),
   upsertIssueSchedulingWithPrevious: vi.fn(),
   clearIssueScheduling: vi.fn(),
+  createScheduledIssue: vi.fn(),
   listScheduledIssues: vi.fn(),
   listRoutines: vi.fn(),
   getRoutine: vi.fn(),
@@ -122,6 +123,70 @@ describe("scheduling routes", () => {
 
     expect(res.status).toBe(500);
     expect(mockPublishActivity).not.toHaveBeenCalled();
+  });
+
+  it("creates a scheduled issue and logs issue.created and issue.scheduling_updated", async () => {
+    const created = {
+      issueId: "33333333-3333-4333-8333-333333333333",
+      identifier: "T-9",
+      title: "Quick task",
+      deduplicated: false,
+      scheduling: {
+        issueId: "33333333-3333-4333-8333-333333333333", companyId, scheduledAt: null, deferUntil: null,
+        scheduledDurationMinutes: 45, createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+      },
+    };
+    mockSchedulingService.createScheduledIssue.mockImplementation(
+      async (_c: string, _i: unknown, _a: unknown, afterWrite?: (tx: unknown, r: unknown) => Promise<void>) => {
+        await afterWrite?.({}, created);
+        return created;
+      },
+    );
+    mockLogActivity.mockImplementation(async (_db: unknown, _input: unknown, pubs?: unknown[]) => {
+      pubs?.push({ companyId, payload: {}, pluginEvent: null });
+      return { id: "activity-1" };
+    });
+
+    const res = await request(await createApp(editorActor()))
+      .post(`/api/companies/${companyId}/scheduled-issues`)
+      .send({ title: "Quick task", estimateMinutes: 45 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.issueId).toBe(created.issueId);
+    const actions = mockLogActivity.mock.calls.map((call) => (call[1] as { action: string }).action);
+    expect(actions).toEqual(["issue.created", "issue.scheduling_updated"]);
+    expect(mockPublishActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 200 and logs nothing when the request was already handled", async () => {
+    const created = {
+      issueId: "33333333-3333-4333-8333-333333333333", identifier: "T-9", title: "Quick task", deduplicated: true,
+      scheduling: {
+        issueId: "33333333-3333-4333-8333-333333333333", companyId, scheduledAt: null, deferUntil: null,
+        scheduledDurationMinutes: 45, createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+      },
+    };
+    mockSchedulingService.createScheduledIssue.mockImplementation(
+      async (_c: string, _i: unknown, _a: unknown, afterWrite?: (tx: unknown, r: unknown) => Promise<void>) => {
+        await afterWrite?.({}, created);
+        return created;
+      },
+    );
+
+    const res = await request(await createApp(editorActor()))
+      .post(`/api/companies/${companyId}/scheduled-issues`)
+      .send({ title: "Quick task", estimateMinutes: 45, clientRequestId: "44444444-4444-4444-8444-444444444444" });
+
+    expect(res.status).toBe(200);
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty title with 400 before calling the service", async () => {
+    const res = await request(await createApp(editorActor()))
+      .post(`/api/companies/${companyId}/scheduled-issues`)
+      .send({ title: "   " });
+    expect(res.status).toBe(400);
+    expect(mockSchedulingService.createScheduledIssue).not.toHaveBeenCalled();
   });
 
   it(

@@ -2,12 +2,14 @@ import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companyMemberships, issueScheduling, issues, projects, schedulingRoutines } from "@paperclipai/db";
 import type {
+  CreateScheduledIssue,
   CreateSchedulingRoutine,
   GenerateSchedulingRoutineIssues,
   UpdateSchedulingRoutine,
   UpsertIssueScheduling,
 } from "@paperclipai/shared";
 import type {
+  CreateScheduledIssueResult,
   GenerateSchedulingRoutineIssuesResult,
   IssueScheduling,
   ScheduledIssueListItem,
@@ -520,11 +522,63 @@ export function schedulingService(db: Db) {
     return results;
   }
 
+  async function createScheduledIssue(
+    companyId: string,
+    input: CreateScheduledIssue,
+    actor: { agentId: string | null; userId: string | null },
+    afterWrite?: (
+      tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+      result: CreateScheduledIssueResult & { deduplicated: boolean },
+    ) => Promise<void>,
+  ): Promise<CreateScheduledIssueResult & { deduplicated: boolean }> {
+    return db.transaction(async (tx) => {
+      let deduplicated = false;
+      const issue = await issueService(tx as unknown as Db).create(companyId, {
+        title: input.title,
+        status: "todo",
+        projectId: input.projectId ?? null,
+        createdByAgentId: actor.agentId,
+        createdByUserId: actor.userId,
+        idempotencyKey: input.clientRequestId ?? null,
+        onDeduplicated: () => {
+          deduplicated = true;
+        },
+      });
+      const [inserted] = await tx
+        .insert(issueScheduling)
+        .values({
+          issueId: issue.id,
+          companyId,
+          scheduledAt: input.scheduledAt ?? null,
+          scheduledDurationMinutes: input.estimateMinutes ?? null,
+        })
+        .onConflictDoNothing()
+        .returning();
+      const row =
+        inserted ??
+        (await tx
+          .select()
+          .from(issueScheduling)
+          .where(eq(issueScheduling.issueId, issue.id))
+          .then((rows) => rows[0]!));
+      const result = {
+        issueId: issue.id,
+        identifier: issue.identifier ?? null,
+        title: issue.title,
+        scheduling: toIssueScheduling(row),
+        deduplicated,
+      };
+      if (afterWrite) await afterWrite(tx, result);
+      return result;
+    });
+  }
+
   return {
     getIssueScheduling,
     upsertIssueScheduling,
     upsertIssueSchedulingWithPrevious,
     clearIssueScheduling,
+    createScheduledIssue,
     listScheduledIssues,
     listRoutines,
     getRoutine,
