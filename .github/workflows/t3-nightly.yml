@@ -417,7 +417,14 @@ jobs:
         # test:run:general / test:run:serialized include, so
         # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
         # test file that imports it (ERR_MODULE_NOT_FOUND).
-        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm test:run
+        #
+        # workspace-runtime.test.ts runs in its own job below (non-blocking), so
+        # one flaky suite cannot fail this job or close the deploy gate. The flag
+        # only skips RUNNING it here; the runner still excludes it from the
+        # general-server lane, so it does not run twice or by accident.
+        run: >-
+          pnpm --filter @paperclipai/plugin-sdk ensure-build-deps &&
+          pnpm test:run --skip-suite server/src/__tests__/workspace-runtime.test.ts
 
 
       - name: Discord report (vitest)
@@ -430,4 +437,65 @@ jobs:
           [[ -n "$WEBHOOK" ]] || exit 0
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           jq -n --arg c "$(printf '⚠️ nightly slow-tests FAILED on develop\n<%s>' "$run_url")" '{content: $c}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  # workspace-runtime.test.ts, on its own.
+  #
+  # It builds real git worktrees and runs pnpm installs, takes about 2 minutes, and
+  # failed once (2026-10-13) on a busy runner. A separate job means:
+  #  - a failure here does not fail slow-tests, so it cannot close the deploy gate;
+  #  - it can be re-run alone from the Actions page ("Re-run failed jobs") to debug;
+  #  - its full log is kept as an artifact.
+  #
+  # continue-on-error keeps the workflow run green when this job fails, and the
+  # deploy job does not `needs:` it. The cost is that a real regression in
+  # workspace setup no longer blocks a deploy. The Discord report below, and the red
+  # job in the Actions UI, are how it is noticed. To make it blocking again, add it
+  # to deploy's `needs:` and remove continue-on-error.
+  workspace-runtime:
+    name: workspace-runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: workspace-runtime suite
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+          pnpm test:run --mode serialized --only-suite server/src/__tests__/workspace-runtime.test.ts 2>&1 | tee workspace-runtime.log
+
+      - name: Upload workspace-runtime log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-runtime-log
+          path: workspace-runtime.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Discord report (workspace-runtime)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          jq -n --arg c "$(printf '⚠️ nightly workspace-runtime FAILED on develop (non-blocking, deploy not affected)\n<%s>' "$run_url")" '{content: $c}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
