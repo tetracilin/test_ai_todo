@@ -16,6 +16,7 @@ import {
   formatSummary,
   normalizeExitStatus,
 } from "../vitest-run-summary.mjs";
+import { applySuiteFilter, validateSuiteFilter } from "../vitest-suite-filter.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const script = path.join(repoRoot, "scripts", "run-vitest-stable.mjs");
@@ -349,4 +350,86 @@ test("an all-green run exits 0 and prints the summary", () => {
   );
   assert.equal(result.status, 0, output);
   assert.match(result.stdout, /0 failed/);
+});
+
+// ---- --only-suite / --skip-suite: run one serialized suite on its own job, and
+// keep it out of the main slow-tests run, without losing the exclusion that stops
+// the general-server lane from picking it up. ----
+
+const WORKSPACE_RUNTIME = "server/src/__tests__/workspace-runtime.test.ts";
+const SUITES = ["a.test.ts", "b.test.ts", "c.test.ts"];
+
+test("applySuiteFilter keeps only, drops skip, and passes everything through by default", () => {
+  assert.deepEqual(applySuiteFilter(SUITES, {}), SUITES);
+  assert.deepEqual(applySuiteFilter(SUITES, { only: ["b.test.ts"] }), ["b.test.ts"]);
+  assert.deepEqual(applySuiteFilter(SUITES, { skip: ["b.test.ts"] }), ["a.test.ts", "c.test.ts"]);
+  assert.deepEqual(applySuiteFilter(SUITES, { only: [], skip: [] }), SUITES);
+});
+
+test("applySuiteFilter refuses to combine only and skip", () => {
+  assert.throws(() => applySuiteFilter(SUITES, { only: ["a.test.ts"], skip: ["b.test.ts"] }), /cannot combine/);
+});
+
+test("validateSuiteFilter names every suite that does not exist", () => {
+  assert.deepEqual(validateSuiteFilter(SUITES, { only: ["a.test.ts"] }), []);
+  const errors = validateSuiteFilter(SUITES, { skip: ["a.test.ts", "typo.test.ts"], only: [] });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /typo.test.ts/);
+});
+
+function suiteDryRun(args) {
+  const result = spawnSync(process.execPath, [script, ...args, "--dry-run"], { cwd: repoRoot, encoding: "utf8" });
+  return { result, json: result.status === 0 ? JSON.parse(result.stdout) : null };
+}
+
+test("--only-suite selects exactly that serialized suite", () => {
+  const { result, json } = suiteDryRun(["--mode", "serialized", "--only-suite", WORKSPACE_RUNTIME]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(json.selectedSerializedSuites, [WORKSPACE_RUNTIME]);
+  assert.deepEqual(json.onlySuites, [WORKSPACE_RUNTIME]);
+});
+
+test("--skip-suite removes that suite from the serialized run and nothing else", () => {
+  const all = suiteDryRun(["--mode", "serialized"]).json.selectedSerializedSuites;
+  const { result, json } = suiteDryRun(["--mode", "serialized", "--skip-suite", WORKSPACE_RUNTIME]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(all.includes(WORKSPACE_RUNTIME));
+  assert.equal(json.selectedSerializedSuites.length, all.length - 1);
+  assert.ok(!json.selectedSerializedSuites.includes(WORKSPACE_RUNTIME));
+});
+
+test("an unknown suite, only with skip, and --only-suite outside serialized mode all fail", () => {
+  const unknown = suiteDryRun(["--mode", "serialized", "--only-suite", "server/src/__tests__/no-such.test.ts"]);
+  assert.equal(unknown.result.status, 1);
+  assert.match(unknown.result.stderr, /no-such.test.ts/);
+
+  const both = suiteDryRun(["--mode", "serialized", "--only-suite", WORKSPACE_RUNTIME, "--skip-suite", WORKSPACE_RUNTIME]);
+  assert.equal(both.result.status, 1);
+  assert.match(both.result.stderr, /cannot combine/);
+
+  const wrongMode = suiteDryRun(["--mode", "all", "--only-suite", WORKSPACE_RUNTIME]);
+  assert.equal(wrongMode.result.status, 1);
+  assert.match(wrongMode.result.stderr, /--only-suite/);
+});
+
+test("--only-suite runs exactly one vitest invocation, for that file", () => {
+  const { result, calls, output } = runWithFakePnpm(["--mode", "serialized", "--only-suite", WORKSPACE_RUNTIME], "^$never-matches");
+  assert.equal(result.status, 0, output);
+  assert.equal(calls.length, 1, output);
+  assert.ok(calls[0].includes(WORKSPACE_RUNTIME), calls[0]);
+});
+
+test("--skip-suite in a full run drops the serialized invocation but the general-server lane still excludes the file", () => {
+  const { result, calls, output } = runWithFakePnpm(["--mode", "all", "--skip-suite", WORKSPACE_RUNTIME], "^$never-matches");
+  assert.equal(result.status, 0, output);
+  assert.ok(
+    !calls.some((call) => call.includes(WORKSPACE_RUNTIME + " --pool=forks")),
+    "workspace-runtime must not run as a serialized suite",
+  );
+  const generalServer = calls.find((call) => call.includes("--exclude") && call.includes("@paperclipai/server"));
+  assert.ok(generalServer, "expected the general-server invocation");
+  assert.ok(
+    generalServer.includes("--exclude src/__tests__/workspace-runtime.test.ts"),
+    "the general-server lane must keep excluding the skipped suite, or it would run there instead",
+  );
 });
