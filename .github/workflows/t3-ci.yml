@@ -70,6 +70,11 @@ jobs:
         run: node --test ./scripts/__tests__/e2e-shard.test.mjs
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Test agent loop guard and state scripts
+        # The guard decides whether an agent patch may be pushed
+        # (docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md section 5).
+        # List the files: Node 22 does not accept a directory argument to --test.
+        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs
       - name: Test plugin-SDK dev symlinker
         # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
         # otherwise release-only and is deleted with the rest of upstream's
