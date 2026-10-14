@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import express, { type Router } from "express";
 import { isNotNull } from "drizzle-orm";
 import {
+  activityLog,
   companies,
   companyMemberships,
   createDb,
@@ -133,6 +134,9 @@ export function routeApp(db: Db, actor: BoardActor, ...routerFactories: RouterFa
  * Suites that seed other tables need their own reset.
  */
 export async function resetCompanyIssueFixtures(db: Db) {
+  // Routes that write issues also write audit rows, and activity_log references
+  // companies. Clear it first or the company delete below fails its foreign key.
+  await db.delete(activityLog);
   await db.delete(issues).where(isNotNull(issues.parentId));
   await db.delete(issues);
   await db.delete(principalPermissionGrants);
