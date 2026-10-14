@@ -13,8 +13,7 @@ package stores — the package stores the values, Paperclip stores the
 connection, the profile/policy decisions, and the audit log.
 
 This package pairs with the operator guide in
-[doc/MCP-ACCESS-GOVERNANCE.md](../../doc/MCP-ACCESS-GOVERNANCE.md) and the
-recorded walkthrough in [doc/MCP-DEMO-SCRIPT.md](../../doc/MCP-DEMO-SCRIPT.md).
+[technical-spec/architecture/MCP-ACCESS-GOVERNANCE.md](../../technical-spec/architecture/MCP-ACCESS-GOVERNANCE.md). The recorded walkthrough (`doc/MCP-DEMO-SCRIPT.md`) was removed in the doc cleanup; see git history.
 
 ## What you get
 
@@ -133,7 +132,7 @@ If a token is set, add the `credentialValues` block:
   this server into a local-stdio template.
 
 For the full transport policy across deployment modes, see
-[MCP-ACCESS-GOVERNANCE.md → Local trusted deployment](../../doc/MCP-ACCESS-GOVERNANCE.md#local-trusted-deployment).
+[MCP-ACCESS-GOVERNANCE.md → Local trusted deployment](../../technical-spec/architecture/MCP-ACCESS-GOVERNANCE.md#local-trusted-deployment).
 
 ## What you should see in Paperclip
 
@@ -152,8 +151,8 @@ After the wizard finishes, expect:
   approve. Calls to `kv_delete` show `tool_gateway.call_denied` with
   `reasonCode: quarantined_catalog_entry`.
 
-The recorded walkthrough in [doc/MCP-DEMO-SCRIPT.md](../../doc/MCP-DEMO-SCRIPT.md)
-runs all three cases end-to-end against this package and matches the audit
+The recorded walkthrough (`doc/MCP-DEMO-SCRIPT.md`, removed in the doc cleanup; see git history)
+ran all three cases end-to-end against this package and matches the audit
 rows above.
 
 ## What lives where

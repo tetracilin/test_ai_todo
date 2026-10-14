@@ -83,7 +83,7 @@ function ExperimentalBadge() {
  *   `queryKeys.plugins.all` so the list refreshes automatically.
  *
  * @see PluginSettings — linked from the Settings icon on each plugin row.
- * @see doc/plugins/PLUGIN_SPEC.md §3 — Plugin Lifecycle for status semantics.
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md §3 — Plugin Lifecycle for status semantics.
  */
 export function PluginManager() {
   const { selectedCompany } = useCompany();

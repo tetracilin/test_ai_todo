@@ -97,7 +97,7 @@ Record the classification in the PR body. Then delete `pr.yml`.
 **ASSUMPTION A7:** the failing `pr.yml` jobs fail for infrastructure reasons (missing upstream secrets, runner limits), not because the todo-merge broke paperclip tests. **Verify by reading one failed run's first error.** If tests genuinely fail on the merged code, that is a code bug: open a separate `fix/*` PR; do not drop the test.
 
 ### 1.3 Record the fork
-Create `doc/ORIGIN.md`:
+Create `technical-spec/fork/ORIGIN.md`:
 ```
 Hard fork of https://github.com/paperclipai/paperclip
 Forked at upstream commit: <sha>   (git merge-base HEAD <last upstream sha>)
@@ -114,7 +114,7 @@ Remove the remote: `git remote remove upstream` (on every clone that has it, inc
 ### 1.5 Prevent accidental publish
 - `package.json`: set `"private": true` at the root (and in any workspace package that upstream published to npm), or rename the package scope. **ASSUMPTION A8:** check whether any workspace package is published; `pnpm -r exec npm pkg get name` lists them.
 
-Acceptance: `.github/workflows/` contains only `t3-ci.yml`, `t3-nightly.yml`, `t3-release.yml`; `git remote -v` shows only `origin`; `doc/ORIGIN.md` exists; `t3-ci` green on the PR.
+Acceptance: `.github/workflows/` contains only `t3-ci.yml`, `t3-nightly.yml`, `t3-release.yml`; `git remote -v` shows only `origin`; `technical-spec/fork/ORIGIN.md` exists; `t3-ci` green on the PR.
 
 ---
 
@@ -286,7 +286,7 @@ echo "FAILED: $url did not become healthy with commit $want" >&2; exit 1
 
 Marks verified against the repo and the Actions API on 2026-09-07.
 
-- [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `doc/ORIGIN.md`, remote removed, `private: true`
+- [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `technical-spec/fork/ORIGIN.md`, remote removed, `private: true`
 - [x] Default branch `develop`; protections on `develop` and `main` use only `t3-ci` checks
   — **done 2026-09-09.** Both branches require exactly `unit` / `build` / `build-image`.
   `develop` also requires an up-to-date branch and blocks force pushes. `main`'s

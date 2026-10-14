@@ -4,7 +4,7 @@ role: roadmap
 status: ACTIVE
 owner: tetracilin
 siblings: [backlog.md, design.md]
-updated: 2026-09-01
+updated: 2026-10-13
 ---
 
 # T3 Company OS — Roadmap
@@ -12,7 +12,7 @@ updated: 2026-09-01
 This file is one of the three fork-owned source-of-truth (SSoT) documents, together with
 [`backlog.md`](backlog.md) (incremental work packages) and [`design.md`](design.md)
 (architecture notes). This one carries identity, high-level user stories, and horizons.
-Design record: `docs/designs/t3-company-os-ssot.md`. The upstream Paperclip roadmap is
+Design record: `technical-spec/designs/t3-company-os-ssot.md`. The upstream Paperclip roadmap is
 not tracked in this fork: this is a hard fork with an independent roadmap.
 
 ## Identity
@@ -88,3 +88,6 @@ The recorder loop with one engineer, reached through a chat evidence-and-briefin
 - **LLM adapter expansion** across more runtimes/providers.
 - **Email** as a capture/notification channel (enters at Tier 1).
 - **FreeCAD / KiCad / Figma** integrations (enter at Tier 1 first).
+- **Google Calendar sync** — two-way sync of scheduled issues/events with Google Calendar.
+  "Someday" per owner (2026-10-13); explicitly out of the scheduling MVP. Design context in
+  `docs/designs/sunsama-quick-add-and-pin-to-schedule-spec.md`.
