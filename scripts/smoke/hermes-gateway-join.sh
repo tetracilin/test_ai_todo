@@ -69,7 +69,7 @@ Notes:
   Raw API keys are redacted from logs. HERMES_JOIN_OUTPUT_FILE contains the
   claimed Paperclip agent API key and is written chmod 600.
 
-See doc/HERMES_GATEWAY_SMOKE.md for Docker Desktop, Linux, same-network,
+See technical-spec/fork/hermes/HERMES_GATEWAY_SMOKE.md for Docker Desktop, Linux, same-network,
 LAN/private-network, and reverse-proxy/TLS examples.
 EOF
 }

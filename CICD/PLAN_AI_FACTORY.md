@@ -2,7 +2,7 @@
 
 Repo: `tetracilin/test_ai_todo` · Host: `kmv8` · Status: **DRAFT, awaiting owner review**
 Extends `CICD/PLAN_CICD.md` (Phase 1–4 there are treated as done or superseded here) and
-`docs/designs/t3-agent-host-access.md` (its Phase 2 becomes Phase 3 below).
+`technical-spec/designs/t3-agent-host-access.md` (its Phase 2 becomes Phase 3 below).
 Written 2026-09-18. Every claim about pipeline state was checked against the Actions API
 that day, not inferred from documents; the documents were wrong in three places (§0.4).
 
@@ -34,7 +34,7 @@ is produced by the **legacy Hermes cron nightly** on kmv8, not by GitHub Actions
 
 `t3-nightly.yml:3` says it *replaces* `/root/.hermes/scripts/t3-nightly-build.sh` and Hermes
 cron `8b51805f9dc5`. `PLAN_CICD.md` §4 step 2 says to disable that cron at cutover. It was
-never disabled: `docs/deploy/kmv8-stack-inventory.md` gap 4 records the owner still receiving
+never disabled: `technical-spec/fork/kmv8-stack-inventory.md` gap 4 records the owner still receiving
 its morning notifications, and `t3-agent-host-access.md` ("Status Quo") says the same.
 
 **Two consequences.** First, every "troubleshooting attempt" aimed at the Actions workflow was
@@ -90,7 +90,7 @@ since 2026-09-17:
 
 | Document | Says | Reality (2026-09-18) |
 |---|---|---|
-| `CLAUDE.md` "Staging / nightly", `TODOS.md:35`, `PLAN_CICD.md` §0 and §8, `docs/operating-with-claude-code.md` "Traps" | `DISCORD_WEBHOOK_URL` unset, no alert ever sent | Set since 2026-09-17; runs 23 and 24 posted |
+| `CLAUDE.md` "Staging / nightly", `TODOS.md:35`, `PLAN_CICD.md` §0 and §8, `technical-spec/fork/operating-with-claude-code.md` "Traps" | `DISCORD_WEBHOOK_URL` unset, no alert ever sent | Set since 2026-09-17; runs 23 and 24 posted |
 | `CLAUDE.md`, operator guide, `PLAN_CICD.md` §0 | e2e has never executed | Executed and passed in runs 23 and 24 |
 | `PLAN_CICD.md` §4, §8 | Hermes cron retired at cutover | Still firing nightly; it is the source of the failure email |
 | `.github/CODEOWNERS` | Owners `@cryppadotta @devinfoley @nickyleach` for `.github/**`, `package.json`, `pnpm-lock.yaml`, `skills/**` | Upstream maintainers, not collaborators here. "Require review from code owners" cannot be enabled until this is rewritten |
@@ -99,7 +99,7 @@ since 2026-09-17:
 
 ## 1. What "AI factory" means for this repository
 
-The charter (`design.md:85-94`, `docs/designs/t3-company-os-ssot.md` premise 5) commits to an
+The charter (`design.md:85-94`, `technical-spec/designs/t3-company-os-ssot.md` premise 5) commits to an
 agent loop that authors and merges PRs, measured on *merged auto-PRs vs. regressions and
 rollbacks*. Industry practice in 2026 (sources in §9) converges on the same shape:
 
@@ -201,7 +201,7 @@ it. Do not `git checkout -- .` or `git clean` it: the dirty state may be somebod
 
 **0.3 Close or refresh the 19 open PRs.** Eleven predate the fork flow and target `main` or
 retired branches (#22, #25, #26, #27, #28, #29, #30, #36, #38, #39, #42); close them with a
-one-line comment pointing at `doc/ORIGIN.md`. Seven are Dependabot (#2, #5, #13, #18, #60,
+one-line comment pointing at `technical-spec/fork/ORIGIN.md`. Seven are Dependabot (#2, #5, #13, #18, #60,
 #61, #93): #93 is red on `t3-ci`; the rest are stale by two weeks. Close all seven and let the
 monthly grouped run (`.github/dependabot.yml`) reopen a single fresh grouped PR against the
 current lockfile. #106 (ci) is current; review and merge it. Result: an open-PR list that
@@ -211,7 +211,7 @@ contains only live work, which is what a steward agent will later be allowed to 
 "Where things live". Docs only, no workflow changes, so it can merge without the `ci` label.
 
 Verification for Phase 0: no legacy email for two consecutive mornings; open PRs ≤ 3;
-`docs/deploy/kmv8-stack-inventory.md` gap 4 closed.
+`technical-spec/fork/kmv8-stack-inventory.md` gap 4 closed.
 
 ### Phase 1 — First fully green nightly (one `fix/*` PR, one `ci` PR)
 
@@ -331,7 +331,7 @@ owner"; confirm `docker inspect` on staging shows a `ghcr.io/…@sha256:` image.
 
 ### Phase 3 — Host operations through a workflow (`t3-hostops`, one `ci` PR)
 
-Exactly `docs/designs/t3-agent-host-access.md` Phase 2, with one addition. Operations as
+Exactly `technical-spec/designs/t3-agent-host-access.md` Phase 2, with one addition. Operations as
 checked-in scripts under `deploy/scripts/hostops/` with the exec bit committed, exposed via
 `workflow_dispatch` with a `choice` input, run on `[self-hosted, kmv8]` under a new `hostops`
 environment with `@tetracilin` as required reviewer:

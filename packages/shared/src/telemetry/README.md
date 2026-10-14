@@ -404,7 +404,7 @@ place in the product. Stable event names, dimensions, and enum domains must come
 from the generated telemetry contract before normal emitters use them.
 
 For product work that needs to propose a new first-party event before schema
-registration, use the proposal marker workflow in `doc/TELEMETRY_WORKFLOW.md`.
+registration, use the proposal marker workflow described here.
 Those proposed calls stay on `client.track()`, carry an `@ts-expect-error`
 marker on the event-name argument, and are swallowed at runtime until the
 generated schema registers the event name.
@@ -436,8 +436,7 @@ generated telemetry contract agree. If they disagree, fix the contract or code
 rather than documenting around the mismatch in this README.
 
 For new first-party events that are not in the generated contract yet, follow
-the public proposal and promotion workflow in
-[`doc/TELEMETRY_WORKFLOW.md`](../../../../doc/TELEMETRY_WORKFLOW.md).
+the proposal and promotion workflow described in this README.
 
 ## Retention
 

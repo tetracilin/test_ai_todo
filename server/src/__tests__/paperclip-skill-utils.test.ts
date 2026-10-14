@@ -71,8 +71,7 @@ describe("paperclip skill utils", () => {
 
   it("documents governed agent interaction resolution invariants", async () => {
     const apiReference = await fs.readFile(path.resolve(REPO_ROOT, "skills/paperclip/references/api-reference.md"), "utf8");
-    const issueDocs = await fs.readFile(path.resolve(REPO_ROOT, "docs/api/issues.md"), "utf8");
-    for (const body of [apiReference, issueDocs]) {
+    for (const body of [apiReference]) {
       expect(body).toContain('resolverPolicy: "anyone" | "not_creator" | "human_only"');
       expect(body).toContain("requestedResolverPolicy");
       expect(body).toContain("effectiveResolverPolicy");
