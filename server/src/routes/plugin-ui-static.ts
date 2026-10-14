@@ -23,8 +23,8 @@
  *   with ETag-based conditional request support.
  *
  * @module server/routes/plugin-ui-static
- * @see doc/plugins/PLUGIN_SPEC.md §19.0.3 — Bundle Serving
- * @see doc/plugins/PLUGIN_SPEC.md §25.4.5 — Frontend Cache Invalidation
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md §19.0.3 — Bundle Serving
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md §25.4.5 — Frontend Cache Invalidation
  */
 
 import { Router } from "express";

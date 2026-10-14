@@ -1,4 +1,4 @@
-# Fork-owned SSoT trio (see docs/designs/t3-company-os-ssot.md): prefer OUR
+# Fork-owned SSoT trio (see technical-spec/designs/t3-company-os-ssot.md): prefer OUR
 # side when a selective upstream cherry-pick/merge touches these files.
 # Convenience, not a guarantee — the driver must be defined once per clone
 # (`git config merge.ours.driver true`; .gitattributes alone cannot ship it)

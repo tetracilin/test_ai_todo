@@ -34,7 +34,7 @@ function read(relPath: string): string {
   return readFileSync(path.join(repoRoot, relPath), "utf8");
 }
 
-// Return the `### Offline and air-gapped use` subsection of `doc/CLI.md`. The
+// Return the `### Offline and air-gapped use` subsection of `technical-spec/engineering/CLI.md`. The
 // subsection runs from its own heading to the next Markdown heading. The scan
 // reads only this text, so a `pnpm` mention in another section does not affect
 // the offline-guidance assertions.
@@ -320,8 +320,8 @@ function findOffenders(relPath: string, text: string): string[] {
 // The scan covers guidance the reader follows now: documentation, skills, and
 // the runtime source that emits CLI instructions. It skips historical records
 // and internal automation, because a reader does not copy a command from them:
-// `doc/logs` holds past verification logs, `doc/plans` holds dated design
-// plans, and `scripts` holds trusted automation with fixed arguments. It skips
+// `technical-spec/plans` holds dated design plans, `technical-spec/specs`
+// holds dated design specs, the dated Hermes handoff log is a past record, and `scripts` holds trusted automation with fixed arguments. It skips
 // test files, because a test names the unsafe form to assert against it.
 
 const SKIP_DIRS = new Set([
@@ -341,8 +341,9 @@ const SKIP_DIRS = new Set([
 // two scans below time out) and reports offenders from stale copies. Prune them
 // at the directory level; `.claude/skills/` stays in scope.
 const SKIP_PATH_PREFIXES = [
-  "doc/logs/",
-  "doc/plans/",
+  "technical-spec/plans/",
+  "technical-spec/specs/",
+  "technical-spec/fork/hermes/2026-09-22-",
   "scripts/",
   ".claude/worktrees/",
 ];
@@ -828,8 +829,8 @@ describe("paperclipai CLI invocation safety", () => {
 
   // ── The safe-invocation note ─────────────────────────────────────────────
 
-  it("documents the safe form in doc/CLI.md", () => {
-    const cli = read("doc/CLI.md");
+  it("documents the safe form in technical-spec/engineering/CLI.md", () => {
+    const cli = read("technical-spec/engineering/CLI.md");
     expect(cli).toContain("Security: safe invocation for content-bearing arguments");
     expect(cli).toContain("npx paperclipai");
     expect(cli).toContain("inert `argv`");
@@ -838,7 +839,7 @@ describe("paperclipai CLI invocation safety", () => {
   });
 
   it("documents offline and air-gapped use with a safe cache-only form", () => {
-    const cli = read("doc/CLI.md");
+    const cli = read("technical-spec/engineering/CLI.md");
     const subsection = extractOfflineSubsection(cli);
     // The offline subsection must exist and must name the cache-only safe form.
     expect(subsection).toContain("### Offline and air-gapped use");

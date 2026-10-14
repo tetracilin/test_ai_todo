@@ -10,7 +10,7 @@ export const CHECKER_MODE = "blocking";
 
 export const HISTORICAL_ALLOWLIST = [
   {
-    pattern: "doc/plans/**",
+    pattern: "technical-spec/plans/**",
     reason: "Dated upstream design records; retained as historical evidence, not runtime guidance.",
   },
   {
@@ -30,7 +30,7 @@ export const HISTORICAL_ALLOWLIST = [
 const CONTROL_PATHS = new Set([
   "scripts/check-no-google-runtime.mjs",
   "scripts/check-no-google-runtime.test.mjs",
-  "docs/migration/test-ai-todo-inventory.md",
+  "technical-spec/fork/migration/test-ai-todo-inventory.md",
 ]);
 
 // The bundle scanner's pattern table necessarily names the legacy provider

@@ -11,9 +11,9 @@ repo: tetracilin/test_ai_todo (hard fork of paperclipai/paperclip; work lands on
 sources:
   - 3-part master-process swimlane diagrams (Viet, 2026-08)
   - INFRA-DESIGN-v1 Patch Set 003 (AD-031..AD-037)
-  - Fork domain map docs/migration/test-ai-todo-domain-map.md (K6, owner-approved 2026-08-22)
+  - Fork domain map technical-spec/fork/migration/test-ai-todo-domain-map.md (K6, owner-approved 2026-08-22)
   - packages/shared/src/constants.ts (APPROVAL_TYPES/STATUSES), packages/db/src/schema/external_objects.ts
-  - Design record docs/designs/t3-company-os-ssot.md (SSoT restructure + WP-0 wedge, 2026-09-01)
+  - Design record technical-spec/designs/t3-company-os-ssot.md (SSoT restructure + WP-0 wedge, 2026-09-01)
 artifact: https://claude.ai/code/artifact/0283a384-e748-4885-8f1f-78c0b2735e46
 metrics:
   wp0_evidence_via_bot: ">=80%"        # pass band; 50-79% iterate one more week; <50% after 1 week = abort, revisit channel decision
@@ -279,7 +279,7 @@ persist-and-replay guarantee holding across gateway disconnects.)*:
    attempts) and gates prompt changes. Passing bar: **≥90% correct-card
    matching** on the eval set before pilot start; the live mis-file rate is tracked so a
    50–79% band outcome can be diagnosed as a channel problem vs an accuracy problem.
-8. Runbook deliverable: one named home — `doc/WP0-OPERATIONS.md` — carries all WP-0
+8. Runbook deliverable: one named home — `technical-spec/fork/WP0-OPERATIONS.md` — carries all WP-0
    runbooks as its TOC, a pilot-start gate deliverable: WhatsApp outage, template
    rejection, media-fetch failure, **agent-runtime-down response, MinIO/NAS outage,
    Teable outage during PC-005 sync, digest-alert response, secrets rotation, and
@@ -352,7 +352,7 @@ recorder works for me instead of me working for it (AD-033).
    **one-page Vietnamese engineer quickstart** (~5 min: link your Discord, DM the bot a
    job order, type "brief"). The hermes join flow's board-approval step is pre-approved/
    batched for `eng-<name>` profiles so onboarding cannot stall on an absent approver.
-- Binding: `packages/adapters/hermes-gateway`, `agents`, chat bridge (Discord DM — pilot channel per gate decision 2026-09-02; WhatsApp/Zalo per later WP), `doc/HERMES_GATEWAY_ONBOARDING.md`
+- Binding: `packages/adapters/hermes-gateway`, `agents`, chat bridge (Discord DM — pilot channel per gate decision 2026-09-02; WhatsApp/Zalo per later WP), `technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md`
 
 #### PC-005 Teable row sync — [PM] [Slice 1]
 As the PM, I want cards mirrored into Teable rows, so that the Teable board stays the GUI for the
@@ -937,7 +937,7 @@ Expects:   agent: consistent phrases + structured errors it can relay; maintaine
 ### Developer Empathy Narrative (maintainer, first onboarding — pre-amendment)
 
 I open backlog.md. PC-003 says onboarding takes <30 min "documented as a runbook" — the
-runbook doesn't exist yet. I open doc/HERMES_GATEWAY_ONBOARDING.md: pip install, two
+runbook doesn't exist yet. I open technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md: pip install, two
 distinct keys with a "do not reuse" warning, an invite in the board UI, a board-approval
 step that stalls if the approver is at lunch, a one-time key claim. That's the agent
 side only — nothing tells me how the engineer's WhatsApp number links to their Paperclip
@@ -1015,7 +1015,7 @@ smoke (lowest-effort vehicle, doubles as the demo).
 [x] Magical moment delivered via Stage-0 Discord smoke
 [x] Every error message: problem + cause + fix (13-path registry + op AC9/10 relay rules)
 [x] Verb phrases: canonical table, single source, help verb, first message
-[x] Docs: one runbook home (doc/WP0-OPERATIONS.md) + quickstart + fixtures
+[x] Docs: one runbook home (technical-spec/fork/WP0-OPERATIONS.md) + quickstart + fixtures
 [x] Examples: dossier + export bundle fixtures checked in
 [x] Upgrade: eval-gated prompts, additive migrations, flag rollback
 [x] Works in CI: eval suite + policy tests extend existing vitest workspace
@@ -1048,7 +1048,7 @@ note added to WP-0); WhatsApp 2026-10-01 in-window AI-reply billing → op AC12 
 | 20 | DX F1 | PC-003 split: pre-provisioning / per-engineer timed / VN quickstart | Mechanical | P1,P5 | <30 min was an assertion; hermes flow contradicts it; clock now defined | Unmeasured claim |
 | 21 | DX F2/F3 | Phrase SSoT + help verb + first message (op AC10) | Mechanical | P4,P5 | Error messages must never name phrases the bot doesn't answer to | Per-message improvisation |
 | 22 | DX F4/C | Agent-down persist+replay, downtime status msg, who-retries wording, fingerprint clear (op AC9) | Mechanical | P1 | Silent bot in pilot week corrupts the wedge metric and adoption | Alarm-only |
-| 23 | DX F5/F6 | Runbook home doc/WP0-OPERATIONS.md + named, tested alert channel (op AC8/11) | Mechanical | P5 | Alert to an unwatched channel is a silent failure in costume | Homeless runbooks |
+| 23 | DX F5/F6 | Runbook home technical-spec/fork/WP0-OPERATIONS.md + named, tested alert channel (op AC8/11) | Mechanical | P5 | Alert to an unwatched channel is a silent failure in costume | Homeless runbooks |
 | 24 | DX F7 | Dossier + export fixtures (PC-002 AC5, PC-006 AC5) | Mechanical | P1 | The retrieval test needs a concrete shape; fixtures double as test fixtures | Schema by prose |
 | 25 | DX F8 | Evidence unlink/move (PC-007 AC6) + cancelled-path note (PC-001 AC7) | Mechanical | P1 | Post-hoc corrections existed nowhere; junk cards forced flag-off or junk evidence | Append-only forever |
 | 26 | DX (session) | Honest delta note: conversational capture unshipped on all channels | Mechanical | P5 | discord-bridge README: Guilds intent only, no message content | Leaving "shipped" claim |
@@ -1094,7 +1094,7 @@ COVERAGE TARGET: 100% of the above written WITH the feature code, not after.
 | B. Conversational pipeline + Stage 0 (capture, verbs, phrases) | discord-bridge/, packages/adapters/hermes-gateway/ | A (files against substrate APIs) |
 | C. Teable client service (PC-005/PC-010) | server/src/services/ (new module) | — |
 | D. WhatsApp bridge | whatsapp-bridge/ (new) | B (reuses pipeline) |
-| E. Docs/runbooks/fixtures | doc/, test fixtures | A–D shape them |
+| E. Docs/runbooks/fixtures | technical-spec/, test fixtures | A–D shape them |
 
 Lanes: launch **A + C** in parallel worktrees (both touch server/src/services — different
 files, coordinate); then **B**; then **D**; **E** rides along each. Conflict flag: A and C

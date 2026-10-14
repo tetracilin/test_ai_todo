@@ -13,7 +13,7 @@
 #
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
-# See PLAN_CICD.md §1.2 and doc/ORIGIN.md.
+# See PLAN_CICD.md §1.2 and technical-spec/fork/ORIGIN.md.
 
 name: t3-ci
 
