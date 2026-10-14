@@ -173,6 +173,22 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("rejects a projectId from another company and creates nothing", async () => {
+    const { companyId, svc } = await seedFixture();
+    const other = await seedFixture();
+    const foreignProjectId = randomUUID();
+    await db.insert(projects).values({ id: foreignProjectId, companyId: other.companyId, name: "Foreign", status: "planned" });
+    await expect(
+      svc.createScheduledIssue(
+        companyId,
+        { title: "Cross tenant", projectId: foreignProjectId },
+        { agentId: null, userId: "user-1" },
+      ),
+    ).rejects.toThrow(/project/i);
+    const rows = await db.select().from(issues).where(eq(issues.companyId, companyId));
+    expect(rows).toHaveLength(0);
+  });
+
   it("rolls back the issue when the after-write hook fails", async () => {
     const { companyId, svc } = await seedFixture();
     await expect(

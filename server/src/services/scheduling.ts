@@ -531,6 +531,14 @@ export function schedulingService(db: Db) {
       result: CreateScheduledIssueResult & { deduplicated: boolean },
     ) => Promise<void>,
   ): Promise<CreateScheduledIssueResult & { deduplicated: boolean }> {
+    if (input.projectId) {
+      const project = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, input.projectId), eq(projects.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!project) throw unprocessable("Project not found in this company");
+    }
     return db.transaction(async (tx) => {
       let deduplicated = false;
       const issue = await issueService(tx as unknown as Db).create(companyId, {

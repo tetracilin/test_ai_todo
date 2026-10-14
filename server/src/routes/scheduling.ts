@@ -182,6 +182,9 @@ export function schedulingRoutes(db: Db) {
     validate(createScheduledIssueSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
+      // Quick add is a board feature. The agent issue-create route applies low-trust and
+      // task-bridge guards that this route does not, so agents must use that route.
+      if (req.actor.type === "agent") throw forbidden("Agents cannot use quick add");
       await assertCanGenerate(req, companyId);
       const actor = getActorInfo(req);
       const publications: ActivityPublication[] = [];

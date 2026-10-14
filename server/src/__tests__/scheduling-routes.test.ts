@@ -181,6 +181,16 @@ describe("scheduling routes", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
+  it("rejects agent actors on the quick-add create route", async () => {
+    const res = await request(
+      await createApp({ type: "agent", agentId: "agent-1", companyId, source: "agent_key" }),
+    )
+      .post(`/api/companies/${companyId}/scheduled-issues`)
+      .send({ title: "Side door" });
+    expect(res.status).toBe(403);
+    expect(mockSchedulingService.createScheduledIssue).not.toHaveBeenCalled();
+  });
+
   it("rejects an empty title with 400 before calling the service", async () => {
     const res = await request(await createApp(editorActor()))
       .post(`/api/companies/${companyId}/scheduled-issues`)
