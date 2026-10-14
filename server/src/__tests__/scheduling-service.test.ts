@@ -120,6 +120,25 @@ describeEmbeddedPostgres("scheduling service", () => {
     expect(await svc.getIssueScheduling(companyId, issue.id)).toBeNull();
   });
 
+  it("returns the previous scheduling row from upsertIssueSchedulingWithPrevious", async () => {
+    const { companyId, issueSvc, svc } = await seedFixture();
+    const issue = await issueSvc.create(companyId, { title: "Prev", status: "todo", priority: "medium" });
+
+    const first = await svc.upsertIssueSchedulingWithPrevious(companyId, issue.id, {
+      scheduledAt: new Date("2026-10-14T03:00:00.000Z"),
+      scheduledDurationMinutes: 30,
+    });
+    expect(first.previous).toBeNull();
+    expect(first.scheduling.scheduledDurationMinutes).toBe(30);
+
+    const second = await svc.upsertIssueSchedulingWithPrevious(companyId, issue.id, {
+      scheduledDurationMinutes: 45,
+    });
+    expect(second.previous?.scheduledDurationMinutes).toBe(30);
+    expect(second.previous?.scheduledAt).toBe("2026-10-14T03:00:00.000Z");
+    expect(second.scheduling.scheduledDurationMinutes).toBe(45);
+  });
+
   it("rejects scheduling lookups for an issue in a different company", async () => {
     const { issueSvc, svc } = await seedFixture();
     const other = await seedFixture();

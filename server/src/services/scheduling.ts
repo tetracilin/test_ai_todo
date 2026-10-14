@@ -203,11 +203,11 @@ export function schedulingService(db: Db) {
     return row ? toIssueScheduling(row) : null;
   }
 
-  async function upsertIssueScheduling(
+  async function upsertIssueSchedulingWithPrevious(
     companyId: string,
     issueId: string,
     patch: UpsertIssueScheduling,
-  ): Promise<IssueScheduling> {
+  ): Promise<{ scheduling: IssueScheduling; previous: IssueScheduling | null }> {
     if (!(await getIssueRowInCompany(companyId, issueId))) throw notFound("Issue not found");
     const existing = await db
       .select()
@@ -229,7 +229,18 @@ export function schedulingService(db: Db) {
       .onConflictDoUpdate({ target: issueScheduling.issueId, set: values })
       .returning()
       .then((rows) => rows[0]!);
-    return toIssueScheduling(row);
+    return {
+      scheduling: toIssueScheduling(row),
+      previous: existing ? toIssueScheduling(existing) : null,
+    };
+  }
+
+  async function upsertIssueScheduling(
+    companyId: string,
+    issueId: string,
+    patch: UpsertIssueScheduling,
+  ): Promise<IssueScheduling> {
+    return (await upsertIssueSchedulingWithPrevious(companyId, issueId, patch)).scheduling;
   }
 
   async function clearIssueScheduling(companyId: string, issueId: string): Promise<boolean> {
@@ -512,6 +523,7 @@ export function schedulingService(db: Db) {
   return {
     getIssueScheduling,
     upsertIssueScheduling,
+    upsertIssueSchedulingWithPrevious,
     clearIssueScheduling,
     listScheduledIssues,
     listRoutines,

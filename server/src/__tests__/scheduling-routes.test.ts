@@ -7,6 +7,7 @@ const companyId = "11111111-1111-4111-8111-111111111111";
 const mockSchedulingService = vi.hoisted(() => ({
   getIssueScheduling: vi.fn(),
   upsertIssueScheduling: vi.fn(),
+  upsertIssueSchedulingWithPrevious: vi.fn(),
   clearIssueScheduling: vi.fn(),
   listScheduledIssues: vi.fn(),
   listRoutines: vi.fn(),
@@ -23,10 +24,12 @@ const mockAccessService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
+const mockPublishActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
   logActivity: mockLogActivity,
+  publishActivity: mockPublishActivity,
   schedulingService: () => mockSchedulingService,
 }));
 
@@ -41,7 +44,8 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", schedulingRoutes({} as any));
+  const fakeDb = { transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}) };
+  app.use("/api", schedulingRoutes(fakeDb as any));
   app.use(errorHandler);
   return app;
 }
@@ -62,6 +66,62 @@ describe("scheduling routes", () => {
     vi.clearAllMocks();
     mockAccessService.decide.mockResolvedValue({ allowed: true, explanation: "allowed" });
     mockSchedulingService.listScheduledIssues.mockResolvedValue({ items: [], nextCursor: null });
+  });
+
+  it("logs previous values with the write and publishes after commit", async () => {
+    const issueId = "22222222-2222-4222-8222-222222222222";
+    const row = (scheduledAt: string, minutes: number) => ({
+      issueId, companyId, scheduledAt, deferUntil: null, scheduledDurationMinutes: minutes,
+      createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+    });
+    mockSchedulingService.upsertIssueSchedulingWithPrevious.mockResolvedValue({
+      scheduling: row("2026-10-14T03:00:00.000Z", 30),
+      previous: row("2026-10-14T02:00:00.000Z", 15),
+    });
+    mockLogActivity.mockImplementation(async (_db: unknown, _input: unknown, pubs?: unknown[]) => {
+      pubs?.push({ companyId, payload: {}, pluginEvent: null });
+      return { id: "activity-1" };
+    });
+
+    const res = await request(await createApp(editorActor()))
+      .put(`/api/companies/${companyId}/issues/${issueId}/scheduling`)
+      .send({ scheduledAt: "2026-10-14T03:00:00.000Z" });
+
+    expect(res.status).toBe(200);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "issue.scheduling_updated",
+        details: expect.objectContaining({
+          scheduledDurationMinutes: 30,
+          _previous: expect.objectContaining({
+            scheduledAt: "2026-10-14T02:00:00.000Z",
+            scheduledDurationMinutes: 15,
+          }),
+        }),
+      }),
+      expect.any(Array),
+    );
+    expect(mockPublishActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not publish and returns 500 when the activity write fails", async () => {
+    const issueId = "22222222-2222-4222-8222-222222222222";
+    mockSchedulingService.upsertIssueSchedulingWithPrevious.mockResolvedValue({
+      scheduling: {
+        issueId, companyId, scheduledAt: "2026-10-14T03:00:00.000Z", deferUntil: null,
+        scheduledDurationMinutes: 30, createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+      },
+      previous: null,
+    });
+    mockLogActivity.mockRejectedValue(new Error("activity insert failed"));
+
+    const res = await request(await createApp(editorActor()))
+      .put(`/api/companies/${companyId}/issues/${issueId}/scheduling`)
+      .send({ scheduledAt: "2026-10-14T03:00:00.000Z" });
+
+    expect(res.status).toBe(500);
+    expect(mockPublishActivity).not.toHaveBeenCalled();
   });
 
   it(

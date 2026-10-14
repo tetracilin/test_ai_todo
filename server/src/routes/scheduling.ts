@@ -8,7 +8,8 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { badRequest, forbidden } from "../errors.js";
-import { accessService, logActivity, schedulingService } from "../services/index.js";
+import { accessService, logActivity, publishActivity, schedulingService } from "../services/index.js";
+import type { ActivityPublication } from "../services/activity-log.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -90,24 +91,44 @@ export function schedulingRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const issueId = req.params.issueId as string;
       await assertCanGenerate(req, companyId);
-      const scheduling = await svc.upsertIssueScheduling(companyId, issueId, req.body);
       const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
-        action: "issue.scheduling_updated",
-        entityType: "issue",
-        entityId: issueId,
-        details: {
-          scheduledAt: scheduling.scheduledAt,
-          deferUntil: scheduling.deferUntil,
-          scheduledDurationMinutes: scheduling.scheduledDurationMinutes,
-        },
+      const publications: ActivityPublication[] = [];
+      const scheduling = await db.transaction(async (tx) => {
+        const { scheduling: next, previous } = await schedulingService(tx as unknown as Db).upsertIssueSchedulingWithPrevious(
+          companyId,
+          issueId,
+          req.body,
+        );
+        await logActivity(
+          tx as unknown as Db,
+          {
+            companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.scheduling_updated",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              scheduledAt: next.scheduledAt,
+              deferUntil: next.deferUntil,
+              scheduledDurationMinutes: next.scheduledDurationMinutes,
+              _previous: previous
+                ? {
+                    scheduledAt: previous.scheduledAt,
+                    deferUntil: previous.deferUntil,
+                    scheduledDurationMinutes: previous.scheduledDurationMinutes,
+                  }
+                : null,
+            },
+          },
+          publications,
+        );
+        return next;
       });
+      for (const publication of publications) publishActivity(publication);
       res.json({ scheduling });
     },
   );
@@ -116,21 +137,30 @@ export function schedulingRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     const issueId = req.params.issueId as string;
     await assertCanGenerate(req, companyId);
-    const deleted = await svc.clearIssueScheduling(companyId, issueId);
-    if (deleted) {
-      const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
-        action: "issue.scheduling_cleared",
-        entityType: "issue",
-        entityId: issueId,
-      });
-    }
+    const actor = getActorInfo(req);
+    const publications: ActivityPublication[] = [];
+    const deleted = await db.transaction(async (tx) => {
+      const removed = await schedulingService(tx as unknown as Db).clearIssueScheduling(companyId, issueId);
+      if (removed) {
+        await logActivity(
+          tx as unknown as Db,
+          {
+            companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.scheduling_cleared",
+            entityType: "issue",
+            entityId: issueId,
+          },
+          publications,
+        );
+      }
+      return removed;
+    });
+    for (const publication of publications) publishActivity(publication);
     res.json({ deleted });
   });
 
