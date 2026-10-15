@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createScheduledIssueSchema,
+  pinIssueEventSchema,
   createSchedulingRoutineSchema,
   generateSchedulingRoutineIssuesSchema,
   updateSchedulingRoutineSchema,
@@ -59,5 +60,14 @@ describe("createScheduledIssueSchema", () => {
     expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 0 }).success).toBe(false);
     expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 1441 }).success).toBe(false);
     expect(createScheduledIssueSchema.safeParse({ title: "x", clientRequestId: "abc" }).success).toBe(false);
+  });
+});
+
+describe("pinIssueEventSchema", () => {
+  it("rejects an endsAt more than 24 hours after startsAt", () => {
+    const base = { startsAt: "2026-10-14T03:00:00.000Z" };
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2026-10-15T03:00:00.000Z" }).success).toBe(true);
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2026-10-15T03:00:01.000Z" }).success).toBe(false);
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2027-10-14T03:00:00.000Z" }).success).toBe(false);
   });
 });

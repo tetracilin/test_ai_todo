@@ -81,6 +81,9 @@ export const pinIssueEventSchema = z
   })
   .refine((value) => !value.endsAt || value.endsAt.getTime() > value.startsAt.getTime(), {
     message: "endsAt must be after startsAt",
+  })
+  .refine((value) => !value.endsAt || value.endsAt.getTime() - value.startsAt.getTime() <= 24 * 60 * 60_000, {
+    message: "An event cannot be longer than 24 hours",
   });
 
 export const createSchedulingRoutineSchema = z.object({

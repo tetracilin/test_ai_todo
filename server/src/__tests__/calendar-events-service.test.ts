@@ -133,6 +133,14 @@ describeEmbeddedPostgres("calendar events service", () => {
     expect(utcDay.items).toHaveLength(0);
   });
 
+  it("does not list events for hidden issues", async () => {
+    const { companyId, issueId, svc } = await seedIssue("Hidden soon");
+    await svc.pinIssue(companyId, issueId, { startsAt: new Date("2026-10-14T03:00:00.000Z"), durationMinutes: 30 }, actor);
+    expect((await svc.listEvents(companyId)).items).toHaveLength(1);
+    await db.update(issues).set({ hiddenAt: new Date() }).where(eq(issues.id, issueId));
+    expect((await svc.listEvents(companyId)).items).toHaveLength(0);
+  });
+
   it("pages with a cursor", async () => {
     const { companyId, issueId, svc } = await seedIssue("A");
     const rows = await db.insert(issues).values([

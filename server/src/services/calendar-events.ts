@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { calendarEvents, issueScheduling, issues } from "@paperclipai/db";
 import type { CalendarEvent, PinIssueEvent } from "@paperclipai/shared";
@@ -37,6 +37,39 @@ function decodeCursor(cursor: string | undefined): EventsCursor | null {
 
 function encodeCursor(cursor: EventsCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+/**
+ * Keeps the calendar event in step with an issue_scheduling row, so that
+ * "has scheduledAt" and "has an event" mean the same thing for every writer.
+ * Call it with the same Db or transaction that wrote the scheduling row.
+ */
+export async function syncCalendarEventForScheduling(
+  db: Db,
+  row: { companyId: string; issueId: string; scheduledAt: Date | null; scheduledDurationMinutes: number | null },
+): Promise<void> {
+  if (!row.scheduledAt) {
+    await db
+      .delete(calendarEvents)
+      .where(and(eq(calendarEvents.companyId, row.companyId), eq(calendarEvents.issueId, row.issueId)));
+    return;
+  }
+  const issue = await db
+    .select({ title: issues.title })
+    .from(issues)
+    .where(and(eq(issues.companyId, row.companyId), eq(issues.id, row.issueId)))
+    .then((rows) => rows[0] ?? null);
+  if (!issue) return;
+  const startsAt = row.scheduledAt;
+  const endsAt = new Date(startsAt.getTime() + (row.scheduledDurationMinutes ?? DEFAULT_EVENT_MINUTES) * 60_000);
+  await db
+    .insert(calendarEvents)
+    .values({ companyId: row.companyId, issueId: row.issueId, title: issue.title, startsAt, endsAt })
+    .onConflictDoUpdate({
+      target: calendarEvents.issueId,
+      targetWhere: sql`${calendarEvents.issueId} is not null`,
+      set: { startsAt, endsAt, title: issue.title, updatedAt: new Date() },
+    });
 }
 
 export function calendarEventsService(db: Db) {
@@ -143,11 +176,13 @@ export function calendarEventsService(db: Db) {
       );
     }
     const rows = await db
-      .select()
+      .select({ event: calendarEvents })
       .from(calendarEvents)
-      .where(and(...conditions))
+      .leftJoin(issues, eq(issues.id, calendarEvents.issueId))
+      .where(and(...conditions, isNull(issues.hiddenAt)))
       .orderBy(asc(calendarEvents.startsAt), asc(calendarEvents.id))
-      .limit(limit + 1);
+      .limit(limit + 1)
+      .then((result) => result.map((entry) => entry.event));
     const items = rows.slice(0, limit).map(toCalendarEvent);
     return {
       items,

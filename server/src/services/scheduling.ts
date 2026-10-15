@@ -18,6 +18,7 @@ import type {
 } from "@paperclipai/shared";
 import { badRequest, notFound, unprocessable } from "../errors.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
+import { syncCalendarEventForScheduling } from "./calendar-events.js";
 import { issueService } from "./issues.js";
 
 type IssueSchedulingRow = typeof issueScheduling.$inferSelect;
@@ -231,6 +232,7 @@ export function schedulingService(db: Db) {
       .onConflictDoUpdate({ target: issueScheduling.issueId, set: values })
       .returning()
       .then((rows) => rows[0]!);
+    await syncCalendarEventForScheduling(db, row);
     return {
       scheduling: toIssueScheduling(row),
       previous: existing ? toIssueScheduling(existing) : null,
@@ -251,6 +253,12 @@ export function schedulingService(db: Db) {
       .delete(issueScheduling)
       .where(and(eq(issueScheduling.companyId, companyId), eq(issueScheduling.issueId, issueId)))
       .returning({ issueId: issueScheduling.issueId });
+    await syncCalendarEventForScheduling(db, {
+      companyId,
+      issueId,
+      scheduledAt: null,
+      scheduledDurationMinutes: null,
+    });
     return deleted.length > 0;
   }
 
@@ -468,6 +476,12 @@ export function schedulingService(db: Db) {
               target: issueScheduling.issueId,
               set: { scheduledAt, scheduledDurationMinutes: routine.estimateMinutes ?? null, updatedAt: new Date() },
             });
+          await syncCalendarEventForScheduling(tx as unknown as Db, {
+            companyId,
+            issueId: created.id,
+            scheduledAt,
+            scheduledDurationMinutes: routine.estimateMinutes ?? null,
+          });
           if (!deduplicated) createdIssueIds.push(created.id);
         }
         cursorKey = dateKey;
@@ -569,6 +583,7 @@ export function schedulingService(db: Db) {
           .from(issueScheduling)
           .where(eq(issueScheduling.issueId, issue.id))
           .then((rows) => rows[0]!));
+      await syncCalendarEventForScheduling(tx as unknown as Db, row);
       const result = {
         issueId: issue.id,
         identifier: issue.identifier ?? null,

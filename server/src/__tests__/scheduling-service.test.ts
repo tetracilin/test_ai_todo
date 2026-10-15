@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  calendarEvents,
   companies,
   companyMemberships,
   createDb,
@@ -203,6 +204,61 @@ describeEmbeddedPostgres("scheduling service", () => {
     ).rejects.toThrow("activity failed");
     const rows = await db.select().from(issues).where(eq(issues.companyId, companyId));
     expect(rows).toHaveLength(0);
+  });
+
+  it("keeps the calendar event in step with every scheduling writer", async () => {
+    const { companyId, agentId, issueSvc, svc } = await seedFixture();
+    const eventFor = (issueId: string) =>
+      db.select().from(calendarEvents).where(eq(calendarEvents.issueId, issueId)).then((rows) => rows[0] ?? null);
+
+    // upsert with a time creates the event; a duration-only change resizes it
+    const issue = await issueSvc.create(companyId, { title: "Synced", status: "todo", priority: "medium" });
+    await svc.upsertIssueScheduling(companyId, issue.id, {
+      scheduledAt: new Date("2026-10-14T03:00:00.000Z"),
+      scheduledDurationMinutes: 30,
+    });
+    expect((await eventFor(issue.id))?.endsAt.toISOString()).toBe("2026-10-14T03:30:00.000Z");
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledDurationMinutes: 60 });
+    expect((await eventFor(issue.id))?.endsAt.toISOString()).toBe("2026-10-14T04:00:00.000Z");
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: new Date("2026-10-14T09:00:00.000Z") });
+    expect((await eventFor(issue.id))?.startsAt.toISOString()).toBe("2026-10-14T09:00:00.000Z");
+
+    // setting the time to null removes the event
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: null });
+    expect(await eventFor(issue.id)).toBeNull();
+
+    // clearing the scheduling row removes the event
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: new Date("2026-10-14T03:00:00.000Z") });
+    expect(await eventFor(issue.id)).not.toBeNull();
+    await svc.clearIssueScheduling(companyId, issue.id);
+    expect(await eventFor(issue.id)).toBeNull();
+
+    // quick add with a time creates the event; without a time it creates none
+    const timed = await svc.createScheduledIssue(
+      companyId,
+      { title: "Timed", estimateMinutes: 45, scheduledAt: new Date("2026-10-14T05:00:00.000Z") },
+      { agentId: null, userId: "user-1" },
+    );
+    expect((await eventFor(timed.issueId))?.endsAt.toISOString()).toBe("2026-10-14T05:45:00.000Z");
+    const untimed = await svc.createScheduledIssue(
+      companyId,
+      { title: "Untimed", estimateMinutes: 45 },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(await eventFor(untimed.issueId)).toBeNull();
+
+    // routine generation creates the event
+    const routine = await svc.createRoutine(
+      companyId,
+      { title: "Daily", assigneeAgentId: agentId, recurrenceRule: { kind: "daily" }, scheduledTime: "09:00", estimateMinutes: 20 },
+      { agentId: null, userId: null },
+    );
+    const generated = await svc.generateDueIssuesForRoutine(companyId, routine.id, {
+      asOf: new Date("2026-10-14T12:00:00.000Z"),
+      maxDays: 1,
+    });
+    expect(generated.createdIssueIds).toHaveLength(1);
+    expect(await eventFor(generated.createdIssueIds[0]!)).not.toBeNull();
   });
 
   it("rejects scheduling lookups for an issue in a different company", async () => {
