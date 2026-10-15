@@ -8,6 +8,7 @@ export { companySkillService } from "./company-skills.js";
 export { companySkillPolicyService, normalizeSkillPolicySourceType } from "./company-skill-policy.js";
 export { folderService } from "./folders.js";
 export { schedulingService } from "./scheduling.js";
+export { calendarEventsService } from "./calendar-events.js";
 export { agentService, deduplicateAgentName } from "./agents.js";
 export {
   builtInAgentService,

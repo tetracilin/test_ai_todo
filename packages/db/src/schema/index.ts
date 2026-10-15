@@ -50,6 +50,7 @@ export { externalObjectMentions } from "./external_object_mentions.js";
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineRuns } from "./routines.js";
 export { issueScheduling } from "./issue_scheduling.js";
+export { calendarEvents } from "./calendar_events.js";
 export { schedulingRoutines } from "./scheduling_routines.js";
 export { pipelines, pipelineStages, pipelineTransitions } from "./pipelines.js";
 export {
