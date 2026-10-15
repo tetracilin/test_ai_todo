@@ -70,6 +70,19 @@ export const createScheduledIssueSchema = z.object({
   clientRequestId: z.string().uuid().optional(),
 });
 
+export const pinIssueEventSchema = z
+  .object({
+    startsAt: schedulingDateSchema,
+    endsAt: schedulingDateSchema.optional(),
+    durationMinutes: z.number().int().min(1).max(24 * 60).optional(),
+  })
+  .refine((value) => !(value.endsAt && value.durationMinutes), {
+    message: "Provide endsAt or durationMinutes, not both",
+  })
+  .refine((value) => !value.endsAt || value.endsAt.getTime() > value.startsAt.getTime(), {
+    message: "endsAt must be after startsAt",
+  });
+
 export const createSchedulingRoutineSchema = z.object({
   projectId: z.string().uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
@@ -112,6 +125,7 @@ export const generateSchedulingRoutineIssuesSchema = z.object({
 });
 
 export type CreateScheduledIssue = z.infer<typeof createScheduledIssueSchema>;
+export type PinIssueEvent = z.infer<typeof pinIssueEventSchema>;
 export type UpsertIssueScheduling = z.infer<typeof upsertIssueSchedulingSchema>;
 export type CreateSchedulingRoutine = z.infer<typeof createSchedulingRoutineSchema>;
 export type UpdateSchedulingRoutine = z.infer<typeof updateSchedulingRoutineSchema>;
