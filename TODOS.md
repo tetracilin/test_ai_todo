@@ -60,3 +60,17 @@ reason the other two went unnoticed for five days.
   - Why: PRs #62 and #63 were exactly this shape — opened 2026-09-02, merged 2026-09-07 97 seconds apart. #63 was five days stale with red checks; #62 had just been rebased and its checks were still RUNNING when it was merged, completing red six seconds later — and broke `develop` at `pnpm install --frozen-lockfile` for every job and both nightly stacks. Reverted in PR #91. The remaining seven sit in the PR list looking mergeable and carry the same hazard.
   - How to land one safely, one at a time: rebase it onto current `develop` → wait for `t3-ci` to actually re-run and go green → merge that one → confirm `develop` is still green → only then start the next. Never merge two in the same sitting; their lockfiles are computed independently and the second one's will not account for the first.
   - Context: `technical-spec/fork/operating-with-claude-code.md` records this as a repo-specific trap. The durable fix is branch protection on `develop` with "require branches to be up to date" — see the branch-protection item above — which makes this class mechanically unmergeable rather than relying on the reviewer remembering.
+
+## From /plan-eng-review of the upstream adapters spec (2026-10-23)
+
+- [ ] **Per-payer budget policy for user-supplied AI keys** (P3, human: ~1d / CC: ~1h)
+  - What: decide whether spend on a user's own provider key counts against the company budget, a per-user budget, or neither.
+  - Why: budgets auto-pause agents. With bring-your-own keys, the provider bills the user, but Paperclip still counts the spend. PR 4 of the series records which connection paid (D11) so either policy stays possible.
+  - Context: `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md` 4.5.
+  - Depends on: PR 4 (`feature/ai-connections-foundation`) merged.
+
+- [ ] **Runbook for rotating `secrets/master.key`** (P3, human: ~2h / CC: ~20min)
+  - What: document how to back up and rotate the local secret-encryption master key without losing stored secrets.
+  - Why: once users store their own AI keys (D5), losing or leaking `master.key` exposes or destroys every user's credentials.
+  - Context: `server/src/services/secrets.ts` (`local_encrypted` provider); instance state under `~/.paperclip/instances/<id>/secrets/`.
+  - Depends on: nothing; more urgent once PR 4 merges.
