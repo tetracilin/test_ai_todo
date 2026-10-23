@@ -8,6 +8,28 @@ const ORIGINAL_PAPERCLIP_RUNTIME_API_URL = process.env.PAPERCLIP_RUNTIME_API_URL
 const ORIGINAL_PAPERCLIP_RUNTIME_API_CANDIDATES_JSON = process.env.PAPERCLIP_RUNTIME_API_CANDIDATES_JSON;
 const ORIGINAL_PAPERCLIP_LISTEN_HOST = process.env.PAPERCLIP_LISTEN_HOST;
 const ORIGINAL_PAPERCLIP_LISTEN_PORT = process.env.PAPERCLIP_LISTEN_PORT;
+const ORIGINAL_PAPERCLIP_DECISION_SIGNING_SECRET = process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
+const ORIGINAL_PAPERCLIP_AGENT_JWT_SECRET = process.env.PAPERCLIP_AGENT_JWT_SECRET;
+const ORIGINAL_BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
+
+function restoreEnv(name: string, original: string | undefined) {
+  if (original === undefined) delete process.env[name];
+  else process.env[name] = original;
+}
+
+// startServer() and the per-suite beforeEach hooks write process.env; restore it
+// after every test in this file so no later test (or file sharing the worker)
+// inherits secrets or runtime API URLs.
+afterEach(() => {
+  restoreEnv("PAPERCLIP_DECISION_SIGNING_SECRET", ORIGINAL_PAPERCLIP_DECISION_SIGNING_SECRET);
+  restoreEnv("PAPERCLIP_AGENT_JWT_SECRET", ORIGINAL_PAPERCLIP_AGENT_JWT_SECRET);
+  restoreEnv("BETTER_AUTH_SECRET", ORIGINAL_BETTER_AUTH_SECRET);
+  restoreEnv("PAPERCLIP_API_URL", ORIGINAL_PAPERCLIP_API_URL);
+  restoreEnv("PAPERCLIP_RUNTIME_API_URL", ORIGINAL_PAPERCLIP_RUNTIME_API_URL);
+  restoreEnv("PAPERCLIP_RUNTIME_API_CANDIDATES_JSON", ORIGINAL_PAPERCLIP_RUNTIME_API_CANDIDATES_JSON);
+  restoreEnv("PAPERCLIP_LISTEN_HOST", ORIGINAL_PAPERCLIP_LISTEN_HOST);
+  restoreEnv("PAPERCLIP_LISTEN_PORT", ORIGINAL_PAPERCLIP_LISTEN_PORT);
+});
 
 const {
   createAppMock,
@@ -201,7 +223,10 @@ vi.mock("detect-port", () => ({
   default: detectPortMock,
 }));
 
-vi.mock("@paperclipai/db", () => ({
+vi.mock("@paperclipai/db", async (importOriginal) => ({
+  // Spread the real module: server code reached via the un-mocked import graph
+  // reads table columns at module load (e.g. heartbeatRuns, documents).
+  ...(await importOriginal<typeof import("@paperclipai/db")>()),
   createDb: createDbMock,
   ensurePostgresDatabase: vi.fn(),
   getPostgresDataDirectory: vi.fn(),
@@ -425,9 +450,8 @@ describe("startServer feedback export wiring", () => {
     }
   });
 
-  it("refuses a symlink planted as the generated decision signing key", async () => {
-    if (process.platform === "win32") return;
-
+  // Creating symlinks needs elevated rights on Windows; skip visibly rather than pass vacuously.
+  it.skipIf(process.platform === "win32")("refuses a symlink planted as the generated decision signing key", async () => {
     const originalHome = process.env.PAPERCLIP_HOME;
     const originalInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
     const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-key-symlink-"));

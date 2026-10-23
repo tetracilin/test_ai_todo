@@ -87,6 +87,7 @@ const invalidTokenStdout = [
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
   probeResult.value = { exitCode: 1, stdout: "", stderr: "", timedOut: false };
   probeResult.throwError = null;
 });

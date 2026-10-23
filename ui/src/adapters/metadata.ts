@@ -44,6 +44,16 @@ export function isValidAdapterType(type: string): boolean {
 }
 
 /**
+ * Whether the server allows creating an agent on this adapter. Prefers the
+ * server-advertised `selectable` flag; falls back to the static hermes_gateway
+ * rule for servers that do not send it.
+ */
+export function isSelectableAdapter(adapter: { type: string; disabled: boolean; selectable?: boolean }): boolean {
+  if (adapter.disabled) return false;
+  return typeof adapter.selectable === "boolean" ? adapter.selectable : isValidAdapterType(adapter.type);
+}
+
+/**
  * Check whether an adapter should appear in card-style visual pickers.
  * Experimental adapters can remain selectable from explicit configuration
  * dropdowns without being recommended during onboarding or setup flows.

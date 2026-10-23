@@ -81,7 +81,7 @@ if (optedIn && !live) {
 
   afterAll(async () => {
     await resetRuntimeServicesForTests();
-    await tempDb?.stop?.();
+    await tempDb?.cleanup();
   }, 60_000);
 
   it("upgrades a pre-existing HTTP workspace in place to a browser-trusted HTTPS URL", async () => {

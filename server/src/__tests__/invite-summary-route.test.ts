@@ -6,11 +6,14 @@ const mockStorage = vi.hoisted(() => ({
   headObject: vi.fn(),
 }));
 
-function registerModuleMocks() {
-  vi.doMock("../storage/index.js", () => ({
-    getStorageService: () => mockStorage,
-  }));
-}
+vi.mock("../storage/index.js", () => ({
+  getStorageService: () => mockStorage,
+}));
+
+// Static imports after vi.mock: the route module graph is evaluated once per
+// file instead of being re-transformed in every test via vi.resetModules().
+import { accessRoutes } from "../routes/access.js";
+import { errorHandler } from "../middleware/index.js";
 
 function createSelectChain(rows: unknown[]) {
   const query = {
@@ -45,14 +48,10 @@ function createDbStub(...selectResponses: unknown[][]) {
   };
 }
 
-async function createApp(
+function createApp(
   db: Record<string, unknown>,
   actor: Record<string, unknown> = { type: "anon" },
 ) {
-  const [{ accessRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/access.js")>("../routes/access.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-  ]);
   const app = express();
   app.use((req, _res, next) => {
     (req as any).actor = actor;
@@ -73,11 +72,6 @@ async function createApp(
 
 describe("GET /invites/:token", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.doUnmock("../storage/index.js");
-    vi.doUnmock("../routes/access.js");
-    vi.doUnmock("../middleware/index.js");
-    registerModuleMocks();
     mockStorage.headObject.mockReset();
     mockStorage.headObject.mockResolvedValue({ exists: true, contentLength: 3, contentType: "image/png" });
   });
@@ -97,7 +91,7 @@ describe("GET /invites/:token", () => {
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
       updatedAt: new Date("2026-03-07T00:00:00.000Z"),
     };
-    const app = await createApp(
+    const app = createApp(
       createDbStub(
         [invite],
         [
@@ -146,7 +140,7 @@ describe("GET /invites/:token", () => {
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
       updatedAt: new Date("2026-03-07T00:00:00.000Z"),
     };
-    const app = await createApp(
+    const app = createApp(
       createDbStub(
         [invite],
         [
@@ -189,7 +183,7 @@ describe("GET /invites/:token", () => {
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
       updatedAt: new Date("2026-03-07T00:05:00.000Z"),
     };
-    const app = await createApp(
+    const app = createApp(
       createDbStub(
         [invite],
         [{ requestType: "human", status: "pending_approval" }],
@@ -254,7 +248,7 @@ describe("GET /invites/:token", () => {
       byteSize: 3,
       originalFilename: "logo.png",
     };
-    const app = await createApp(
+    const app = createApp(
       createDbStub(
         [invite],
         [],

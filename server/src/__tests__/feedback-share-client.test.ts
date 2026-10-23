@@ -11,6 +11,7 @@ describe("feedback trace share client", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -97,5 +98,73 @@ describe("feedback trace share client", () => {
     expect(parsed.objectKey).toContain("feedback-traces/company-1/");
     expect(parsed.objectKey.endsWith("/export-1.json")).toBe(true);
     expect(parsed.bundle.envelope).toEqual({ hello: "world" });
+  });
+
+  const minimalBundle = {
+    traceId: "trace-1",
+    exportId: "export-1",
+    companyId: "company-1",
+    issueId: "issue-1",
+    issueIdentifier: "PAP-1",
+    adapterType: "codex_local",
+    captureStatus: "full",
+    notes: [],
+    envelope: {},
+    surface: null,
+    paperclipRun: null,
+    rawAdapterTrace: null,
+    normalizedAdapterTrace: null,
+    privacy: null,
+    integrity: {},
+    files: [],
+  } as unknown as Parameters<ReturnType<typeof createFeedbackTraceShareClientFromConfig>["uploadTraceBundle"]>[0];
+
+  it("posts to a configured backend url and omits authorization when no token is set", async () => {
+    const client = createFeedbackTraceShareClientFromConfig({
+      feedbackExportBackendUrl: "https://feedback.example.test/base",
+      feedbackExportBackendToken: undefined,
+    });
+
+    await client.uploadTraceBundle(minimalBundle);
+
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call?.[0]).toBe("https://feedback.example.test/feedback-traces");
+    expect((call?.[1]?.headers as Record<string, string>)).not.toHaveProperty("authorization");
+  });
+
+  it("rejects with the response detail, or the HTTP status when there is none, on a failed upload", async () => {
+    const client = createFeedbackTraceShareClientFromConfig({
+      feedbackExportBackendUrl: "https://feedback.example.test",
+      feedbackExportBackendToken: undefined,
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 413,
+      text: vi.fn().mockResolvedValue("payload too large\n"),
+    } as unknown as Response);
+    await expect(client.uploadTraceBundle(minimalBundle)).rejects.toThrow("payload too large");
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: vi.fn().mockResolvedValue("   "),
+    } as unknown as Response);
+    await expect(client.uploadTraceBundle(minimalBundle)).rejects.toThrow("HTTP 502");
+  });
+
+  it("falls back to the locally computed object key when the backend response omits one", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    } as unknown as Response);
+    const client = createFeedbackTraceShareClientFromConfig({
+      feedbackExportBackendUrl: "https://feedback.example.test",
+      feedbackExportBackendToken: "tok",
+    });
+
+    const result = await client.uploadTraceBundle(minimalBundle);
+
+    expect(result.objectKey).toMatch(/^feedback-traces\/company-1\/\d{4}\/\d{2}\/\d{2}\/export-1\.json$/);
   });
 });

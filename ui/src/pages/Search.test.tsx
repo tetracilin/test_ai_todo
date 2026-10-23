@@ -106,9 +106,13 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function waitForAssertion(assertion: () => void, attempts = 50) {
+// Bound by time, not iterations: the search debounce is 300ms of real time, so a
+// fixed number of flush cycles can be exhausted before it elapses on a fast
+// machine and is too short on a loaded one.
+async function waitForAssertion(assertion: () => void, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  do {
     try {
       assertion();
       return;
@@ -116,7 +120,7 @@ async function waitForAssertion(assertion: () => void, attempts = 50) {
       lastError = error;
       await flush();
     }
-  }
+  } while (Date.now() < deadline);
   throw lastError;
 }
 
@@ -511,8 +515,6 @@ describe("Search page", () => {
     // The debounce hasn't fired yet, so no API call should be made synchronously.
     expect(searchApiMock.search).not.toHaveBeenCalled();
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
-
     await waitForAssertion(() => {
       expect(searchApiMock.search).toHaveBeenCalledWith("company-1", {
         q: "deflake",
@@ -704,8 +706,6 @@ describe("Search page", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
-
     await waitForAssertion(() => {
       expect(searchApiMock.search).toHaveBeenCalledWith("company-1", {
         q: "auth",
@@ -736,7 +736,6 @@ describe("Search page", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
     await waitForAssertion(() => {
       expect(searchApiMock.search).toHaveBeenCalledWith("company-1", {
         q: "auth",
@@ -752,7 +751,6 @@ describe("Search page", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
     await waitForAssertion(() => {
       const lastCall = searchApiMock.search.mock.calls.at(-1);
       expect(lastCall?.[1]).toEqual({ q: "auth", scope: "all", limit: 20 });
@@ -775,7 +773,6 @@ describe("Search page", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
     await waitForAssertion(() => {
       expect(searchApiMock.search).toHaveBeenCalledWith("company-1", {
         q: "auth",

@@ -26,14 +26,25 @@ import { secretService } from "./secrets.js";
  * file, and re-record `__tests__/fixtures/teable-api-exchanges.json`.
  *
  * What this module does NOT do, on purpose:
- * - no `external_objects` row, no evidence link, no dossier line (F-010-2)
- * - no table allowlist and no write-conflict policy (F-010-2 / Slice 2)
- * - no cron, no activity_log, no conflict flagging (F-005-1); this client only
- *   exposes `modifiedAt` so F-005-1 has something to compare
- * - no update/delete of any kind: Slice 1 is append-only
+ * - no `external_objects` row, no evidence link, no dossier line (F-010-2 and
+ *   F-005-1 both own that wiring themselves, in `teable-append.ts` and
+ *   `teable-mirror.ts` respectively)
+ * - no table allowlist and no write-conflict policy for PC-010's general
+ *   multi-table case (F-010-2 / Slice 2) -- F-005-1's own conflict check
+ *   against ONE table it owns is implemented in `teable-mirror.ts`, using
+ *   `updateRecord` below plus the `modifiedAt` this client already exposes
+ * - no cron, no activity_log (F-005-1 owns both in `teable-mirror.ts`)
+ * - no delete of any kind, and no RETRY of a write: `createRecords` takes no
+ *   idempotency key (a retried POST duplicates a row) and `updateRecord`'s
+ *   retry-then-double-apply is exactly what F-005-1's read-before-write
+ *   conflict check exists to prevent -- both are single-attempt here, and a
+ *   caller that wants a write retried does so at the cron-tick level, never
+ *   inside one HTTP call. `updateRecord` PATCHes one record's fields; it never
+ *   creates a row, so it cannot substitute for `createRecords`.
  *
  * How callers are expected to handle a failure result:
- * - F-005-1  -> log to activity_log and reschedule at `now + retryAfterSeconds`.
+ * - F-005-1  -> log to activity_log and reschedule at `now + retryAfterSeconds`
+ *               (or the mirror's own backoff when the error carries none).
  *               Never sleep inside a cron tick.
  * - F-010-2  -> refuse the whole write; create no row and append no dossier line.
  * - F-010-3  -> render `error.message` into the chat reply as-is; it is written
@@ -261,6 +272,25 @@ export interface TeableClient {
     fieldKeyType?: TeableFieldKeyType;
     typecast?: boolean;
   }): Promise<TeableResult<TeableRecord[]>>;
+
+  /**
+   * PATCHes the fields of ONE existing record. Added for F-005-1, whose mirror
+   * owns exactly one row per issue and must reflect a status/assignee change
+   * onto it rather than appending a duplicate. Like `createRecords`, this is
+   * never auto-retried by this client (see the module docblock) -- the caller
+   * is expected to have already done its own read-before-write compare
+   * (`getRecord`, `TeableRecord.lastModifiedTime`/`modifiedAt`) before calling
+   * this, and to reschedule at the cron-tick level on failure, never retry
+   * inside this call.
+   */
+  updateRecord(input: {
+    companyId: string;
+    tableId: string;
+    recordId: string;
+    fields: Record<string, unknown>;
+    fieldKeyType?: TeableFieldKeyType;
+    typecast?: boolean;
+  }): Promise<TeableResult<TeableRecord>>;
 
   listFields(input: { companyId: string; tableId: string }): Promise<TeableResult<TeableField[]>>;
 
@@ -661,7 +691,7 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
   async function request<T>(input: {
     companyId: string;
     purpose: TeableTokenPurpose;
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "PATCH";
     url: string;
     body?: unknown;
     parse: (payload: unknown) => T | null;
@@ -831,6 +861,33 @@ export function createTeableClient(db: Db, opts: TeableClientOptions = {}): Teab
         parse: (payload) =>
           parseArrayOf(payload, parseTeableRecord) ??
           parseArrayOf(asRecord(payload)?.records, parseTeableRecord),
+      });
+    },
+
+    async updateRecord(input) {
+      assertTeableId("table id", input.tableId);
+      assertTeableId("record id", input.recordId);
+      const url = buildTeableUrl(
+        config.baseUrl,
+        `/table/${encodeURIComponent(input.tableId)}/record/${encodeURIComponent(input.recordId)}`,
+      );
+      return request({
+        companyId: input.companyId,
+        purpose: "write",
+        method: "PATCH",
+        url,
+        // INFERRED, by analogy with the documented createRecords batch shape
+        // (`{ fieldKeyType, typecast, records: [{ fields }] }`): the single-record
+        // update endpoint is documented as taking one `record: { fields }`
+        // rather than a `records` array. Re-verify against the staging
+        // instance's own `/swagger.json` alongside this file's other
+        // INFERRED assumptions (see the module docblock).
+        body: {
+          fieldKeyType: input.fieldKeyType ?? "name",
+          typecast: input.typecast ?? false,
+          record: { fields: input.fields },
+        },
+        parse: parseTeableRecord,
       });
     },
 

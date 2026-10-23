@@ -39,6 +39,10 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
+if (!sshFixtureSupport.supported) {
+  console.warn(`Skipping SSH driver contract test: ${sshFixtureSupport.reason ?? "unsupported environment"}`);
+}
+
 interface RuntimeContractCase {
   name: string;
   driver: string;
@@ -269,12 +273,9 @@ describeEmbeddedPostgres("environment runtime driver contract", () => {
     });
   }
 
-  it("SSH satisfies the acquire/release host contract", async () => {
-    if (!sshFixtureSupport.supported) {
-      console.warn(`Skipping SSH driver contract test: ${sshFixtureSupport.reason ?? "unsupported environment"}`);
-      return;
-    }
-
+  // skipIf (rather than an early return) so an unsupported host reports the
+  // test as skipped instead of a vacuous pass.
+  it.skipIf(!sshFixtureSupport.supported)("SSH satisfies the acquire/release host contract", async () => {
     const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-env-runtime-contract-ssh-"));
     fixtureRoots.push(fixtureRoot);
     const fixture = await startSshEnvLabFixture({ statePath: path.join(fixtureRoot, "state.json") });

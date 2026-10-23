@@ -513,6 +513,8 @@ describe("IssueProperties", () => {
   });
 
   afterEach(() => {
+    // Restore Date.now spies even when a test fails before its own cleanup runs.
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
     window.sessionStorage.clear();
   });
@@ -2632,7 +2634,12 @@ describe("IssueProperties", () => {
     };
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const root = createRoot(container);
-    const monitorRowText = () => container.querySelector('[data-testid="monitor-row-trigger"]')?.textContent;
+    // Meridiem casing is locale-dependent (en-US "PM", en-001/en-AU "pm"); normalise it
+    // so the exact clock/label assertions hold on any machine locale.
+    const monitorRowText = () =>
+      container.querySelector('[data-testid="monitor-row-trigger"]')?.textContent
+        ?.replace(/(?<=\d[\s  ]?)[ap]m\b/gi, (meridiem) => meridiem.toUpperCase())
+        .replace(/[  ]/g, " ");
     const renderMonitor = (issue: Issue) => {
       act(() => {
         root.render(
@@ -2650,8 +2657,8 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("In 2h 12m");
-    // The hour is rendered in the machine's timezone, so it is not pinned here:
-    // this instant is 4:08 PM at UTC and 9:08 AM at UTC-7. What the row states
+    // NOW is anchored to local time, so the rendered clock is the same in every
+    // timezone (13:56 + 132m = 4:08 PM). What the row states
     // are actually about — the countdown and the attempt suffix — is asserted
     // exactly, and the countdown above is timezone-independent already.
     expect(monitorRowText()).toContain("Today, 4:08 PM · Attempt 1");

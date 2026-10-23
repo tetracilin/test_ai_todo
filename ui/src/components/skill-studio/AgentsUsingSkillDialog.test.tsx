@@ -204,9 +204,9 @@ describe("AgentsUsingSkillBadge", () => {
   it("renders a muted '0 agents' button with an a11y label when unused", async () => {
     await renderNode(<AgentsUsingSkillBadge companyId="company-1" skill={makeSkill()} />);
     const badge = findButton("0 agents");
-    expect(badge).toBeDefined();
-    expect(badge?.getAttribute("aria-label")).toBe("0 agents use this skill");
-    expect(badge?.className).toContain("text-muted-foreground");
+    expect(badge.textContent?.trim()).toBe("0 agents");
+    expect(badge.getAttribute("aria-label")).toBe("0 agents use this skill");
+    expect(badge.className).toContain("text-muted-foreground");
   });
 
   it("pluralizes and opens the dialog on click", async () => {

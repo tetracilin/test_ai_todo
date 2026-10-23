@@ -146,6 +146,25 @@ describe("adapter routes", () => {
     }
   });
 
+  it("GET /api/adapters marks only the selectable adapters as selectable", async () => {
+    const previous = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    try {
+      const res = await request(createApp()).get("/api/adapters");
+      expect(res.status).toBe(200);
+      const selectable = res.body
+        .filter((a: { selectable: boolean }) => a.selectable)
+        .map((a: { type: string }) => a.type);
+      expect([...selectable].sort()).toEqual(["claude_local", "hermes_gateway", "hermes_local"]);
+      const codexLocal = res.body.find((a: { type: string }) => a.type === "codex_local");
+      expect(codexLocal.selectable).toBe(false);
+      for (const adapter of res.body) expect(typeof adapter.selectable).toBe("boolean");
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+      else process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = previous;
+    }
+  });
+
   it("GET /api/adapters returns correct capabilities for built-in adapters", async () => {
     const app = createApp();
 
@@ -280,7 +299,7 @@ describe("adapter routes", () => {
     expect(paused.status, JSON.stringify(paused.body)).toBe(200);
 
     const builtin = await request(app).get("/api/adapters/claude_local/config-schema");
-    expect([200, 404], JSON.stringify(builtin.body)).toContain(builtin.status);
+    expect(builtin.status, JSON.stringify(builtin.body)).toBe(200);
     expect(builtin.body).not.toMatchObject({
       fields: [{ key: "mode" }],
     });

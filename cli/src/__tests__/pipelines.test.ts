@@ -40,6 +40,7 @@ describe("pipeline CLI commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

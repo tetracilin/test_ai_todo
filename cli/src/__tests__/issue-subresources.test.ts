@@ -43,6 +43,7 @@ describe("issue subresource commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

@@ -22,5 +22,7 @@ describe("clipboard usage", () => {
       .filter((file) => DIRECT_CLIPBOARD_WRITE.test(readFileSync(file, "utf8")));
 
     expect(violations).toEqual([]);
-  });
+    // Synchronous whole-tree source scan: cost scales with disk speed (about 5s on
+    // Windows/NTFS, past vitest's 5s default), not with logic, so give it headroom.
+  }, 60_000);
 });

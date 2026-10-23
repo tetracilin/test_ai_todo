@@ -14,9 +14,18 @@ frontmatter (`id`, `role`, `siblings`) and links the other two.
 `AGENTS.md` at the repo root is the canonical contributor guide (repo map, core engineering
 rules, DB change workflow, API/auth expectations, UI expectations, PR requirements, definition of done). Everything there applies to Claude Code sessions too — this file adds command references and architecture context that complement it, without repeating it.
 
-Also read, in order, before non-trivial changes: `doc/GOAL.md`, `doc/PRODUCT.md`,
-`doc/SPEC-implementation.md` (the concrete V1 build contract), `doc/DEVELOPING.md`,
-`doc/DATABASE.md`.
+Also read, in order, before non-trivial changes: `technical-spec/product/GOAL.md`, `technical-spec/product/PRODUCT.md`,
+`technical-spec/product/SPEC-implementation.md` (the concrete V1 build contract), `technical-spec/engineering/DEVELOPING.md`,
+`technical-spec/engineering/DATABASE.md`.
+
+## Where documents live
+
+All design and technical documentation lives under `technical-spec/` (index:
+`technical-spec/README.md`). There is no `doc/` or `docs/` folder; do not create one.
+
+- Plans, including `superpowers:writing-plans` output → `technical-spec/plans/YYYY-MM-DD-<slug>.md`
+- Design specs, including `superpowers:brainstorming` output → `technical-spec/specs/YYYY-MM-DD-<topic>-design.md`
+- This overrides those skills' default `docs/superpowers/...` locations.
 
 ## Commands
 
@@ -64,7 +73,7 @@ surface, or when explicitly verifying CI/release flows:
 ```sh
 pnpm test:e2e            # Playwright, tests/e2e
 pnpm test:release-smoke  # Playwright, tests/release-smoke
-pnpm test:storybook-visual   # Linux/Ubuntu-only pixel baselines; see doc/DEVELOPING.md
+pnpm test:storybook-visual   # Linux/Ubuntu-only pixel baselines; see technical-spec/engineering/DEVELOPING.md
 ```
 
 For normal issue-sized work, run the smallest relevant check (a single test file, or one
@@ -92,7 +101,7 @@ Data-model workflow: edit `packages/db/src/schema/*.ts` → export new tables fr
 
 `ui/src/components/**` and `ui/src/pages/**` must use only tokens from `ui/src/index.css` (no hex,
 raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize`, outside the documented
-allowlist). `docs/designs/DESIGN-UI.md` is the source of truth. Run before committing UI changes:
+allowlist). `technical-spec/designs/DESIGN-UI.md` is the source of truth. Run before committing UI changes:
 
 ```sh
 pnpm check:token-gates
@@ -176,7 +185,7 @@ Every PR (human or AI) must fill in `.github/PULL_REQUEST_TEMPLATE.md` in full, 
 `AGENTS.md` §§10–11 for the required sections and definition of done.
 
 When a task produces a user-inspectable deliverable file, follow the artifact upload workflow in
-`doc/AGENT-ARTIFACTS.md` (prefer `skills/paperclip/scripts/paperclip-upload-artifact.sh`) rather
+`technical-spec/engineering/AGENT-ARTIFACTS.md` (prefer `skills/paperclip/scripts/paperclip-upload-artifact.sh`) rather
 than leaving it only as a local workspace path — see `AGENTS.md` §5.6.
 
 CI/CD rules for this repository
@@ -199,7 +208,13 @@ Never deploy by hand. No docker build / docker compose up against t3-nightly or 
 Never commit secrets. .env is gitignored; .env.example must stay safe to publish. Runtime secrets live outside the repo on kmv8 (SECRETS_DIR in the workflows) and in GitHub Environment secrets. If you find a secret in the tree, remove it and rotate it — do not just delete the line.
 Never touch .github/workflows/, deploy/compose.yaml, or deploy/scripts/ in the same PR as application code. Pipeline changes get their own PR, labelled ci, reviewed by a human.
 Never resolve a merge conflict by taking one side wholesale. Read both sides. If unsure, rebase onto develop and re-push; the PR will show the real diff.
-This is a hard fork of paperclipai/paperclip. Do not add an upstream remote, merge or rebase from upstream, or restore upstream's workflows (release.yml, pr.yml, refresh-lockfile.yml, canary/beta). Security fixes are cherry-picked by a human via a fix/* PR citing the upstream commit. See doc/ORIGIN.md.
+This is a hard fork of paperclipai/paperclip. Do not add an upstream remote, merge or rebase from upstream, or restore upstream's workflows (release.yml, pr.yml, refresh-lockfile.yml, canary/beta). Security fixes are cherry-picked by a human via a fix/* PR citing the upstream commit. See technical-spec/fork/ORIGIN.md.
+Feature-driven upstream import (owner decision 2026-09-21). An agent may read and download upstream code, but only when the feature in the current task requires it (for example the Hermes runtime pieces). Never as a general sync. Rules:
+- Fetch read-only: gh api repos/paperclipai/paperclip/contents/<path>, or a one-off shallow clone into a temp directory outside the repo. The repo still has no upstream remote.
+- Take only the files the feature needs. Adapt them to fork behaviour; fork wins on conflict. No wholesale directory, history or lockfile imports.
+- Land it through a normal feature/* or fix/* PR from develop with the usual gates. Anything that touches .github/workflows/, deploy/compose.yaml or deploy/scripts/ goes in a separate ci PR.
+- The PR body must name the upstream commit sha, the file paths taken and the licence. Keep LICENSE, NOTICE and file headers. Use git cherry-pick -x only for a whole upstream commit.
+- Upstream's release engineering and workflows stay out, and security fixes keep the human cherry-pick path above. If unsure that the feature needs the import, ask.
 What a PR must have before merge
 Based on current develop (rebase before opening; rebase again if develop moves).
 The t3-ci checks unit, build and build-image green. (Those are the literal status-check names — GitHub Actions reports the job name, not "t3-ci / unit".) A red CI is never "flaky, merge anyway" — fix it or ask.
@@ -254,11 +269,11 @@ When you touch the shared checkout by mistake, say so in the PR. Silent recovery
 Where things live
 Item	Location
 CI/CD plan and assumptions	CICD/PLAN_CICD.md
-Fork origin and cherry-pick policy	doc/ORIGIN.md
+Fork origin and cherry-pick policy	technical-spec/fork/ORIGIN.md
 Workflows	.github/workflows/t3-{ci,nightly,release}.yml — the only workflows that should exist
 Deploy scripts	deploy/scripts/{healthcheck,image-retention,version-drift}.sh
 Compose	deploy/compose.yaml
 Run logs	GitHub → Actions; Discord channel 1534836487772704800 for summaries
 Runner	kmv8, user ghrunner, label kmv8, systemd service
-Operator guide (how to drive PRs and deploys safely)	docs/operating-with-claude-code.md
-What runs on kmv8, and what depends on it	docs/deploy/kmv8-stack-inventory.md
+Operator guide (how to drive PRs and deploys safely)	technical-spec/fork/operating-with-claude-code.md
+What runs on kmv8, and what depends on it	technical-spec/fork/kmv8-stack-inventory.md

@@ -12,10 +12,10 @@ updated: 2026-09-01
 This file is one of the three fork-owned source-of-truth (SSoT) documents, together with
 [`roadmap.md`](roadmap.md) (identity, user stories, horizons) and [`backlog.md`](backlog.md)
 (incremental work packages). This one records the architecture the roadmap and backlog
-assume. Design record: `docs/designs/t3-company-os-ssot.md`.
+assume. Design record: `technical-spec/designs/t3-company-os-ssot.md`.
 
 > The **UI design language** (tokens, component rules, `check:token-gates`) is a separate
-> concern and lives at [`docs/designs/DESIGN-UI.md`](docs/designs/DESIGN-UI.md).
+> concern and lives at [`technical-spec/designs/DESIGN-UI.md`](technical-spec/designs/DESIGN-UI.md).
 
 ## Control plane + adapters
 
@@ -24,7 +24,7 @@ The core is upstream Paperclip's control plane: company-scoped projects, issues
 wakeups. Agent runtimes attach through adapter packages (`packages/adapters/*`); the
 fork's field agents run through the `hermes-gateway` adapter. Domain bindings for T3's
 business process are fixed by the K6 domain map
-(`docs/migration/test-ai-todo-domain-map.md`) — no new tables without cause.
+(`technical-spec/fork/migration/test-ai-todo-domain-map.md`) — no new tables without cause.
 
 ## Two-surface model
 
@@ -78,7 +78,7 @@ into a full knowledge plane is an open question in `roadmap.md` (NEXT horizon).
 ## Company skill repo
 
 Company-wide skills are versioned, reviewed, and rolled out from a skill repository,
-using the hermes-agent workspace pattern (`doc/HERMES_GATEWAY_ONBOARDING.md`) as the
+using the hermes-agent workspace pattern (`technical-spec/fork/hermes/HERMES_GATEWAY_ONBOARDING.md`) as the
 template: an agent's workspace assembles identity, skills, and secrets per run. The
 versioning/review/rollout mechanics need their own spec (open question in `roadmap.md`).
 

@@ -65,6 +65,7 @@ import {
   workspaceOperationService,
 } from "./services/index.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
+import { schedulingService } from "./services/scheduling.js";
 import { createSecretProposalsService } from "./services/secret-proposals.js";
 import { environmentRuntimeService } from "./services/environment-runtime.js";
 import { createDbAdapterAuthSessionStore } from "./services/codex-device-login-service.js";
@@ -85,6 +86,7 @@ import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig, createExternalStorageProviderFromConfig } from "./storage/index.js";
 import { createStorageService } from "./storage/service.js";
 import { createEvidenceStorageReaper, type EvidenceStorageReapResult } from "./services/evidence-storage-reaper.js";
+import { teableMirrorService, type TeableMirrorSweepSummary } from "./services/teable-mirror.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -1018,6 +1020,28 @@ export async function startServer(): Promise<StartedServer> {
     pluginWorkerManager,
     enabled: async () => (await instanceSettingsService(db).getExperimental()).enableExternalObjects === true,
   });
+  // Scheduling routines only create their tasks when something asks them to. Without
+  // this sweep a daily routine never produced a task unless someone pressed "Run".
+  // Throttled: a routine's next task only changes at the routine's local midnight.
+  const SCHEDULING_ROUTINE_SWEEP_MIN_INTERVAL_MS = 5 * 60 * 1000;
+  let lastSchedulingRoutineSweepAt = 0;
+  const scheduleSchedulingRoutineSweep = (now = new Date()) => {
+    if (heartbeatSchedulerStopped) return;
+    if (now.getTime() - lastSchedulingRoutineSweepAt < SCHEDULING_ROUTINE_SWEEP_MIN_INTERVAL_MS) return;
+    lastSchedulingRoutineSweepAt = now.getTime();
+    trackHeartbeatSchedulerWork(schedulingService(db)
+      .generateDueIssuesForActiveCompanies({ asOf: now }, (companyId, err) => {
+        logger.error({ err, companyId }, "scheduling-routine sweep failed for company");
+      })
+      .then((result) => {
+        if (result.created > 0) {
+          logger.info({ ...result }, "scheduling-routine sweep created due tasks");
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "scheduling-routine sweep failed");
+      }));
+  };
   const scheduleExternalObjectRefreshSweep = (now = new Date()) => {
     if (heartbeatSchedulerStopped) return;
     trackHeartbeatSchedulerWork(externalObjects
@@ -1221,6 +1245,27 @@ export async function startServer(): Promise<StartedServer> {
         .then(logEvidenceStorageReaperResult)
         .catch((err) => {
           logger.error({ err }, "evidence storage reaper sweep failed");
+        }));
+    };
+
+    // F-005-1: mirrors card create/status/assignee changes into each
+    // company's allowlisted Teable "Tecotec CN" table. A no-op per company
+    // until that company's TEABLE_MIRROR_TABLE_ID secret is configured -- see
+    // teable-mirror.ts's own docblock for why this needs no separate
+    // experimental flag.
+    const teableMirror = teableMirrorService(db as any);
+    const logTeableMirrorSweepResult = (result: { companies: number } & TeableMirrorSweepSummary) => {
+      if (result.created > 0 || result.updated > 0 || result.conflicts > 0 || result.failed > 0) {
+        logger.info(result, "teable mirror sweep synced card changes");
+      }
+    };
+    const scheduleTeableMirrorSweep = () => {
+      if (heartbeatSchedulerStopped) return;
+      trackHeartbeatSchedulerWork(teableMirror
+        .sweepActiveCompanies()
+        .then(logTeableMirrorSweepResult)
+        .catch((err) => {
+          logger.error({ err }, "teable mirror sweep failed");
         }));
     };
 
@@ -1437,6 +1482,7 @@ export async function startServer(): Promise<StartedServer> {
 
         if (heartbeatSchedulerStopped) return;
         scheduleExternalObjectRefreshSweep(new Date());
+        scheduleSchedulingRoutineSweep(new Date());
 
         if (heartbeatSchedulerStopped) return;
         scheduleMergedPullRequestConfirmationSweep();
@@ -1445,6 +1491,7 @@ export async function startServer(): Promise<StartedServer> {
         scheduleSetupTokenReaperSweep();
         scheduleEvidenceStorageReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
+        scheduleTeableMirrorSweep();
 
         if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork(routines
@@ -1589,6 +1636,7 @@ export async function startServer(): Promise<StartedServer> {
     await runEnvironmentLeaseCleanupSweep(0);
     startHeartbeatSchedulerInterval(() => {
       scheduleExternalObjectRefreshSweep(new Date());
+      scheduleSchedulingRoutineSweep(new Date());
       scheduleEnvironmentLeaseCleanupSweep();
     });
   }

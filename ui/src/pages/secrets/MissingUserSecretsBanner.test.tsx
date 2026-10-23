@@ -92,6 +92,7 @@ async function flushReact() {
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,7 +106,7 @@ afterEach(() => {
 });
 
 function render() {
-  const queryClient = new QueryClient({
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   root = createRoot(container);
@@ -118,6 +119,24 @@ function render() {
       </QueryClientProvider>,
     );
   });
+}
+
+// The banner renders nothing both while loading and when nothing is missing, so
+// a "renders nothing" assertion is only meaningful once the query has settled.
+async function waitForQuerySettled(timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await flushReact();
+    const queries = queryClient.getQueryCache().getAll();
+    if (
+      queries.length > 0 &&
+      queryClient.isFetching() === 0 &&
+      queries.every((query) => query.state.status !== "pending")
+    ) {
+      return;
+    }
+  }
+  throw new Error("Timed out waiting for the user-secrets query to settle");
 }
 
 describe("MissingUserSecretsBanner", () => {
@@ -139,8 +158,9 @@ describe("MissingUserSecretsBanner", () => {
     mockSecretsApi.listMyUserSecrets.mockResolvedValue(entries);
 
     await render();
-    await flushReact();
+    await waitForQuerySettled();
 
+    expect(mockSecretsApi.listMyUserSecrets).toHaveBeenCalledTimes(1);
     expect(container.textContent).toBe("");
   });
 
@@ -151,8 +171,9 @@ describe("MissingUserSecretsBanner", () => {
     mockSecretsApi.listMyUserSecrets.mockResolvedValue(entries);
 
     await render();
-    await flushReact();
+    await waitForQuerySettled();
 
+    expect(mockSecretsApi.listMyUserSecrets).toHaveBeenCalledTimes(1);
     expect(container.textContent).toBe("");
   });
 

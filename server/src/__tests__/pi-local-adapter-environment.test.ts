@@ -38,7 +38,8 @@ process.exit(1);
   await fs.chmod(commandPath, 0o755);
 }
 
-describe("pi_local environment diagnostics", () => {
+// Fake CLI is a shebang script; Windows cannot exec it directly.
+describe.skipIf(process.platform === "win32")("pi_local environment diagnostics", () => {
   it("passes a hello probe when model discovery and execution succeed", async () => {
     const root = path.join(
       os.tmpdir(),

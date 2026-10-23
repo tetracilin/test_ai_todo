@@ -118,6 +118,13 @@ describe("AppsSidebar", () => {
       );
     });
     await flushReact();
+    // Wait on the runtime-slots query landing (live count) rather than only on
+    // a fixed number of turns, so a loaded worker cannot assert too early.
+    await vi.waitFor(() =>
+      expect(sidebarNavItemMock).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Health", liveCount: 1 }),
+      ),
+    );
 
     expect(container.textContent).toContain("Apps");
     expect(container.textContent).toContain("Developer");

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
@@ -31,7 +32,7 @@ async function readOptionalSecret(
 function resolveEnvLabStatePath(): string {
   const instanceRoot =
     process.env.PAPERCLIP_INSTANCE_ROOT?.trim() ||
-    path.join(process.env.HOME ?? "/tmp", ".paperclip-worktrees", "instances", "live-ssh-test");
+    path.join(os.homedir(), ".paperclip-worktrees", "instances", "live-ssh-test");
   return path.join(instanceRoot, "env-lab", "ssh-fixture", "state.json");
 }
 
@@ -155,13 +156,15 @@ describeLiveSsh("live SSH environment smoke", () => {
     }
   });
 
-  it("connects to the configured SSH environment and verifies basic runtime tools", async () => {
+  it("connects to the configured SSH environment and verifies basic runtime tools", async (ctx) => {
     if (resolvedConfig === undefined) {
       resolvedConfig = await resolveSshConfig();
     }
 
     if (!resolvedConfig) {
-      console.warn(
+      // Report a skip rather than a silent pass: an early return here would
+      // show as green with zero assertions executed.
+      ctx.skip(
         "Live SSH smoke test could not resolve SSH config from env vars or env-lab fixture. Set PAPERCLIP_ENV_LIVE_SSH_NO_AUTO_FIXTURE=true to mark this suite skipped intentionally.",
       );
       return;

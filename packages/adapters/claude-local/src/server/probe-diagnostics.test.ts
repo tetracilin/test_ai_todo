@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildClaudeLoginRequiredHint,
   logRedactedSandboxProbeDiagnostic,
@@ -70,6 +70,11 @@ describe("buildClaudeLoginRequiredHint", () => {
 });
 
 describe("logRedactedSandboxProbeDiagnostic", () => {
+  // Restore console.warn even when an assertion throws before the inline mockRestore.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("redacts a JSON secret field before it reaches the log", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     logRedactedSandboxProbeDiagnostic("probe failed", '{"token":"opaque-secret-value"}');

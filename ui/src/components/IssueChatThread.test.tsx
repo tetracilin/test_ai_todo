@@ -62,10 +62,13 @@ const {
   captureComposerViewportSnapshotMock,
   restoreComposerViewportSnapshotMock,
   shouldPreserveComposerViewportMock,
+  viewportActuals,
 } = vi.hoisted(() => ({
   captureComposerViewportSnapshotMock: vi.fn(),
   restoreComposerViewportSnapshotMock: vi.fn(),
   shouldPreserveComposerViewportMock: vi.fn(),
+  // The real implementations, so afterEach can undo per-test mockReturnValue overrides.
+  viewportActuals: {} as Record<"capture" | "restore" | "preserve", (...args: never[]) => unknown>,
 }));
 
 vi.mock("@assistant-ui/react", () => ({
@@ -82,6 +85,9 @@ vi.mock("./transcript/useLiveRunTranscripts", () => ({
 
 vi.mock("../lib/issue-chat-scroll", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/issue-chat-scroll")>();
+  viewportActuals.capture = actual.captureComposerViewportSnapshot as never;
+  viewportActuals.restore = actual.restoreComposerViewportSnapshot as never;
+  viewportActuals.preserve = actual.shouldPreserveComposerViewport as never;
   return {
     ...actual,
     captureComposerViewportSnapshot: captureComposerViewportSnapshotMock.mockImplementation(actual.captureComposerViewportSnapshot),
@@ -323,6 +329,8 @@ function createFileDragEvent(type: string, files: File[]) {
   return event;
 }
 
+const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+
 describe("IssueChatThread", () => {
   let container: HTMLDivElement;
 
@@ -335,12 +343,23 @@ describe("IssueChatThread", () => {
 
   afterEach(() => {
     container.remove();
+    // Tests that mount inside a scroll host leave it behind when an assertion throws first.
+    document.getElementById("main-content")?.remove();
     vi.useRealTimers();
+    // Undo spyOn(window, ...) spies and Element.prototype.scrollIntoView overrides even when
+    // a test failed before reaching its own manual cleanup, so one failure cannot cascade.
+    vi.restoreAllMocks();
+    if (scrollIntoViewDescriptor) {
+      Object.defineProperty(Element.prototype, "scrollIntoView", scrollIntoViewDescriptor);
+    } else {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
     appendMock.mockReset();
     markdownEditorFocusMock.mockReset();
-    captureComposerViewportSnapshotMock.mockClear();
-    restoreComposerViewportSnapshotMock.mockClear();
-    shouldPreserveComposerViewportMock.mockClear();
+    // mockClear alone keeps per-test mockReturnValue overrides alive for later tests.
+    captureComposerViewportSnapshotMock.mockReset().mockImplementation(viewportActuals.capture as never);
+    restoreComposerViewportSnapshotMock.mockReset().mockImplementation(viewportActuals.restore as never);
+    shouldPreserveComposerViewportMock.mockReset().mockImplementation(viewportActuals.preserve as never);
     markdownBodyRenderMock.mockClear();
   });
 

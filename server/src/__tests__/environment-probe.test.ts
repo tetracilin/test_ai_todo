@@ -263,6 +263,114 @@ describe("probeEnvironment", () => {
     }));
   });
 
+  function makeSandboxEnvironment(provider: string) {
+    return {
+      id: "env-sandbox-neg",
+      companyId: "company-1",
+      name: "Negative sandbox",
+      description: null,
+      driver: "sandbox" as const,
+      status: "active" as const,
+      config: { provider, image: "daytonaio/sandbox:0.8.0", reuseLease: true },
+      metadata: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+
+  it("refuses a runtime-lease sandbox probe that has no companyId", async () => {
+    const result = await probeEnvironment({} as any, makeSandboxEnvironment("daytona"), {
+      pluginWorkerManager: {} as any,
+      acquireSandboxRuntimeLease: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      driver: "sandbox",
+      summary: "Sandbox environment probe requires a companyId context.",
+    });
+    expect(mockRuntimeAcquireRunLease).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed runtime-lease sandbox probe and releases nothing when no lease was acquired", async () => {
+    mockRuntimeAcquireRunLease.mockRejectedValue(new Error("provider boot failed"));
+
+    const result = await probeEnvironment({} as any, makeSandboxEnvironment("daytona"), {
+      companyId: "company-1",
+      pluginWorkerManager: {} as any,
+      acquireSandboxRuntimeLease: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      driver: "sandbox",
+      details: { provider: "daytona", error: "provider boot failed" },
+    });
+    expect(mockRuntimeReleaseRunLease).not.toHaveBeenCalled();
+  });
+
+  it("does not let a lease release failure mask a successful runtime-lease probe", async () => {
+    mockRuntimeAcquireRunLease.mockResolvedValue({
+      environment: {},
+      leaseContext: { executionWorkspaceId: null, executionWorkspaceMode: null },
+      lease: {
+        id: "lease-2",
+        provider: "daytona",
+        providerLeaseId: "sandbox-2",
+        leasePolicy: "ephemeral",
+        metadata: {},
+      },
+    });
+    mockRuntimeReleaseRunLease.mockRejectedValue(new Error("archive failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await probeEnvironment({} as any, makeSandboxEnvironment("daytona"), {
+        companyId: "company-1",
+        pluginWorkerManager: {} as any,
+        acquireSandboxRuntimeLease: true,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        summary: "Connected to daytona sandbox environment.",
+      });
+      expect(mockRuntimeReleaseRunLease).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Failed to release lease lease-2"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("fails a plugin-backed sandbox probe when no plugin worker manager is available", async () => {
+    const result = await probeEnvironment({} as any, makeSandboxEnvironment("fake-plugin"));
+
+    expect(result).toMatchObject({
+      ok: false,
+      driver: "sandbox",
+      summary: 'Sandbox provider "fake-plugin" requires a running provider plugin.',
+    });
+    expect(mockProbePluginSandboxProviderDriver).not.toHaveBeenCalled();
+  });
+
+  it("fails a plugin environment probe when no plugin worker manager is available", async () => {
+    const result = await probeEnvironment({} as any, {
+      id: "env-plugin-none",
+      companyId: "company-1",
+      name: "Plugin",
+      description: null,
+      driver: "plugin",
+      status: "active",
+      config: { pluginKey: "acme.environments", driverKey: "sandbox", driverConfig: {} },
+      metadata: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    expect(result).toMatchObject({ ok: false, driver: "plugin" });
+    expect(result.summary).toContain("acme.environments:sandbox");
+    expect(mockProbePluginEnvironmentDriver).not.toHaveBeenCalled();
+  });
+
   it("routes plugin environment probes through the plugin worker host", async () => {
     mockProbePluginEnvironmentDriver.mockResolvedValue({
       ok: true,

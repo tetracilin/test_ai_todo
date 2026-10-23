@@ -30,6 +30,11 @@ async function createCustomSkill(root: string, skillName: string) {
   );
 }
 
+// These tests create skill symlinks with fs.symlink, which needs elevated privileges
+// (EPERM) on stock Windows; run them on POSIX hosts (same convention as
+// cursor-local-skill-injection.test.ts).
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("codex local adapter skill injection", () => {
   const paperclipKey = "paperclipai/paperclip/paperclip";
   const createAgentKey = "paperclipai/paperclip/paperclip-create-agent";
@@ -40,7 +45,7 @@ describe("codex local adapter skill injection", () => {
     cleanupDirs.clear();
   });
 
-  it("repairs a Codex Paperclip skill symlink that still points at another live checkout", async () => {
+  itPosix("repairs a Codex Paperclip skill symlink that still points at another live checkout", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const oldRepo = await makeTempDir("paperclip-codex-old-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -95,7 +100,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("preserves a custom Codex skill symlink outside Paperclip repo checkouts", async () => {
+  itPosix("preserves a custom Codex skill symlink outside Paperclip repo checkouts", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const customRoot = await makeTempDir("paperclip-codex-custom-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -121,7 +126,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("prunes broken symlinks for unavailable Paperclip repo skills before Codex starts", async () => {
+  itPosix("prunes broken symlinks for unavailable Paperclip repo skills before Codex starts", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const oldRepo = await makeTempDir("paperclip-codex-old-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -161,7 +166,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("preserves other live Paperclip skill symlinks in the shared workspace skill directory", async () => {
+  itPosix("preserves other live Paperclip skill symlinks in the shared workspace skill directory", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
     cleanupDirs.add(currentRepo);

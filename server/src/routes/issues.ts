@@ -244,6 +244,8 @@ import {
 import { verifyGitCommitEvidence } from "../services/evidence-provider-git.js";
 import { buildNasEvidenceTarget } from "../services/evidence-provider-nas.js";
 import { uploadMinioEvidenceFile } from "../services/evidence-provider-minio.js";
+import { teableAppendService } from "../services/teable-append.js";
+import { teableReadService } from "../services/teable-read.js";
 import {
   issueDossierService,
   toDossierTimestamp,
@@ -252,7 +254,7 @@ import {
   type DossierEvidenceLinkRow,
   type DossierScopeChangeLine,
 } from "../services/issue-dossier.js";
-import { recordIssueScopeChangeSchema } from "@paperclipai/shared";
+import { recordIssueScopeChangeSchema, appendTeableRowSchema, queryTeableRowsSchema } from "@paperclipai/shared";
 import { createStorageService } from "../storage/service.js";
 import type { StorageProvider } from "../storage/types.js";
 import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
@@ -2893,11 +2895,17 @@ export function issueRoutes(
     }) => Promise<unknown>;
     /** The NAS MinIO bucket (F-007-2). Null when this instance has none configured. */
     externalStorage?: StorageProvider | null;
+    /** Override point for tests (F-010-2) -- lets a route test run without a live Teable. */
+    teableAppendService?: ReturnType<typeof teableAppendService>;
+    /** Override point for tests (F-010-3) -- lets a route test run without a live Teable. */
+    teableReadService?: ReturnType<typeof teableReadService>;
   } = {},
 ) {
   const router = Router();
   const svc = issueService(db);
   const externalStorageService = opts.externalStorage ? createStorageService(opts.externalStorage) : null;
+  const teableAppendSvc = opts.teableAppendService ?? teableAppendService(db);
+  const teableReadSvc = opts.teableReadService ?? teableReadService(db);
   const runRedactions = createRunSecretRedactionRegistry(db);
   const access = accessService(db);
   const secretProposals = createSecretProposalsService(db);
@@ -8808,6 +8816,84 @@ export function issueRoutes(
       res.json(moved.link);
     },
   );
+
+  // F-010-2 (PC-010 AC1/AC4/AC6, Slice-1 append-only subset): WP-0 verb 4, the agent's Teable
+  // tabular write. Unlike the descriptor branch above, this is not something the caller can
+  // assert its own providerKey/externalId for -- the row must actually be created in Teable
+  // first, so `teableAppendSvc.appendRow` owns that call and the allowlist check, and this route
+  // owns the same link + dossier-append + activity-log sequence the other providers use.
+  router.post("/issues/:id/teable-rows", validate(appendTeableRowSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    if (!(await assertDeliverableMutationAllowedByRunContext(req, res, issue))) return;
+
+    const actor = getActorInfo(req);
+    // PC-011 AC2 provenance is never taken from the body -- see HTTP_EVIDENCE_SOURCE.
+    const source = HTTP_EVIDENCE_SOURCE;
+    const { tableId, fields, caption } = req.body as { tableId: string; fields: Record<string, unknown>; caption: string };
+
+    // Refuses the whole write (no row, no link, no dossier line) on an allowlist miss or an
+    // upstream Teable failure -- `appendRow` throws before this route writes anything.
+    const { record, target } = await teableAppendSvc.appendRow({ companyId: issue.companyId, tableId, fields });
+
+    const evidencePublications: ActivityPublication[] = [];
+    const { link, created } = await issueEvidenceLinksSvc.link(id, target, source, async (tx, result) => {
+      if (!result.created) return;
+      await logActivity(tx, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.teable_row_appended",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          evidenceLinkId: result.link.id,
+          externalObjectId: result.link.externalObjectId,
+          tableId,
+          recordId: record.id,
+          source,
+        },
+      }, evidencePublications);
+    });
+    for (const publication of evidencePublications) publishActivity(publication);
+    if (created) {
+      const actorFields: DossierActor = { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null, runId: actor.runId };
+      await appendEvidenceDossierLineBestEffort(id, link, caption, actorFields);
+    }
+
+    res.status(created ? 201 : 200).json({ recordId: record.id, tableId, link });
+  });
+
+  // F-010-3 (PC-010 AC5, Slice-1 read-only subset): the agent's read verb for WP-0's fourth verb
+  // -- "what's in table X for Y" -- against the SAME one allowlisted table the write route above
+  // enforces (gate decision T2: Slice 1 ships one table total, not a separate read allowlist).
+  // Read-only, deliberately: no external_objects row, no evidence link, no dossier line -- this
+  // route only hands the caller rows to render into a chat reply. A GET carries no body, so the
+  // query string is validated with `queryTeableRowsSchema.safeParse`, matching
+  // `/companies/:companyId/search`'s convention rather than `validate()`'s body-only middleware.
+  router.get("/issues/:id/teable-rows", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await getAccessibleResource(req, res, getIssueById(req, id), "Issue not found");
+    if (!issue) return;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+
+    const parsedQuery = queryTeableRowsSchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({
+        error: parsedQuery.error.issues[0]?.message ?? "Invalid Teable query",
+      });
+      return;
+    }
+    const { tableId, search, take, skip } = parsedQuery.data;
+
+    const page = await teableReadSvc.queryRows({ companyId: issue.companyId, tableId, search, take, skip });
+    res.json(page);
+  });
 
   // PC-007 AC1: the only path a `minio` evidence object can be created on --
   // the generic descriptor route above refuses `providerKey: "minio"`

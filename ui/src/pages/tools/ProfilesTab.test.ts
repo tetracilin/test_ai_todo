@@ -37,9 +37,10 @@ function tool(partial: Partial<ToolCatalogEntry> & { id: string; toolName: strin
   } as ToolCatalogEntry;
 }
 
+let entrySeq = 0;
 function entry(partial: Partial<ToolProfileEntry> & Pick<ToolProfileEntry, "selectorType">): ToolProfileEntry {
   return {
-    id: `e-${Math.round(Math.random() * 1e9)}`,
+    id: `e-${++entrySeq}`,
     companyId: "c1",
     profileId: "p1",
     effect: "include",

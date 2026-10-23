@@ -239,6 +239,8 @@ describe("MarkdownEditor", () => {
   afterEach(() => {
     container.remove();
     Range.prototype.getBoundingClientRect = originalRangeRect;
+    // Restore spies (e.g. console.error) even when an assertion threw before an inline mockRestore().
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     mdxEditorMockState.emitMountEmptyReset = false;
     mdxEditorMockState.emitMountParseError = false;
@@ -1123,33 +1125,38 @@ describe("MarkdownEditor", () => {
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
-    const { root } = await openMentionMenuFor(handleChange, mentions);
-    scrollIntoView.mockClear();
+    let root: ReturnType<typeof createRoot> | undefined;
+    try {
+      ({ root } = await openMentionMenuFor(handleChange, mentions));
+      scrollIntoView.mockClear();
 
-    const editorScope = container.querySelector('[data-testid="mdx-editor"]')?.parentElement;
-    expect(editorScope).toBeTruthy();
+      const editorScope = container.querySelector('[data-testid="mdx-editor"]')?.parentElement;
+      expect(editorScope).toBeTruthy();
 
-    act(() => {
-      editorScope?.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "ArrowDown",
-        bubbles: true,
-        cancelable: true,
-      }));
-    });
-    await flush();
-
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
-
-    await act(async () => {
-      root.unmount();
-    });
-    if (originalScrollIntoView) {
-      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-        configurable: true,
-        value: originalScrollIntoView,
+      act(() => {
+        editorScope?.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }));
       });
-    } else {
-      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+      await flush();
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      if (root) {
+        await act(async () => {
+          root!.unmount();
+        });
+      }
+      if (originalScrollIntoView) {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      } else {
+        delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+      }
     }
   });
 

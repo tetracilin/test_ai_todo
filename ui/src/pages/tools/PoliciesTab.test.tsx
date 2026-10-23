@@ -177,6 +177,11 @@ describe("PoliciesTab", () => {
       );
     });
     await flushReact();
+    // Wait (bounded by time) for in-flight queries instead of trusting a fixed number of flushes.
+    const deadline = performance.now() + 5_000;
+    while (client.isFetching() > 0 && performance.now() < deadline) {
+      await flushReact();
+    }
   }
 
   it("renders ordered sentence rows without exposing priority numbers", async () => {

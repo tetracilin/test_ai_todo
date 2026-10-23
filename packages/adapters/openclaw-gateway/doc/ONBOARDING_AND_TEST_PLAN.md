@@ -90,7 +90,7 @@ curl -fsS http://127.0.0.1:3100/api/health
 3. In `/new` OpenClaw session, OpenClaw can still create a Paperclip task.
 
 ## Manual Smoke Checklist
-Use [doc/OPENCLAW_ONBOARDING.md](../../../../doc/OPENCLAW_ONBOARDING.md) as the operator runbook.
+The operator runbook (`doc/OPENCLAW_ONBOARDING.md`) was removed in the doc cleanup; see git history.
 
 ## Regression Gates
 Required before merge:

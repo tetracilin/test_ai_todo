@@ -250,6 +250,12 @@ describe("TeamCatalog install preview path", () => {
       );
     });
     await flushReact();
+    // Wait (bounded by time) for the catalog query to resolve and the detail pane
+    // to mount; a single macrotask is not guaranteed to be enough on a loaded runner.
+    const deadline = Date.now() + 5_000;
+    while (!document.body.textContent?.includes("Core Exec Team") && Date.now() < deadline) {
+      await flushReact();
+    }
     return root;
   }
 

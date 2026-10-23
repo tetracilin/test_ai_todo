@@ -22,6 +22,7 @@ describe("TelemetryClient periodic flush", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("flushes queued events on interval", async () => {
@@ -91,10 +92,14 @@ describe("TelemetryClient periodic flush", () => {
     expect(vi.mocked(fetch).mock.calls[1]?.[0]).toBe("https://rusqrrg391.execute-api.us-east-1.amazonaws.com/ingest");
   });
 
-  it("startPeriodicFlush is idempotent", () => {
+  it("startPeriodicFlush is idempotent", async () => {
     const client = makeClient();
     client.startPeriodicFlush(1000);
-    client.startPeriodicFlush(1000); // should not throw or double-fire
+    client.startPeriodicFlush(1000); // must not double-fire
+    client.track("install.started");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(1);
     client.stop();
   });
 });
@@ -106,6 +111,7 @@ describe("TelemetryClient retry integration", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("retries a 429 batch on the same batchId until it succeeds", async () => {

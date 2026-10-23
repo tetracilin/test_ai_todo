@@ -216,7 +216,7 @@ describe.sequential("POST /companies/:companyId/openclaw/invite-prompt", () => {
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({ agentMessage: "Join and configure OpenClaw gateway." });
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.companyName).toBe("Acme AI");
     expect(res.body.onboardingTextPath).toContain("/api/invites/");
     expect((db as any).__insertValues).toHaveBeenCalledWith(
@@ -269,7 +269,7 @@ describe.sequential("POST /companies/:companyId/openclaw/invite-prompt", () => {
       .post("/api/companies/company-1/openclaw/invite-prompt")
       .send({});
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.companyName).toBe("Acme AI");
     expect(res.body.inviteUrl).toContain("/invite/");
     expect(res.body.onboardingTextPath).toContain("/api/invites/");
