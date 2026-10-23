@@ -2,8 +2,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
   startAdapterExecutionTargetPaperclipBridge,
@@ -16,15 +14,15 @@ import {
 // exit path's result form, its finalization set, or its warm-lane decision
 // fails here.
 //
-// Adapter-boundary automatic CLI fallback note (File 1b): the codex, claude, and
-// gemini adapters wrap this engine and fall back to their CLI lane when an
+// Adapter-boundary automatic CLI fallback note (File 1b): the codex and claude
+// adapters wrap this engine and fall back to their CLI lane when an
 // AUTOMATIC ACP selection fails, but RETHROW when ACP was EXPLICITLY selected.
-// Those three adapters live in higher packages that depend on this one, so an
+// (The former gemini-local adapter is no longer part of this fork.)
+// Those adapters live in higher packages that depend on this one, so an
 // adapter-utils test cannot import them (a reverse dependency does not exist in
 // package.json). That branch already has REAL coverage in each adapter package:
 //   - packages/adapters/codex-local/src/server/execute.acp-fallback.test.ts
 //   - packages/adapters/claude-local/src/server/execute.acp-fallback.test.ts
-//   - packages/adapters/gemini-local/src/server/execute.acp-fallback.test.ts
 // and each adapter's `normalizeEngine` / `resolveXxxExecutionEngineForRun`
 // classification (explicit acp/cli vs automatic acp) is pinned in each
 // package's acp.test.ts. This file pins the engine-level exit paths those
@@ -136,66 +134,6 @@ function buildRuntime(
     },
     close: async () => {},
   };
-}
-
-async function runExecutor(
-  config: Record<string, unknown>,
-  options: {
-    context?: Record<string, unknown>;
-    executionTransport?: Record<string, unknown>;
-    authToken?: string;
-    executionTarget?: Record<string, unknown>;
-    runtimeMcp?: AdapterRuntimeMcpAccess;
-    prepareRemoteManagedHome?: AcpxEngineExecutorOptions["prepareRemoteManagedHome"];
-    startupTraceContext?: AdapterExecutionContext["startupTraceContext"];
-  } = {},
-) {
-  const runtimeOptions: Record<string, unknown>[] = [];
-  const configOptions: Array<{ key: string; value: string }> = [];
-  const sessionInputs: Record<string, unknown>[] = [];
-  const meta: Record<string, unknown>[] = [];
-  const logs: Array<{ stream: string; text: string }> = [];
-  const events: Array<{ eventType: string; payload?: Record<string, unknown> }> = [];
-  const execute = createAcpxEngineExecutor({
-    ...(options.prepareRemoteManagedHome
-      ? { prepareRemoteManagedHome: options.prepareRemoteManagedHome }
-      : {}),
-    createRuntime: (options) => {
-      runtimeOptions.push(options as unknown as Record<string, unknown>);
-      return buildRuntime(
-        ({ key, value }) => configOptions.push({ key, value }),
-        (input) => sessionInputs.push(input),
-      ) as never;
-    },
-  });
-
-  const result = await execute({
-    runId: "run-1",
-    agent: {
-      id: "agent-1",
-      companyId: "company-1",
-    },
-      runtime: {},
-      config,
-      context: options.context ?? {},
-      executionTransport: options.executionTransport,
-      authToken: options.authToken,
-      executionTarget: options.executionTarget,
-      runtimeMcp: options.runtimeMcp,
-      startupTraceContext: options.startupTraceContext,
-      onLog: async (stream: "stdout" | "stderr", text: string) => {
-        logs.push({ stream, text });
-      },
-    onMeta: async (payload: unknown) => {
-      meta.push(payload as Record<string, unknown>);
-    },
-    onEvent: async (event: { eventType: string; payload?: Record<string, unknown> }) => {
-      events.push(event);
-    },
-  } as never);
-
-  expect(result.exitCode).toBe(0);
-  return { logs, meta, events, runtimeOptions, configOptions, sessionInputs, result };
 }
 
 // A remote sandbox setup that stages the host worktree through the real local

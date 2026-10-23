@@ -83,7 +83,7 @@ test("scanner catches forbidden terms in path names even when file is empty", ()
 test("historical allowlist is narrow and documented", () => {
   assert.deepEqual(
     HISTORICAL_ALLOWLIST.map((entry) => entry.pattern),
-    ["doc/plans/**", "releases/**", "skills-releases/**", "**/CHANGELOG.md"],
+    ["technical-spec/plans/**", "releases/**", "skills-releases/**", "**/CHANGELOG.md"],
   );
 });
 

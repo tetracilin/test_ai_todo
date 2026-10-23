@@ -346,7 +346,7 @@ describe("approval routes idempotent retries", () => {
         payload: { title: "Approve hosting spend" },
       });
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body).toMatchObject({
       companyId: "company-1",
       type: "request_board_approval",

@@ -35,9 +35,10 @@ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : 
 type Db = ReturnType<typeof createDb>;
 
 async function createApp(db: Db, actor: Express.Request["actor"]) {
-  const [{ activityRoutes }, { issueRoutes }] = await Promise.all([
+  const [{ activityRoutes }, { issueRoutes }, { errorHandler }] = await Promise.all([
     import("../routes/activity.js"),
     import("../routes/issues.js"),
+    import("../middleware/index.js"),
   ]);
   const app = express();
   app.use(express.json());
@@ -47,9 +48,8 @@ async function createApp(db: Db, actor: Express.Request["actor"]) {
   });
   app.use("/api", issueRoutes(db, {} as never));
   app.use("/api", activityRoutes(db));
-  app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(error.status ?? 500).json({ error: error.message ?? "Internal server error" });
-  });
+  // Use the production error handler so `details` (code, sanctionedPath) reach the response body.
+  app.use(errorHandler);
   return app;
 }
 

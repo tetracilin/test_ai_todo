@@ -94,20 +94,25 @@ const adapterExecute = vi.hoisted(() =>
   })),
 );
 
-vi.mock("../adapters/index.js", () => ({
-  getServerAdapter: () => ({
-    type: "codex_local",
-    execute: adapterExecute,
-    supportsLocalAgentJwt: false,
-  }),
-  findActiveServerAdapter: () => ({
-    type: "codex_local",
-    execute: adapterExecute,
-    supportsLocalAgentJwt: false,
-  }),
-  listAdapterModelProfiles: async () => [],
-  runningProcesses: new Map(),
-}));
+vi.mock("../adapters/index.js", async () => {
+  // Spread the real module so newly added registry exports are not silently missing from the mock.
+  const actual = await vi.importActual<typeof import("../adapters/index.js")>("../adapters/index.js");
+  return {
+    ...actual,
+    getServerAdapter: () => ({
+      type: "codex_local",
+      execute: adapterExecute,
+      supportsLocalAgentJwt: false,
+    }),
+    findActiveServerAdapter: () => ({
+      type: "codex_local",
+      execute: adapterExecute,
+      supportsLocalAgentJwt: false,
+    }),
+    listAdapterModelProfiles: async () => [],
+    runningProcesses: new Map(),
+  };
+});
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;

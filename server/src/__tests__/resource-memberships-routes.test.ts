@@ -199,7 +199,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ companyId, projectId, userId: "user-1", state: "left" });
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity).toHaveLength(1);
     expect(activity[0]).toMatchObject({
       companyId,
@@ -236,7 +236,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     expect(rows[0]).toMatchObject({ companyId, projectId, userId: "user-1", state: "joined" });
     expect(rows[0]?.starredAt).toBeInstanceOf(Date);
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity).toHaveLength(1);
     expect(activity[0]).toMatchObject({
       action: "resource_membership.starred",
@@ -269,7 +269,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     const [row] = await db.select().from(projectMemberships);
     expect(row).toMatchObject({ state: "left", starredAt: null });
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity.map((entry) => entry.action)).toEqual([
       "resource_membership.starred",
       "resource_membership.left",
@@ -297,7 +297,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     expect(row).toMatchObject({ state: "joined" });
     expect(row?.starredAt).toBeInstanceOf(Date);
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity.map((entry) => entry.action)).toEqual([
       "resource_membership.left",
       "resource_membership.starred",
@@ -327,7 +327,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     const [row] = await db.select().from(agentMemberships);
     expect(row).toMatchObject({ state: "joined", starredAt: null });
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity.map((entry) => entry.action)).toEqual([
       "resource_membership.starred",
       "resource_membership.unstarred",
@@ -465,7 +465,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     await db.delete(documents).where(eq(documents.id, documentId));
     await expect(db.select().from(documentMemberships)).resolves.toHaveLength(0);
 
-    const activity = await db.select().from(activityLog);
+    const activity = await db.select().from(activityLog).orderBy(activityLog.createdAt);
     expect(activity.map((entry) => entry.action)).toEqual([
       "resource_membership.starred",
       "resource_membership.unstarred",

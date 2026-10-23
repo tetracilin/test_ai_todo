@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogSkill } from "@paperclipai/shared";
 
@@ -207,8 +208,12 @@ describe("skills catalog service", () => {
       "/published/node_modules/@paperclipai/skills-catalog/generated/catalog.json",
       "utf8",
     );
+    // The service resolves asset paths with node:path, so the expected value is
+    // platform-resolved (a drive-letter path on Windows, identical on POSIX).
     expect(mockReadFile).toHaveBeenCalledWith(
-      "/published/node_modules/@paperclipai/skills-catalog/catalog/bundled/software-development/published-skill/SKILL.md",
+      path.resolve(
+        "/published/node_modules/@paperclipai/skills-catalog/catalog/bundled/software-development/published-skill/SKILL.md",
+      ),
     );
     expect(mockRequireResolve).toHaveBeenCalledWith("@paperclipai/skills-catalog/package.json");
     expect(mockRequireResolve).toHaveBeenCalledWith("@paperclipai/skills-catalog/catalog.json");

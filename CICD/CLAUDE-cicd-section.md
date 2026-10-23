@@ -24,7 +24,7 @@ feature/<topic>  →  PR  →  develop  →  nightly deploy to staging (:33130)
 5. **Never commit secrets.** `.env` is gitignored; `.env.example` must stay safe to publish. Runtime secrets live outside the repo on kmv8 (`SECRETS_DIR` in the workflows) and in GitHub Environment secrets. If you find a secret in the tree, remove it and rotate it — do not just delete the line.
 6. **Never touch `.github/workflows/`, `deploy/compose.yaml`, or `deploy/scripts/` in the same PR as application code.** Pipeline changes get their own PR, labelled `ci`, reviewed by a human.
 7. **Never resolve a merge conflict by taking one side wholesale.** Read both sides. If unsure, rebase onto `develop` and re-push; the PR will show the real diff.
-8. **This is a hard fork of `paperclipai/paperclip`.** Do not add an `upstream` remote, merge or rebase from upstream, or restore upstream's workflows (`release.yml`, `pr.yml`, `refresh-lockfile.yml`, canary/beta). Security fixes are cherry-picked by a human via a `fix/*` PR citing the upstream commit. See `doc/ORIGIN.md`.
+8. **This is a hard fork of `paperclipai/paperclip`.** Do not add an `upstream` remote, merge or rebase from upstream, or restore upstream's workflows (`release.yml`, `pr.yml`, `refresh-lockfile.yml`, canary/beta). Security fixes are cherry-picked by a human via a `fix/*` PR citing the upstream commit. See `technical-spec/fork/ORIGIN.md`.
 
 ## What a PR must have before merge
 
@@ -95,11 +95,11 @@ Branch `fix/<topic>` from `main`, PR into `main`, tag, release as above. Then op
 | Item | Location |
 |---|---|
 | CI/CD plan and assumptions | `CICD/PLAN_CICD.md` |
-| Fork origin and cherry-pick policy | `doc/ORIGIN.md` |
+| Fork origin and cherry-pick policy | `technical-spec/fork/ORIGIN.md` |
 | Workflows | `.github/workflows/t3-{ci,nightly,release}.yml` — the only workflows that should exist |
 | Deploy scripts | `deploy/scripts/{healthcheck,image-retention,version-drift}.sh` |
 | Compose | `deploy/compose.yaml` |
 | Run logs | GitHub → Actions; Discord channel `1534836487772704800` for summaries |
 | Runner | kmv8, user `ghrunner`, label `kmv8`, systemd service |
-| Operator guide (how to drive PRs and deploys safely) | `docs/operating-with-claude-code.md` |
-| What runs on kmv8, and what depends on it | `docs/deploy/kmv8-stack-inventory.md` |
+| Operator guide (how to drive PRs and deploys safely) | `technical-spec/fork/operating-with-claude-code.md` |
+| What runs on kmv8, and what depends on it | `technical-spec/fork/kmv8-stack-inventory.md` |

@@ -31,6 +31,7 @@ describe("routine and plugin parity commands", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

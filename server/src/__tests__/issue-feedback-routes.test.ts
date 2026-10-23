@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFeedbackService = vi.hoisted(() => ({
   getFeedbackTraceById: vi.fn(),
@@ -145,6 +145,13 @@ async function createApp(actor: Record<string, unknown>) {
 }
 
 describe("issue feedback trace routes", () => {
+  // The first dynamic import of the large issues route module pays the whole
+  // transform cost (tens of seconds on a cold cache); do it once, outside any
+  // per-test timeout. beforeEach resets the module registry afterwards.
+  beforeAll(async () => {
+    await import("../routes/issues.js");
+  }, 120_000);
+
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("@paperclipai/shared/telemetry");
@@ -216,12 +223,74 @@ describe("issue feedback trace routes", () => {
         allowSharing: true,
       });
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ targetType: "issue_comment", targetId, vote: "up" });
     expect(mockFeedbackExportService.flushPendingFeedbackTraces).toHaveBeenCalledWith({
       companyId: "company-1",
       traceId: "trace-1",
       limit: 1,
     });
+  });
+
+  it("does not flush a feedback trace when sharing is not enabled for the vote", async () => {
+    const targetId = "22222222-2222-4222-8222-222222222222";
+    mockIssueService.getById.mockResolvedValue({
+      id: "issue-1",
+      companyId: "company-1",
+      identifier: "PAP-1",
+    });
+    mockFeedbackService.saveIssueVote.mockResolvedValue({
+      vote: { targetType: "issue_comment", targetId, vote: "down", reason: null },
+      traceId: "trace-2",
+      consentEnabledNow: false,
+      persistedSharingPreference: null,
+      sharingEnabled: false,
+    });
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: true,
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app)
+      .post("/api/issues/issue-1/feedback-votes")
+      .send({ targetType: "issue_comment", targetId, vote: "down" });
+
+    expect(res.status).toBe(201);
+    expect(mockFeedbackExportService.flushPendingFeedbackTraces).not.toHaveBeenCalled();
+  });
+
+  it("still saves the vote when the immediate trace flush fails", async () => {
+    const targetId = "33333333-3333-4333-8333-333333333333";
+    mockIssueService.getById.mockResolvedValue({
+      id: "issue-1",
+      companyId: "company-1",
+      identifier: "PAP-1",
+    });
+    mockFeedbackService.saveIssueVote.mockResolvedValue({
+      vote: { targetType: "issue_comment", targetId, vote: "up", reason: null },
+      traceId: "trace-3",
+      consentEnabledNow: false,
+      persistedSharingPreference: null,
+      sharingEnabled: true,
+    });
+    mockFeedbackExportService.flushPendingFeedbackTraces.mockRejectedValueOnce(new Error("export down"));
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: true,
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app)
+      .post("/api/issues/issue-1/feedback-votes")
+      .send({ targetType: "issue_comment", targetId, vote: "up", allowSharing: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ targetId, vote: "up" });
   });
 
   it("rejects non-board callers before fetching a feedback trace", async () => {

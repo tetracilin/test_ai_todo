@@ -73,5 +73,38 @@ describe("forbidden token check", () => {
     expect(error).toHaveBeenCalledWith("ERROR: Forbidden tokens found in tracked files:\n");
     expect(error).toHaveBeenCalledWith("  server/file.ts:1:found");
     expect(error).toHaveBeenCalledWith("\nBuild blocked. Remove the forbidden token(s) before publishing.");
+    // The report must not echo which token matched.
+    for (const [message] of error.mock.calls) {
+      expect(String(message)).not.toContain("paperclip");
+      expect(String(message)).not.toContain("custom-token");
+    }
+  });
+
+  it("skips the scan and succeeds when there are no tokens", () => {
+    const exec = vi.fn();
+
+    const exitCode = runForbiddenTokenCheck({ repoRoot: "/repo", tokens: [], exec, log: vi.fn(), error: vi.fn() });
+
+    expect(exitCode).toBe(0);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("succeeds when no token matches any tracked file", () => {
+    const exec = vi.fn(() => {
+      throw new Error("git grep exit 1: no match");
+    });
+    const error = vi.fn();
+
+    const exitCode = runForbiddenTokenCheck({
+      repoRoot: "/repo",
+      tokens: ["alpha", "beta"],
+      exec,
+      log: vi.fn(),
+      error,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(exec).toHaveBeenCalledTimes(2);
+    expect(error).not.toHaveBeenCalled();
   });
 });

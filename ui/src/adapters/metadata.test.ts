@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isEnabledAdapterType,
+  isSelectableAdapter,
   isValidAdapterType,
   isVisualAdapterChoice,
   listAdapterOptions,
@@ -72,5 +73,16 @@ describe("adapter metadata", () => {
         experimental: false,
       },
     ]);
+  });
+
+  it("prefers the server-advertised selectable flag over the static hermes_gateway rule", () => {
+    expect(isSelectableAdapter({ type: "claude_local", disabled: false, selectable: true })).toBe(true);
+    expect(isSelectableAdapter({ type: "codex_local", disabled: false, selectable: false })).toBe(false);
+    expect(isSelectableAdapter({ type: "claude_local", disabled: true, selectable: true })).toBe(false);
+  });
+
+  it("falls back to the static rule when the server sends no selectable flag", () => {
+    expect(isSelectableAdapter({ type: "hermes_gateway", disabled: false })).toBe(true);
+    expect(isSelectableAdapter({ type: "claude_local", disabled: false })).toBe(false);
   });
 });

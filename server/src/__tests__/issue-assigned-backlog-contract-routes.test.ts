@@ -162,11 +162,6 @@ function makeIssue(input: {
   };
 }
 
-function expectClearAssignedStatusValidation(res: request.Response) {
-  expect([400, 422]).toContain(res.status);
-  expect(String(res.body?.error ?? res.text)).toMatch(/assign|assignee|status|backlog|todo/i);
-}
-
 describe("assigned backlog creation contract", () => {
   // Load the real route and middleware modules once before the tests run. The
   // first import transforms a large module graph. Under the loaded serial shard
@@ -215,13 +210,7 @@ describe("assigned backlog creation contract", () => {
         assigneeAgentId,
       });
 
-    if (res.status !== 201) {
-      expectClearAssignedStatusValidation(res);
-      expect(mockIssueService.create).not.toHaveBeenCalled();
-      expect(mockWakeup).not.toHaveBeenCalled();
-      return;
-    }
-
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockIssueService.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
@@ -265,13 +254,7 @@ describe("assigned backlog creation contract", () => {
         blockParentUntilDone: true,
       });
 
-    if (res.status !== 201) {
-      expectClearAssignedStatusValidation(res);
-      expect(mockIssueService.createChild).not.toHaveBeenCalled();
-      expect(mockWakeup).not.toHaveBeenCalled();
-      return;
-    }
-
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockIssueService.createChild).toHaveBeenCalledWith(
       "parent-1",
       expect.objectContaining({

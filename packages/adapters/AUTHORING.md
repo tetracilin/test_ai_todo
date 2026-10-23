@@ -1,7 +1,6 @@
 # Adapter Authoring Notes
 
-In-repo notes for adapter authors. The user-facing guide lives at
-[`docs/adapters/creating-an-adapter.md`](../../docs/adapters/creating-an-adapter.md);
+In-repo notes for adapter authors. The upstream user-facing guide was removed in the doc cleanup (see git history);
 this file holds invariants that are easy to violate from inside the adapter
 package itself.
 
@@ -66,5 +65,4 @@ path that legitimately must push, add a
 `// paperclip:allow-git-push: <reason>` comment on the line (or the line
 above) so the opt-in shows up in code review.
 
-For the architecture-level write-up of cross-run persistence, see
-[`docs/guides/board-operator/execution-workspaces-and-runtime-services.md`](../../docs/guides/board-operator/execution-workspaces-and-runtime-services.md#cross-run-persistence-no-remote-git-contract).
+The architecture-level write-up of cross-run persistence was removed in the doc cleanup (see git history).

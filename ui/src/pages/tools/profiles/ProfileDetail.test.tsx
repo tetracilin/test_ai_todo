@@ -223,7 +223,7 @@ describe("ProfileDetail", () => {
     expect(container.textContent).toContain("New tools that appear later");
   });
 
-  it("shows degraded app rows and the 0-tools warning state", async () => {
+  it("shows degraded app rows with a Reconnect action", async () => {
     setData([profile()], [tool({})], [
       { status: "disabled", healthStatus: "error" },
     ]);
@@ -252,8 +252,12 @@ describe("ProfileDetail", () => {
     setData([profile({ newToolsPendingCount: 3 })]);
     await render();
 
-    await Promise.resolve();
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    // Wait (bounded by time) for the new-tools query to resolve and render.
+    const deadline = Date.now() + 5_000;
+    while (!container.textContent?.includes("Gmail added 3 new tools") && Date.now() < deadline) {
+      await Promise.resolve();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
     expect(container.textContent).toContain("Gmail added 3 new tools since your last review");
 
     const review = [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Review");
@@ -312,7 +316,7 @@ describe("ProfileDetail", () => {
     expect(document.body.textContent).toContain("Another profile already uses this name.");
   });
 
-  it("shows archive and delete confirmation copy", async () => {
+  it("shows archive confirmation copy with the affected agent count", async () => {
     setData([profile({ summary: summary({ assignmentCount: 2, appliesToAgentCount: 2, isCompanyDefault: true }) })]);
     await render();
 

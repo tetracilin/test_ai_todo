@@ -97,7 +97,10 @@ vi.mock("../api/resourceMemberships", () => ({
   resourceMembershipsApi: mockResourceMembershipsApi,
 }));
 
-vi.mock("../adapters/adapter-display-registry", () => ({
+// Partial mock: keep the real registry exports so new exports cannot go missing here;
+// only the label is pinned to the raw adapter type for stable assertions.
+vi.mock("../adapters/adapter-display-registry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../adapters/adapter-display-registry")>()),
   getAdapterLabel: (type: string) => type,
 }));
 

@@ -56,8 +56,8 @@ import {
  * - `pluginId` — UUID of the plugin to display.
  *
  * @see PluginManager — parent list page.
- * @see doc/plugins/PLUGIN_SPEC.md §13 — Plugin Health Checks.
- * @see doc/plugins/PLUGIN_SPEC.md §19.8 — Plugin Settings UI.
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md §13 — Plugin Health Checks.
+ * @see technical-spec/architecture/plugins/PLUGIN_SPEC.md §19.8 — Plugin Settings UI.
  */
 export function PluginSettings() {
   const { selectedCompany, selectedCompanyId } = useCompany();

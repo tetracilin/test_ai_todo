@@ -8,6 +8,15 @@ import {
   resetOpenCodeModelsCacheForTests,
 } from "./models.js";
 
+// Simulates a missing CLI the way runChildProcess reports it (a rejected spawn).
+// Using the real spawn made these tests depend on wall-clock retry sleeps
+// (observed 3-5s on Windows, exceeding the 5s test timeout).
+function mockMissingCommand() {
+  return vi
+    .spyOn(serverUtils, "runChildProcess")
+    .mockRejectedValue(new Error('Failed to start command "__paperclip_missing_opencode_command__".'));
+}
+
 describe("openCode models", () => {
   afterEach(() => {
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
@@ -19,7 +28,9 @@ describe("openCode models", () => {
 
   it("returns an empty list when discovery command is unavailable", async () => {
     process.env.PAPERCLIP_OPENCODE_COMMAND = "__paperclip_missing_opencode_command__";
+    const spy = mockMissingCommand();
     await expect(listOpenCodeModels()).resolves.toEqual([]);
+    expect(spy).toHaveBeenCalled();
   });
 
   it("rejects when model is missing", async () => {
@@ -43,6 +54,8 @@ describe("openCode models", () => {
 
   it("proceeds with the configured model when discovery cannot run (probe is best-effort, never fatal)", async () => {
     process.env.PAPERCLIP_OPENCODE_COMMAND = "__paperclip_missing_opencode_command__";
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockMissingCommand();
     await expect(
       ensureOpenCodeModelConfiguredAndAvailable({
         model: "openai/gpt-5",
@@ -52,6 +65,7 @@ describe("openCode models", () => {
 
   it("skips the availability check when OPENCODE_ALLOW_ALL_MODELS is set in the run env", async () => {
     process.env.PAPERCLIP_OPENCODE_COMMAND = "__paperclip_missing_opencode_command__";
+    const spy = mockMissingCommand();
     await expect(
       ensureOpenCodeModelConfiguredAndAvailable({
         model: "anthropic/tensorix/deepseek/deepseek-chat-v3.1",
@@ -60,14 +74,17 @@ describe("openCode models", () => {
     ).resolves.toEqual([
       { id: "anthropic/tensorix/deepseek/deepseek-chat-v3.1", label: "anthropic/tensorix/deepseek/deepseek-chat-v3.1" },
     ]);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("honours OPENCODE_ALLOW_ALL_MODELS from the process env", async () => {
     process.env.PAPERCLIP_OPENCODE_COMMAND = "__paperclip_missing_opencode_command__";
     process.env.OPENCODE_ALLOW_ALL_MODELS = "1";
+    const spy = mockMissingCommand();
     await expect(
       ensureOpenCodeModelConfiguredAndAvailable({ model: "anthropic/gateway/some-model" }),
     ).resolves.toEqual([{ id: "anthropic/gateway/some-model", label: "anthropic/gateway/some-model" }]);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("still enforces provider/model format when OPENCODE_ALLOW_ALL_MODELS is set", async () => {

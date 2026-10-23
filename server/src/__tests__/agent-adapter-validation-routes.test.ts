@@ -212,12 +212,15 @@ async function unregisterTestAdapter(type: string) {
 }
 
 describe("agent routes adapter validation", () => {
+  const originalSelectableAdapters = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+
   beforeEach(async () => {
+    // These tests describe a Hermes-Gateway-only instance; pin it rather than rely on the registry default.
+    process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway";
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
-    vi.doUnmock("../routes/agents.js");
     registerModuleMocks();
     vi.clearAllMocks();
     mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue([]);
@@ -294,6 +297,11 @@ describe("agent routes adapter validation", () => {
   });
 
   afterEach(async () => {
+    if (originalSelectableAdapters === undefined) {
+      delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    } else {
+      process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = originalSelectableAdapters;
+    }
     await unregisterTestAdapter("external_test");
     await unregisterTestAdapter(missingAdapterType);
   });
@@ -460,7 +468,7 @@ describe("agent routes adapter validation", () => {
     const adapterConfig = patch.adapterConfig as Record<string, unknown>;
     const env = adapterConfig.env as Record<string, unknown>;
     expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(String(env.CODEX_HOME).replaceAll("\\", "/")).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
   });
 
   it("rejects creating codex_local agents with a shared host Codex home", async () => {

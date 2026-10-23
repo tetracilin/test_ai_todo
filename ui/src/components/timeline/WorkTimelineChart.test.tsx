@@ -123,10 +123,11 @@ describe("WorkTimelineChart", () => {
       Object.defineProperty(scroller, "scrollLeft", { configurable: true, value: 240 });
       scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(timeAxis.textContent).toContain("Jul 2");
-    expect(axisSvg.style.transform).toBe("translateX(-240px)");
+    await vi.waitFor(() => {
+      expect(timeAxis.textContent).toContain("Jul 2");
+      expect(axisSvg.style.transform).toBe("translateX(-240px)");
+    });
   });
 
   it("renders actor labels in a sticky gutter outside the horizontally scrolling SVG", () => {
@@ -257,9 +258,9 @@ describe("WorkTimelineChart", () => {
     flushSync(() => {
       hovered.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, clientX: 100, clientY: 100 }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(container.querySelectorAll("[data-testid='timeline-connector']")).toHaveLength(2);
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll("[data-testid='timeline-connector']")).toHaveLength(2),
+    );
     const connectorStrokePaths = Array.from(
       container.querySelectorAll<SVGPathElement>("[data-testid='timeline-connector'] path[fill='none']"),
     );

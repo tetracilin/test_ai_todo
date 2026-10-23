@@ -71,7 +71,10 @@ afterEach(async () => {
 
 const RUNTIME_ID = "11111111-2222-4333-8444-555566667777";
 
-describe("UnixBrokerClient", () => {
+// The broker is a Unix-domain-socket server on the (Linux) host. Node on Windows
+// cannot bind a plain filesystem path as a socket, so these tests are guarded
+// there; CI and production run on POSIX.
+describe.skipIf(process.platform === "win32")("UnixBrokerClient", () => {
   it("round-trips reservation and expose requests", async () => {
     let seen: Record<string, unknown> | undefined;
     const socketPath = fake((request) => {
@@ -151,7 +154,9 @@ describe("UnixBrokerClient", () => {
   });
 
   it("times out when the broker accepts but never responds", async () => {
-    await expect(silentTimeout()).resolves.toBe(true);
+    const error = await silentTimeout();
+    expect(error).toBeInstanceOf(BrokerClientError);
+    expect(error).toMatchObject({ code: "cli_timeout" });
   });
 
   it("errors when the socket path does not exist (transport error)", async () => {
@@ -163,8 +168,12 @@ describe("UnixBrokerClient", () => {
   });
 });
 
-/** Build a truly-silent broker and assert the client times out against it. */
-async function silentTimeout(): Promise<boolean> {
+/**
+ * Build a truly-silent broker and return the error the client raises against it
+ * (or null if the call unexpectedly succeeded), so the test asserts the real
+ * error instead of an opaque boolean.
+ */
+async function silentTimeout(): Promise<unknown> {
   const socketPath = path.join(os.tmpdir(), `silent-${randomUUID()}.sock`);
   const connections: net.Socket[] = [];
   const server = net.createServer((socket) => {
@@ -178,9 +187,9 @@ async function silentTimeout(): Promise<boolean> {
     const client = new UnixBrokerClient({ socketPath, timeoutMs: 150 });
     try {
       await client.list();
-      return false;
+      return null;
     } catch (error) {
-      return error instanceof BrokerClientError && error.code === "cli_timeout";
+      return error;
     }
   } finally {
     for (const socket of connections) socket.destroy();

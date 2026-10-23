@@ -54,7 +54,9 @@ async function runAcpxFixtureSession(
     sessionStore: createRuntimeStore({ stateDir: path.join(root, `acpx-${sessionName}`) }),
     agentRegistry: createAgentRegistry({
       overrides: {
-        isolation_fixture: `${process.execPath} ${acpFixturePath}`,
+        // Quote both paths: the agent command is a single string that acpx splits,
+        // and node/repo paths may contain spaces (for example "Program Files").
+        isolation_fixture: `${JSON.stringify(process.execPath)} ${JSON.stringify(acpFixturePath)}`,
       },
     }),
     mcpServers,
@@ -124,9 +126,11 @@ describe("same-machine MCP isolation", () => {
     expect(zero).toEqual([]);
   }, 20_000);
 
-  it("keeps concurrent Claude CLI MCP configs strict and disjoint", async () => {
+  it("keeps concurrent Claude CLI MCP configs strict and disjoint", async (ctx) => {
     const version = await commandVersion("claude");
-    if (!version) return;
+    // Report an explicit skip when the CLI is not installed, instead of a silent
+    // early return that shows up as a pass.
+    if (!version) return ctx.skip("claude CLI is not installed");
     const claudeVersionMatch = version.match(/^2\.1\.(\d+) \(Claude Code\)$/);
     expect(claudeVersionMatch).not.toBeNull();
     expect(Number(claudeVersionMatch?.[1])).toBeGreaterThanOrEqual(207);
@@ -160,7 +164,10 @@ describe("same-machine MCP isolation", () => {
       );
       const result = await runCommand("claude", args, {
         cwd: repoRoot,
-        timeoutMs: 4_000,
+        // Upper bound only: the CLI exits on its own once the stub API answers 401,
+        // so a generous cap costs nothing when healthy. A tight cap killed slow
+        // (Windows / loaded CI) startups before MCP servers finished connecting.
+        timeoutMs: 15_000,
         env: {
           ...process.env,
           HOME: home,
@@ -191,11 +198,11 @@ describe("same-machine MCP isolation", () => {
     } finally {
       await apiFixture.close();
     }
-  }, 20_000);
+  }, 30_000);
 
-  it("keeps concurrent Codex homes disjoint and supports CLI MCP overrides", async () => {
+  it("keeps concurrent Codex homes disjoint and supports CLI MCP overrides", async (ctx) => {
     const version = await commandVersion("codex");
-    if (!version) return;
+    if (!version) return ctx.skip("codex CLI is not installed");
     expect(version).toMatch(/^codex-cli \d+\.\d+\.\d+$/);
 
     const root = await createMcpIsolationRoot("paperclip-codex-mcp-isolation-");

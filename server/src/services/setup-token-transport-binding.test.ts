@@ -10,7 +10,6 @@ import {
 } from "./setup-token-transport-binding.js";
 import {
   SetupTokenSessionService,
-  isTerminalSessionState,
   type SetupTokenCleanupIdentity,
   type SetupTokenCleanupRecord,
   type SetupTokenCleanupStore,
@@ -153,8 +152,8 @@ function buildService(input: {
     factory: transport.factory,
     leases: transport.leases,
     store: transport.store,
-    // The secret write stays a fail-closed default here. This phase does not bind
-    // the owner-bound secret writer.
+    // These lifecycle tests never reach a credential write, so a rejecting stub keeps
+    // the write fail-closed; the real writer wiring is covered at the end of this file.
     completeCredential: async () => {
       throw new Error("The credential write is not bound in this phase.");
     },
@@ -275,7 +274,7 @@ describe("setup-token production transport binding", () => {
       ttlMs: 5 * 60_000,
     });
 
-    const started = await service.start(SCOPE);
+    await service.start(SCOPE);
     await flush();
 
     // The factory opened the pseudo-terminal with only the fixed command. The
@@ -283,7 +282,6 @@ describe("setup-token production transport binding", () => {
     expect(sandbox.openedCommands).toEqual([CLAUDE_SETUP_TOKEN_COMMAND]);
     expect(sandbox.openedCommands).not.toContain("echo pwned");
 
-    void started;
     await service.shutdown();
   });
 
@@ -741,11 +739,6 @@ function createStreamingSandbox() {
   };
 }
 
-/** Waits `ms` milliseconds of real time, so the code-submit settle can pass. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * Drives one login run through the binding factory and returns every captured
  * diagnostic line. The caller controls the run through `drive`, so one call
@@ -808,7 +801,9 @@ describe("setup-token production transport binding diagnostics", () => {
       // Submit the browser code. The runner writes the code, lets the paste
       // buffer settle, writes the Enter byte, and logs the code-sent line.
       process.submitCode(BROWSER_CODE_SENTINEL);
-      await delay(250);
+      // Wait for the runner's second write (the Enter byte) instead of sleeping past
+      // its settle delay: the code write, a settle gap, then the terminator.
+      await vi.waitFor(() => expect(sandbox.writes).toHaveLength(2), { timeout: 5_000 });
       // Deliver the token, then end the process cleanly. The runner binds the
       // token, delivers it to the sink, and logs the success line.
       sandbox.emit(CREDENTIAL_OUTPUT);
@@ -828,8 +823,7 @@ describe("setup-token production transport binding diagnostics", () => {
   });
 
   it("forwards only allowlisted, non-secret diagnostics on a failure path", async () => {
-    const captured = await captureDiagnostics(async (sandbox, process) => {
-      void process;
+    const captured = await captureDiagnostics(async (sandbox) => {
       // The login process ends with a non-zero exit code before any prompt.
       sandbox.finishProcess(1);
     });
@@ -840,9 +834,6 @@ describe("setup-token production transport binding diagnostics", () => {
     expectSafeDiagnostics(captured);
   });
 });
-
-// A compile-time guard: a terminal state helper stays importable for the tests.
-void isTerminalSessionState;
 
 // A synthetic token. No real token is present. The tests assert the token never
 // reaches a log or an error message.

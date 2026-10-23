@@ -567,39 +567,40 @@ describe.sequential("plugin tool and bridge authz", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
-  it("rejects tool execution when any runContext reference is outside the company scope", async () => {
-    const cases: Array<[string, Array<Array<Record<string, unknown>>>]> = [
+  const outOfScopeRunContextCases: Array<[string, Array<Array<Record<string, unknown>>>]> = [
+    [
+      "agentId",
       [
-        "agentId",
-        [
-          [{ companyId: companyB }],
-        ],
+        [{ companyId: companyB }],
       ],
+    ],
+    [
+      "runId company",
       [
-        "runId company",
-        [
-          [{ companyId: companyA }],
-          [{ companyId: companyB, agentId: agentA }],
-        ],
+        [{ companyId: companyA }],
+        [{ companyId: companyB, agentId: agentA }],
       ],
+    ],
+    [
+      "runId agent",
       [
-        "runId agent",
-        [
-          [{ companyId: companyA }],
-          [{ companyId: companyA, agentId: "77777777-7777-4777-8777-777777777777" }],
-        ],
+        [{ companyId: companyA }],
+        [{ companyId: companyA, agentId: "77777777-7777-4777-8777-777777777777" }],
       ],
+    ],
+    [
+      "projectId",
       [
-        "projectId",
-        [
-          [{ companyId: companyA }],
-          [{ companyId: companyA, agentId: agentA }],
-          [{ companyId: companyB }],
-        ],
+        [{ companyId: companyA }],
+        [{ companyId: companyA, agentId: agentA }],
+        [{ companyId: companyB }],
       ],
-    ];
+    ],
+  ];
 
-    for (const [label, rows] of cases) {
+  it.each(outOfScopeRunContextCases)(
+    "rejects tool execution when the runContext %s reference is outside the company scope",
+    async (label, rows) => {
       const executeTool = vi.fn();
       const { app } = await createApp(boardActor(), {}, {
         db: createSelectQueueDb(rows),
@@ -627,8 +628,8 @@ describe.sequential("plugin tool and bridge authz", () => {
 
       expect(res.status, label).toBe(403);
       expect(executeTool).not.toHaveBeenCalled();
-    }
-  });
+    },
+  );
 
   it("allows tool execution when agent, run, and project all belong to runContext.companyId", async () => {
     const executeTool = vi.fn().mockResolvedValue({ content: "ok" });

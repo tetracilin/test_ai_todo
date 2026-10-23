@@ -5,7 +5,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -237,9 +237,19 @@ function mockVerifiedReseed(
  * stopped and retryable instead of "desired running" with residue.
  */
 describe.sequential("execution workspace runtime control conflict and failure reconciliation", () => {
+  // The first createApp() transforms the whole routes module graph, which can exceed a
+  // single test's timeout on a cold or loaded machine. Pay that cost once, in a hook with
+  // its own budget, so no individual test depends on cold-start speed.
+  beforeAll(async () => {
+    await createApp();
+  }, 120_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockSpawn.mockReset();
+    // clearAllMocks keeps queued/persistent implementations; a rejection set by one test
+    // must not leak into the next.
+    mockStartRuntimeServices.mockReset();
     registeredProjectWorkspace = null;
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
@@ -338,7 +348,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
       .post(`/api/execution-workspaces/${executionWorkspaceId}/runtime-services/start`)
       .send({});
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(500);
     // No exposure/listener residue: the failed lane is stopped through the ordinary teardown.
     expect(mockStopRuntimeServicesForExecutionWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ executionWorkspaceId, workspaceCwd: "/tmp/lane-a" }),
@@ -379,9 +389,9 @@ describe.sequential("execution workspace runtime control conflict and failure re
     }
   });
 
-  it.each(["sibling", "foreign_instance", "symlink", "instance_mismatch"] as const)(
+  it.for(["sibling", "foreign_instance", "symlink", "instance_mismatch"] as const)(
     "rejects a %s repair manifest source before spawn or runtime mutation",
-    async (variant) => {
+    async (variant, ctx) => {
       const fixture = createRegisteredRepairFixture(`paperclip-route-repair-${variant}-`);
       const attackerDir = path.join(path.dirname(fixture.workspaceCwd), `${path.basename(fixture.workspaceCwd)}-attacker`);
       try {
@@ -397,7 +407,18 @@ describe.sequential("execution workspace runtime control conflict and failure re
           : variant === "symlink"
           ? path.join(fixture.baseCwd, "source-alias.json")
           : attackerConfig;
-        if (variant === "symlink") fs.symlinkSync(fixture.sourceConfigPath, diagnosticPath);
+        if (variant === "symlink") {
+          try {
+            fs.symlinkSync(fixture.sourceConfigPath, diagnosticPath);
+          } catch (error) {
+            // Windows only lets privileged accounts create symlinks; every other
+            // failure (or platform) is a real error and must surface.
+            if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") {
+              ctx.skip("creating symlinks requires elevation on Windows");
+            }
+            throw error;
+          }
+        }
         fs.writeFileSync(path.join(fixture.configDir, "seed-manifest.json"), JSON.stringify({
           version: 2,
           source: {
@@ -683,7 +704,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
       .post(`/api/execution-workspaces/${executionWorkspaceId}/runtime-services/start`)
       .send({});
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(500);
     expect(mockStopRuntimeServicesForExecutionWorkspace).toHaveBeenCalledTimes(1);
     expect(mockBuildWorkspaceRuntimeDesiredStatePatch).toHaveBeenCalledWith(
       expect.objectContaining({ action: "stop" }),

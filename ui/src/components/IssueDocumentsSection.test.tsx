@@ -292,6 +292,10 @@ describe("IssueDocumentsSection", () => {
     ensureLocalStorageMock();
     window.localStorage.clear();
     vi.clearAllMocks();
+    // clearAllMocks keeps queued Once values and mockImplementation (e.g. the deferred
+    // listDocuments promise), which would leak into the next test. These mocks have no
+    // default implementation, so a full reset is safe.
+    for (const mock of Object.values(mockIssuesApi)) mock.mockReset();
     markdownEditorMockState.emitMountEmptyChange = false;
   });
 

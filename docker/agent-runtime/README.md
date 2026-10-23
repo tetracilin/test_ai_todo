@@ -92,7 +92,7 @@ The shim makes no assumptions about command structure; it is harness-agnostic. N
 
 > **No publishing pipeline in this fork (2026-09-02).** `.github/workflows/agent-runtime-images.yml`
 > pushed to `ghcr.io/paperclipai` — upstream's registry — on `master`, a branch this fork does not
-> have. It was deleted at the hard fork (`doc/ORIGIN.md`). Runtime images are not built or published
+> have. It was deleted at the hard fork (`technical-spec/fork/ORIGIN.md`). Runtime images are not built or published
 > by CI here; build them locally from this directory if you need one. The description below is
 > retained as a record of the upstream process.
 

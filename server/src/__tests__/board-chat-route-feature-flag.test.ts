@@ -82,6 +82,12 @@ describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
 });
 
 describe("board-chat client disconnect", () => {
+  beforeEach(() => {
+    // Without this, a spawn call left by an earlier test would satisfy the
+    // waitFor below and mask a missing spawn.
+    vi.clearAllMocks();
+  });
+
   function makeFakeProc() {
     const proc = new EventEmitter() as any;
     proc.stdout = new EventEmitter();

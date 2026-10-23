@@ -8,6 +8,7 @@ import { companySkillsApi } from "../api/companySkills";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
+import { adaptersApi } from "../api/adapters";
 import { resolveSkillSummaryText } from "../lib/company-skill-summary";
 import { AGENT_ROLES, type AdapterEnvironmentTestResult, type AgentPermissions } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ import { defaultCreateValues } from "../components/agent-config-defaults";
 import { buildFixedClaudeOAuthBinding } from "../components/environment-variables-editor/model";
 import type { EnvBinding } from "@paperclipai/shared";
 import { getUIAdapter } from "../adapters";
-import { isValidAdapterType } from "../adapters/metadata";
+import { isSelectableAdapter } from "../adapters/metadata";
 import { ReportsToPicker } from "../components/ReportsToPicker";
 import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";
 import { TrustPresetSection } from "../components/TrustPresetSection";
@@ -136,15 +137,22 @@ export function NewAgent() {
     }
   }, [isFirstAgent]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const { data: serverAdapters } = useQuery({
+    queryKey: queryKeys.adapters.all,
+    queryFn: () => adaptersApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
     const requested = presetAdapterType;
     if (!requested) return;
-    if (!isValidAdapterType(requested)) return;
+    const requestedAdapter = serverAdapters?.find((a) => a.type === requested);
+    if (!requestedAdapter || !isSelectableAdapter(requestedAdapter)) return;
     setConfigValues((prev) => {
       if (prev.adapterType === requested) return prev;
       return createValuesForAdapterType(requested as CreateConfigValues["adapterType"]);
     });
-  }, [presetAdapterType]);
+  }, [presetAdapterType, serverAdapters]);
 
   const createAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) =>

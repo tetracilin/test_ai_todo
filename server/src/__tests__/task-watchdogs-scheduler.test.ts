@@ -92,16 +92,21 @@ describeEmbeddedPostgres("task watchdog scheduler", () => {
     return id;
   }
 
+  // Deterministic per-file counter: random identifiers/issue numbers could
+  // collide on the (company, issueNumber) / identifier unique constraints.
+  let issueSeedCounter = 0;
+
   async function seedIssue(companyId: string, overrides: Partial<typeof issues.$inferInsert> = {}) {
     const id = overrides.id ?? randomUUID();
+    issueSeedCounter += 1;
     await db.insert(issues).values({
       id,
       companyId,
       title: overrides.title ?? "Watched issue",
       status: overrides.status ?? "done",
       priority: overrides.priority ?? "medium",
-      identifier: overrides.identifier ?? `WDOG-${Math.floor(Math.random() * 10_000)}`,
-      issueNumber: overrides.issueNumber ?? Math.floor(Math.random() * 10_000),
+      identifier: overrides.identifier ?? `WDOG-AUTO-${issueSeedCounter}`,
+      issueNumber: overrides.issueNumber ?? issueSeedCounter,
       parentId: overrides.parentId,
       assigneeAgentId: overrides.assigneeAgentId,
       originKind: overrides.originKind,

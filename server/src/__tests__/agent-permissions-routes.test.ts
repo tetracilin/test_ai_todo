@@ -13,9 +13,10 @@ vi.mock("acpx/runtime", () => ({
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
 
-// Agent creation is gateway-only since c1ffeec67 ("enforce Hermes Gateway AI
-// flow"): `listSelectableServerAdapters()` returns just hermes_gateway. Every
-// create/hire in this suite therefore uses a valid hermes_gateway adapter
+// hermes_gateway is part of the default selectable adapter set (see
+// listSelectableServerAdapters() in server/src/adapters/registry.ts, default
+// hermes_gateway + claude_local + hermes_local), so every create/hire in this
+// suite uses a valid hermes_gateway adapter
 // config (apiBaseUrl + secret-backed apiKey), mirroring the contract tests in
 // agent-adapter-validation-routes.test.ts.
 const GATEWAY_ADAPTER_CONFIG = {
@@ -936,7 +937,7 @@ describe.sequential("agent permission routes", () => {
         adapterConfig: GATEWAY_ADAPTER_CONFIG,
       }));
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status).toBe(201);
     expect(mockAccessService.ensureMembership).toHaveBeenCalledWith(
       companyId,
       "agent",
@@ -995,7 +996,7 @@ describe.sequential("agent permission routes", () => {
         },
       }));
 
-    expect([200, 201]).toContain(res.status);
+    expect(res.status).toBe(201);
     expect(mockAgentService.create).toHaveBeenCalledWith(
       companyId,
       expect.objectContaining({
@@ -1017,11 +1018,11 @@ describe.sequential("agent permission routes", () => {
   });
 
   it("creates agents when optional adapter model profile discovery fails", async () => {
-    // Agent selection is gateway-only since c1ffeec67, and dynamically
-    // registered external adapters are no longer selectable. The behavior under
-    // test — creation tolerates an optional model-profile discovery failure —
-    // still applies to the selectable adapter, so we override hermes_gateway
-    // with a module whose discovery throws and create a gateway agent.
+    // Dynamically registered external adapters are not in the default
+    // selectable set. The behavior under test - creation tolerates an optional
+    // model-profile discovery failure - applies to any selectable adapter, so
+    // we override hermes_gateway with a module whose discovery throws and
+    // create a gateway agent.
     const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter({
       type: "hermes_gateway",
@@ -1088,9 +1089,8 @@ describe.sequential("agent permission routes", () => {
     }
   });
 
-  it("rejects opencode agent creation because Hermes Gateway is sole, without host-side discovery", async () => {
-    // opencode_local is no longer a selectable agent adapter (agent creation is
-    // gateway-only since c1ffeec67). The contract that this test guards — the
+  it("rejects opencode agent creation because it is not selectable, without host-side discovery", async () => {
+    // opencode_local is not in the default selectable agent adapter set. The contract that this test guards — the
     // create path must never invoke live host-side model discovery (`opencode
     // models`) as a side effect — still holds on the rejection path: the route
     // refuses the selection before any discovery routine runs.
@@ -1121,7 +1121,7 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("rejects manual opencode provider/model values because Hermes Gateway is sole, without host-side discovery", async () => {
+  it("rejects manual opencode provider/model values because opencode is not selectable, without host-side discovery", async () => {
     mockEnsureOpenCodeModelConfiguredAndAvailable.mockRejectedValue(
       new Error("`opencode models` should not be called during creation"),
     );
@@ -1447,20 +1447,19 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  // Agent creation is gateway-only since c1ffeec67: only hermes_gateway is
-  // selectable, and the gateway runtime supports the `local` driver only. The
-  // legacy local CLI adapters (codex, claude, gemini, opencode, cursor, pi) are
-  // no longer selectable at creation — pinning that contract here per adapter.
+  // The default selectable set is hermes_gateway + claude_local + hermes_local
+  // (registry.ts). The other legacy local CLI adapters (codex, opencode, cursor, pi) are not
+  // selectable at creation unless PAPERCLIP_SELECTABLE_ADAPTER_TYPES names them —
+  // pinning that contract here per adapter.
   const nonSelectableAdapterCases = [
     { adapterType: "codex_local", name: "Codex Builder", adapterConfig: {} },
-    { adapterType: "claude_local", name: "Claude Builder", adapterConfig: {} },
     { adapterType: "opencode_local", name: "OpenCode Builder", adapterConfig: { model: "opencode/gpt-5-nano" } },
     { adapterType: "cursor", name: "Cursor Builder", adapterConfig: {} },
     { adapterType: "pi_local", name: "Pi Builder", adapterConfig: { model: "openai/gpt-5.4-mini" } },
   ];
 
   for (const adapterCase of nonSelectableAdapterCases) {
-    it(`rejects creating an ${adapterCase.adapterType} agent because Hermes Gateway is sole`, async () => {
+    it(`rejects creating an ${adapterCase.adapterType} agent because it is not in the default selectable set`, async () => {
       const environmentId = "33333333-3333-4333-8333-333333333333";
       mockEnvironmentService.getById.mockResolvedValue({
         id: environmentId,
@@ -1600,8 +1599,8 @@ describe.sequential("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    // The only selectable adapter today is hermes_gateway, which supports the
-    // `local` driver only. Switching the codex_local agent onto it while
+    // hermes_gateway is selectable and supports the `local` driver only.
+    // Switching the codex_local agent onto it while
     // keeping the SSH default environment must still be rejected by the
     // environment-selectability guard, not silently dropped.
     const res = await requestApp(app, (baseUrl) => request(baseUrl)

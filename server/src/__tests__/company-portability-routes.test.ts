@@ -185,23 +185,22 @@ function createImportResult(action = "updated") {
   };
 }
 
+// Polling is bounded by wall-clock time (not an iteration count) so a slow or
+// contended host does not turn a correct async job into a spurious timeout.
+const POLL_TIMEOUT_MS = 5_000;
+const POLL_INTERVAL_MS = 10;
+
 async function waitForImportJobStatus(app: express.Express, statusUrl: string, status: string) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const res = await request(app).get(statusUrl).set(cloudHeaders);
-    if (res.body.job?.status === status) {
-      return res;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for import job to reach ${status}`);
+  return waitForImportJobStatusAs(app, statusUrl, status, cloudHeaders);
 }
 
 async function waitForCondition(condition: () => boolean, label: string) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for ${label}`);
+  await vi.waitFor(
+    () => {
+      if (!condition()) throw new Error(`Timed out waiting for ${label}`);
+    },
+    { timeout: POLL_TIMEOUT_MS, interval: POLL_INTERVAL_MS },
+  );
 }
 
 const TEST_USER_HEADER = "x-test-user-id";
@@ -250,14 +249,16 @@ async function waitForImportJobStatusAs(
   status: string,
   headers: Record<string, string>,
 ) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const res = await request(app).get(statusUrl).set(headers);
-    if (res.body.job?.status === status) {
+  return vi.waitFor(
+    async () => {
+      const res = await request(app).get(statusUrl).set(headers);
+      if (res.body.job?.status !== status) {
+        throw new Error(`Timed out waiting for import job to reach ${status}`);
+      }
       return res;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for import job to reach ${status}`);
+    },
+    { timeout: POLL_TIMEOUT_MS, interval: POLL_INTERVAL_MS },
+  );
 }
 
 // A minimal STORE-only zip writer so the multipart/zip upload path can be
@@ -1050,8 +1051,17 @@ describe.sequential("company portability routes", () => {
     expect(failed.body.job.status).toBe("failed");
     expect(failed.body.job.error.message).toBe("import payload is incomplete");
     expect(failed.body.job.importResult).toBeUndefined();
-    // A resubmit is allowed once the job is terminal.
     expect(mockLogActivity).not.toHaveBeenCalled();
+
+    // A resubmit is allowed once the job is terminal: it starts a fresh job
+    // rather than being rejected as a duplicate of the failed one.
+    const resubmitted = await request(app)
+      .post("/api/companies/import")
+      .set("x-paperclip-cloud-async-import", "1")
+      .set(TEST_USER_HEADER, "board-user-a")
+      .send(importRequest);
+    expect(resubmitted.status).toBe(202);
+    expect(resubmitted.body.job.id).not.toBe(accepted.body.job.id);
   });
 
   it.sequential("keeps the import job status route board-only", async () => {
