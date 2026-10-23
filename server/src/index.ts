@@ -101,6 +101,7 @@ import {
 } from "./shutdown.js";
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
+import { setAdapterDeploymentMode } from "./adapters/deployment-policy.js";
 import {
   createEmbeddedPostgresSupervisor,
   type EmbeddedPostgresSupervisor,
@@ -152,6 +153,7 @@ export async function startServer(): Promise<StartedServer> {
   await instrumentationReady;
   ensureDecisionSigningSecret();
   let config = loadConfig();
+  setAdapterDeploymentMode(config.deploymentMode);
   initTelemetry({ enabled: config.telemetryEnabled });
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;

@@ -16,6 +16,9 @@ Core fields:
 - method (string, optional): HTTP method, default POST
 - headers (object, optional): request headers
 - payloadTemplate (object, optional): JSON payload template
-- timeoutSec (number, optional): request timeout in seconds
+- timeoutSec (number, optional): request timeout in seconds, default 30
+- timeoutMs (number, optional): request timeout in milliseconds; wins over timeoutSec when both are set
+
+A timeout of 0 is rejected. The adapter is disabled in authenticated deployment mode.
 `,
 };

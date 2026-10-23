@@ -76,6 +76,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
+import { ADAPTER_DISABLED_AUTHENTICATED_MODE, adapterDeploymentRefusal } from "../adapters/deployment-policy.js";
 import { normalizeIssueAttachmentMaxBytes } from "../attachment-types.js";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
@@ -3807,6 +3808,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     }
     if (!findServerAdapter(adapterType)) {
       throw unprocessable(`Unknown adapter type: ${adapterType}`);
+    }
+    const deploymentRefusal = adapterDeploymentRefusal(adapterType);
+    if (deploymentRefusal) {
+      throw unprocessable(deploymentRefusal, { code: ADAPTER_DISABLED_AUTHENTICATED_MODE });
     }
     return adapterType;
   }

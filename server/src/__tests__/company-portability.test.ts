@@ -155,6 +155,7 @@ vi.mock("../routes/org-chart-svg.js", () => ({
 }));
 
 const { companyPortabilityService, parseGitHubSourceUrl, renderYamlBlock, renderFrontmatter } = await import("../services/company-portability.js");
+const { setAdapterDeploymentMode } = await import("../adapters/deployment-policy.js");
 
 function asTextFile(entry: CompanyPortabilityFileEntry | undefined) {
   expect(typeof entry).toBe("string");
@@ -5405,6 +5406,52 @@ describe("company portability", () => {
       mode: "agent_safe",
       sourceCompanyId: "company-1",
     })).rejects.toThrow('Adapter type "process" is not allowed in safe imports');
+
+    expect(agentSvc.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects http agents on board imports in authenticated deployment mode", async () => {
+    const portability = companyPortabilityService(emptyQueryDb());
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    agentSvc.list.mockResolvedValue([]);
+    setAdapterDeploymentMode("authenticated");
+    try {
+      await expect(portability.importBundle({
+        source: {
+          type: "inline",
+          rootPath: exported.rootPath,
+          files: exported.files,
+        },
+        include: {
+          company: false,
+          agents: true,
+          projects: false,
+          issues: false,
+        },
+        target: {
+          mode: "existing_company",
+          companyId: "company-1",
+        },
+        agents: ["claudecoder"],
+        collisionStrategy: "rename",
+        adapterOverrides: {
+          claudecoder: {
+            adapterType: "http",
+            adapterConfig: { url: "https://example.test/hook" },
+          },
+        },
+      }, "user-1")).rejects.toThrow('Adapter "http" is disabled in authenticated deployment mode');
+    } finally {
+      setAdapterDeploymentMode("local_trusted");
+    }
 
     expect(agentSvc.create).not.toHaveBeenCalled();
   });
