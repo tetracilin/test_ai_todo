@@ -166,13 +166,3 @@ Today, before any code: open the Actions tab and run `t3-nightly` via Run workfl
 current `develop` (it contains #156). Compare against latest red (37871306876). That
 tells you whether the adapter-validation fix is the only blocker in the first 8 suites,
 and gives step 1 a real baseline. Then open the step 1 PR.
-
-## What I noticed about how you think
-
-- You picked "One green run, then gate" over three tidier options. That is the right
-  instinct: a signal you act on beats a perfect pipeline.
-- You answered the status-quo question with "Manual staging click-through", not "nothing".
-  Someone is already paying for the missing test signal in clicks; this fixes that.
-- You agreed to all five premises without edits, including that the gate must land. Worth
-  holding yourself to it: step 4 is the part that is easiest to defer and the only part
-  that stops the next red.
