@@ -253,7 +253,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
         activityGateScope: "project",
       });
 
-    expect([200, 201]).toContain(createRes.status);
+    expect(createRes.status).toBe(201);
     expect(createRes.body.title).toBe("Daily standup prep");
     expect(createRes.body.assigneeAgentId).toBe(agentId);
     expect(createRes.body.activityGatePolicy).toBe("require_external_activity");
@@ -281,7 +281,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
         timezone: "UTC",
       });
 
-    expect([200, 201], JSON.stringify(triggerRes.body)).toContain(triggerRes.status);
+    expect(triggerRes.status, JSON.stringify(triggerRes.body)).toBe(201);
     const createdTrigger = triggerRes.body.trigger ?? triggerRes.body;
     expect(createdTrigger.kind).toBe("schedule");
     expect(createdTrigger.enabled).toBe(true);
@@ -381,7 +381,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
         ],
       });
 
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
+    expect(createRes.status, JSON.stringify(createRes.body)).toBe(201);
 
     const runRes = await postRoutineRun(app, createRes.body.id, {
       source: "manual",
@@ -461,7 +461,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
         description: "No saved defaults",
       });
 
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
+    expect(createRes.status, JSON.stringify(createRes.body)).toBe(201);
     expect(createRes.body.projectId ?? null).toBeNull();
     expect(createRes.body.assigneeAgentId ?? null).toBeNull();
     expect(createRes.body.status).toBe("paused");
@@ -542,7 +542,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
         assigneeAgentId: agentId,
       });
 
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
+    expect(createRes.status, JSON.stringify(createRes.body)).toBe(201);
 
     const runRes = await postRoutineRun(app, createRes.body.id, {
       source: "manual",

@@ -165,6 +165,9 @@ describe("plugin worker manager duplex channel route", () => {
           if (chunk === "boom") throw new Error("listener failure");
         }),
       ).not.toThrow();
+      // Bounded wait rather than a synchronous read: under CPU contention the
+      // frames may still be in flight when the fixed delay above elapses.
+      await vi.waitFor(() => expect(chunks.length).toBe(3));
       expect(chunks).toEqual(["one", "boom", "three"]);
       await session.close();
     } finally {

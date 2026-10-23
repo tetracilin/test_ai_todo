@@ -219,7 +219,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
 
     // Seed more eligible leases than one page holds. The sweep processes one
     // page only.
-    const eligibleCount = 22;
+    const eligibleCount = SWEEP_PAGE_SIZE + 2;
     for (let index = 0; index < eligibleCount; index += 1) {
       await insertPendingCleanupLease({
         companyId,
@@ -229,8 +229,8 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
     }
 
     const pageResult = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 5 * 60 * 1000 });
-    expect(pageResult.swept).toBe(20);
-    expect(destroyRunLease).toHaveBeenCalledTimes(20);
+    expect(pageResult.swept).toBe(SWEEP_PAGE_SIZE);
+    expect(destroyRunLease).toHaveBeenCalledTimes(SWEEP_PAGE_SIZE);
   });
 
   it("test_pending_cleanup_sweep_stops_at_attempt_cap_and_warns_once", async () => {

@@ -134,15 +134,10 @@ setInterval(() => {}, 1000);
 const SYNTHETIC_EADDRINUSE_ON_BASE_PORT_GUEST = `
 import http from "node:http";
 const p = Number(process.env.PORT);
-if (p === 42000) {
-  process.stderr.write("node:events:497\\nError: listen EADDRINUSE: address already in use 127.0.0.1:" + p + "\\n");
-  process.exit(1);
-}
-const health = (rq, r) => { if (rq.url === "/api/health") { r.setHeader("content-type", "application/json"); r.end(JSON.stringify({ status: "ok" })); return true; } return false; };
-for (const q of [p, p + 10000]) {
-  http.createServer((rq, r) => { if (health(rq, r)) return; r.statusCode = 200; r.end("ok"); }).listen(q, "127.0.0.1");
-}
-setInterval(() => {}, 1000);
+// Fabricate the collision for whichever port the allocator assigned, so the
+// scenario does not depend on 42000 being the lowest free pair on the host.
+process.stderr.write("node:events:497\\nError: listen EADDRINUSE: address already in use 127.0.0.1:" + p + "\\n");
+process.exit(1);
 `;
 
 /**
@@ -782,9 +777,9 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     // No host listener owns 42000, so the printed EADDRINUSE line is unverified.
     // The start fails terminally after ONE allocation and never burns the pool.
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("42000");
+    expect(reservedAppPorts).toHaveLength(1);
+    expect(error!.message).toContain(String(reservedAppPorts[0]));
     expect(error!.message).toContain("not verified");
-    expect(reservedAppPorts).toEqual([42_000]);
 
     // No quarantine and no re-allocation happened for the unverified claim.
     const diagnosis = logs.join("");
@@ -822,7 +817,7 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     // burns the bounded retries on a valid pair.
     expect(error).not.toBeNull();
     expect(error!.message).toContain("39999");
-    expect(reservedAppPorts).toEqual([42_000]);
+    expect(reservedAppPorts).toHaveLength(1);
 
     // No quarantine and no re-allocation happened for the auxiliary conflict.
     const diagnosis = logs.join("");
@@ -861,7 +856,7 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     // terminally after ONE allocation and never quarantines the valid pair.
     expect(error).not.toBeNull();
     expect(error!.message).toContain("39999");
-    expect(reservedAppPorts).toEqual([42_000]);
+    expect(reservedAppPorts).toHaveLength(1);
 
     const diagnosis = logs.join("");
     expect(diagnosis).not.toContain("Quarantined pair");

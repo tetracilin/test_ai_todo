@@ -86,7 +86,13 @@ describeEmbeddedPostgres("access routes permissions upgrade compatibility", () =
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-access-routes-permissions-upgrade-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  }, 90_000);
+
+  // Warm the (large) access router import so it is not charged to the first
+  // test's 10s timeout; a timed-out test would leak into the next one.
+  beforeAll(async () => {
+    await import("../routes/access.js");
+  }, 240_000);
 
   afterEach(async () => {
     await db.delete(activityLog);

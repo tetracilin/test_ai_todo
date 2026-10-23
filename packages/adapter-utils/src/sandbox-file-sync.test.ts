@@ -388,7 +388,7 @@ describe("assertSyncOperationsConfined", () => {
   it("rejects a parent-traversal escape", () => {
     expect(() => assertSyncOperationsConfined(op("/remote/ws/../etc/passwd"), {
       sourceRoots: ["/host/src"], targetRoots: ["/remote/ws"],
-    })).toThrow(/confined absolute path|escapes its confinement root/);
+    })).toThrow(/escapes its confinement root/);
   });
 
   it("rejects an absolute target outside every root", () => {

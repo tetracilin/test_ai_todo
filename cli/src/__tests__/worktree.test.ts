@@ -1987,7 +1987,7 @@ describe("worktree helpers", () => {
         }),
       ).toMatchObject({
         cwd: worktreeRoot,
-        homeDir: "/tmp/paperclip-worktrees",
+        homeDir: path.resolve("/tmp/paperclip-worktrees"),
         instanceId: "pap-1132-chat",
       });
     } finally {
@@ -2213,7 +2213,7 @@ describe("worktree helpers", () => {
         targetRepoRoot: "/Users/example/paperclip-pr-432",
         workspaceCwd: "/Users/example/paperclip",
       }),
-    ).toBe("/Users/example/paperclip-pr-432");
+    ).toBe(path.resolve("/Users/example/paperclip-pr-432"));
 
     expect(
       rebindWorkspaceCwd({
@@ -2221,7 +2221,7 @@ describe("worktree helpers", () => {
         targetRepoRoot: "/Users/example/paperclip-pr-432",
         workspaceCwd: "/Users/example/paperclip/packages/db",
       }),
-    ).toBe("/Users/example/paperclip-pr-432/packages/db");
+    ).toBe(path.resolve("/Users/example/paperclip-pr-432/packages/db"));
   });
 
   it("does not rebind paths outside the source repo root", () => {
@@ -2274,7 +2274,10 @@ describe("worktree helpers", () => {
         copied: true,
       });
       expect(fs.readFileSync(targetHookPath, "utf8")).toBe("#!/usr/bin/env bash\nexit 0\n");
-      expect(fs.statSync(targetHookPath).mode & 0o111).not.toBe(0);
+      // POSIX exec bits do not exist on Windows (stat reports no mode bits).
+      if (process.platform !== "win32") {
+        expect(fs.statSync(targetHookPath).mode & 0o111).not.toBe(0);
+      }
       expect(fs.readFileSync(targetTokensPath, "utf8")).toBe("secret-token\n");
     } finally {
       execFileSync("git", ["worktree", "remove", "--force", worktreePath], { cwd: repoRoot, stdio: "ignore" });

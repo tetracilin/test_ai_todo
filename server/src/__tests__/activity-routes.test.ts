@@ -28,13 +28,15 @@ const mockAgentActionAuditService = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-vi.mock("../services/activity.js", () => ({
-  activityService: () => mockActivityService,
-  normalizeActivityLimit: (limit: number | undefined) => {
-    if (!Number.isFinite(limit)) return 100;
-    return Math.max(1, Math.min(500, Math.floor(limit ?? 100)));
-  },
-}));
+vi.mock("../services/activity.js", async (importOriginal) => {
+  // Keep the real normalizeActivityLimit so the default/cap assertions exercise
+  // production clamping rather than a hand-copied stand-in.
+  const actual = await importOriginal<typeof import("../services/activity.js")>();
+  return {
+    ...actual,
+    activityService: () => mockActivityService,
+  };
+});
 
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,

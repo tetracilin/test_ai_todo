@@ -3,7 +3,7 @@
  * check-ssot-guards.mjs
  *
  * CI guard for the fork-owned SSoT trio (`roadmap.md`, `backlog.md`,
- * `design.md`) established by docs/designs/t3-company-os-ssot.md (CEO-review
+ * `design.md`) established by technical-spec/designs/t3-company-os-ssot.md (CEO-review
  * decision 2A, scoped per OV-7). Two checks, nothing else:
  *
  *   Check 1 — STRICT TREE-PATH CHECK: no tracked path may differ only by
@@ -14,7 +14,7 @@
  *     one file at checkout on Windows/macOS. The check reads `git ls-files`
  *     (the index/tree), NOT the filesystem — a case-insensitive filesystem
  *     cannot see the collision it is about to suffer. Zero exceptions.
- *     Relocated content lives at a different path (`docs/designs/DESIGN-UI.md`)
+ *     Relocated content lives at a different path (`technical-spec/designs/DESIGN-UI.md`)
  *     and does not trip this check; upstream's roadmap is not kept at all.
  *
  *   Check 2 — CURATED REFERENCE CHECK: a small, fixed list of load-bearing
@@ -27,7 +27,7 @@
  *     Matching is uppercase- and boundary-aware to stay low-false-positive:
  *       - a longer file name such as `SOME-ROADMAP.md` does not match
  *         (`ROADMAP.md` is preceded by `-`);
- *       - `docs/designs/DESIGN-UI.md` does not match (it never contains the
+ *       - `technical-spec/designs/DESIGN-UI.md` does not match (it never contains the
  *         substring `DESIGN.md` at all);
  *       - the fork's lowercase `design.md` / `roadmap.md` do not match
  *         (case-sensitive: only the upstream UPPERCASE names are stale);
@@ -81,7 +81,7 @@ function findTreePathViolations(trackedPaths) {
     if (ssotLower.has(lower) && !SSOT_PATHS.includes(path)) {
       violations.push({
         path,
-        detail: `case-collides with fork-owned SSoT path "${lower}" — delete the re-added upstream file (its content belongs under doc/, see doc/ORIGIN.md)`,
+        detail: `case-collides with fork-owned SSoT path "${lower}" — delete the re-added upstream file (its content belongs under technical-spec/, see technical-spec/fork/ORIGIN.md)`,
       });
     }
   }

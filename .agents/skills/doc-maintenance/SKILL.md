@@ -22,10 +22,10 @@ Detect documentation drift and fix it via PR — no rewrites, no churn.
 | Document | Path | What matters |
 |----------|------|-------------|
 | README | `README.md` | Features table, roadmap, quickstart, "what is" accuracy, "works with" table |
-| SPEC | `doc/SPEC.md` | No false "not supported" claims, major model/schema accuracy |
-| PRODUCT | `doc/PRODUCT.md` | Core concepts, feature list, principles accuracy |
+| SPEC | `technical-spec/product/SPEC.md` | No false "not supported" claims, major model/schema accuracy |
+| PRODUCT | `technical-spec/product/PRODUCT.md` | Core concepts, feature list, principles accuracy |
 
-Out of scope: DEVELOPING.md, DATABASE.md, CLI.md, doc/plans/, skill files,
+Out of scope: DEVELOPING.md, DATABASE.md, CLI.md, technical-spec/plans/, skill files,
 release notes. These are dev-facing or ephemeral — lower risk of user-facing
 confusion.
 
@@ -122,7 +122,7 @@ Apply **only** the edits needed to fix drift. Rules:
 Commit the changes and open a PR:
 
 ```bash
-git add README.md doc/SPEC.md doc/PRODUCT.md .doc-review-cursor
+git add README.md technical-spec/product/SPEC.md technical-spec/product/PRODUCT.md .doc-review-cursor
 git commit -m "docs: update documentation for accuracy
 
 - [list each fix briefly]

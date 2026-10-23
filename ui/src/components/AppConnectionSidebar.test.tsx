@@ -162,6 +162,10 @@ describe("AppConnectionSidebar", () => {
       );
     });
     await flushReact();
+    // Fixed turns alone can finish before slow queries land on a loaded worker;
+    // also wait on the condition that every query has settled, then re-flush.
+    await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    await flushReact();
   }
 
   it("renders a back link and the connected app tabs (including Test)", async () => {

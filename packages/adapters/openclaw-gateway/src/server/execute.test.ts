@@ -49,6 +49,30 @@ describe("resolveSessionKey", () => {
       }),
     ).toBe("agent:meridian:paperclip");
   });
+
+  it("falls back to the configured key when the issue strategy has no issue id", () => {
+    expect(
+      resolveSessionKey({
+        strategy: "issue",
+        configuredSessionKey: "paperclip",
+        agentId: "meridian",
+        runId: "run-123",
+        issueId: null,
+      }),
+    ).toBe("agent:meridian:paperclip");
+  });
+
+  it("uses the default 'paperclip' key and no prefix when neither session key nor agent is configured", () => {
+    expect(
+      resolveSessionKey({
+        strategy: "fixed",
+        configuredSessionKey: null,
+        agentId: null,
+        runId: "run-123",
+        issueId: null,
+      }),
+    ).toBe("paperclip");
+  });
 });
 
 describe("buildAgentParams", () => {
@@ -96,6 +120,19 @@ describe("buildAgentParams", () => {
       sessionKey: "paperclip",
       idempotencyKey: "run-123",
     });
+  });
+
+  it("does not add agentId when none is configured or templated, and fills timeout from waitTimeoutMs", () => {
+    const params = buildAgentParams({
+      payloadTemplate: {},
+      message: "m",
+      sessionKey: "paperclip",
+      runId: "run-1",
+      configuredAgentId: null,
+      waitTimeoutMs: 7_000,
+    });
+    expect(params).not.toHaveProperty("agentId");
+    expect(params.timeout).toBe(7_000);
   });
 });
 

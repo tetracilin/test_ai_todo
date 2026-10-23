@@ -20,6 +20,26 @@ describe("issueActiveRun", () => {
     expect(shouldTrackIssueActiveRun(makeIssue({ status: "done", executionRunId: "run-123" }))).toBe(true);
   });
 
+  it("keeps the cached active run while the issue is still tracked", () => {
+    const activeRun = {
+      id: "run-123",
+      status: "running",
+      invocationSource: "assignment",
+      triggerDetail: "system",
+      startedAt: "2026-04-13T01:29:00.000Z",
+      finishedAt: null,
+      createdAt: "2026-04-13T01:29:00.000Z",
+      agentId: "agent-1",
+      agentName: "Builder",
+      adapterType: "codex_local",
+      issueId: "issue-1",
+    } satisfies ActiveRunForIssue;
+
+    expect(resolveIssueActiveRun(makeIssue({ status: "in_progress" }), activeRun)).toBe(activeRun);
+    expect(resolveIssueActiveRun(makeIssue({ status: "in_progress" }), null)).toBeNull();
+    expect(shouldTrackIssueActiveRun(null)).toBe(false);
+  });
+
   it("drops stale cached active runs once the issue is closed and unlocked", () => {
     const staleActiveRun: ActiveRunForIssue = {
       id: "run-123",

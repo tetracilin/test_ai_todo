@@ -253,7 +253,7 @@ describe("teamsCatalogService", () => {
   it("injects safe claude_local adapter defaults for every bundled agent when no overrides are supplied", async () => {
     const svc = teamsCatalogService({} as any);
 
-    await svc.installCatalogTeam("company-1", "core-exec-team");
+    const result = await svc.installCatalogTeam("company-1", "core-exec-team");
 
     const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
     expect(importInput.adapterOverrides).toEqual({
@@ -261,6 +261,10 @@ describe("teamsCatalogService", () => {
       cto: { adapterType: "claude_local" },
       qa: { adapterType: "claude_local" },
     });
+    // Positive counterpart of the "omits the default-adapter warning" case below.
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("default to claude_local")]),
+    );
   });
 
   it("uses the configured safe adapter default for bundled agents", async () => {

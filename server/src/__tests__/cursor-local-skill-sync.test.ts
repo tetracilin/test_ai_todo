@@ -18,6 +18,9 @@ async function createSkillDir(root: string, name: string) {
   return skillDir;
 }
 
+// Needs unprivileged symlink creation, unavailable on stock Windows.
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("cursor local skill sync", () => {
   const paperclipKey = "paperclipai/paperclip/paperclip";
   const cleanupDirs = new Set<string>();
@@ -27,7 +30,7 @@ describe("cursor local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("reports configured Paperclip skills and installs them into the Cursor skills home", async () => {
+  itPosix("reports configured Paperclip skills and installs them into the Cursor skills home", async () => {
     const home = await makeTempDir("paperclip-cursor-skill-sync-");
     cleanupDirs.add(home);
 
@@ -55,7 +58,7 @@ describe("cursor local skill sync", () => {
     expect((await fs.lstat(path.join(home, ".cursor", "skills", "paperclip"))).isSymbolicLink()).toBe(true);
   });
 
-  it("recognizes company-library runtime skills supplied outside the bundled Paperclip directory", async () => {
+  itPosix("recognizes company-library runtime skills supplied outside the bundled Paperclip directory", async () => {
     const home = await makeTempDir("paperclip-cursor-runtime-skills-home-");
     const runtimeSkills = await makeTempDir("paperclip-cursor-runtime-skills-src-");
     cleanupDirs.add(home);
@@ -100,5 +103,4 @@ describe("cursor local skill sync", () => {
     expect(after.entries.find((entry) => entry.key === "ascii-heart")?.state).toBe("installed");
     expect((await fs.lstat(path.join(home, ".cursor", "skills", "ascii-heart"))).isSymbolicLink()).toBe(true);
   });
-
 });

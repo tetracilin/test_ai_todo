@@ -24,10 +24,12 @@ describe("issue-thread interaction resolver audience", () => {
     "request_confirmation",
     "request_checkbox_confirmation",
     "request_item_verdicts",
-  ])("allows the creator and creating run under anyone for %s", () => {
+  ])("allows the creator and creating run under anyone for %s", (kind) => {
+    // The evaluator is kind-agnostic; passing the kind through documents that
+    // the audience decision must not depend on it.
     expect(evaluateIssueThreadInteractionResolverAudience({
       actor: agent,
-      interaction: interaction(),
+      interaction: interaction({ kind }),
     })).toMatchObject({ allowed: true, effectiveResolverPolicy: "anyone", reason: "allow_anyone" });
   });
 

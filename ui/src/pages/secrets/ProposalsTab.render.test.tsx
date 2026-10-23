@@ -109,11 +109,14 @@ async function flushReact() {
   });
 }
 
-async function waitForReact(predicate: () => boolean, attempts = 20) {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+// Bound by time, not iterations, so a loaded runner cannot exhaust a fixed
+// number of flush cycles before React state settles.
+async function waitForReact(predicate: () => boolean, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  do {
     if (predicate()) return;
     await flushReact();
-  }
+  } while (Date.now() < deadline);
   throw new Error("Timed out waiting for React state to settle");
 }
 

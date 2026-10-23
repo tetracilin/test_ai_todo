@@ -559,10 +559,9 @@ describe("AttentionQueueRow", () => {
     );
     act(() => approve?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(container?.textContent).toContain("Approval approved"));
     expect(approvalsApi.approve).toHaveBeenCalledWith("approval-1");
     expect(onToggleExpand).not.toHaveBeenCalled();
-    expect(container?.textContent).toContain("Approval approved");
   });
 
   it("renders configured confirmation labels and accepts from the compact action area", async () => {
@@ -605,8 +604,9 @@ describe("AttentionQueueRow", () => {
     );
     act(() => approve?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(issuesApi.acceptInteraction).toHaveBeenCalledWith("issue-1", "interaction-1");
+    await vi.waitFor(() =>
+      expect(issuesApi.acceptInteraction).toHaveBeenCalledWith("issue-1", "interaction-1"),
+    );
     expect(onToggleExpand).not.toHaveBeenCalled();
   });
 
@@ -976,12 +976,11 @@ describe("AttentionQueueRow", () => {
       (button) => button.textContent === "Accept",
     );
     act(() => accept?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await vi.waitFor(() =>
+      expect(document.body.textContent ?? "").toContain("This issue-thread interaction is human-only."),
+    );
 
     const feedback = document.body.textContent ?? "";
-    expect(feedback).toContain("This issue-thread interaction is human-only.");
     expect(feedback).toContain("Only the board can respond.");
     expect(feedback).not.toMatch(/try again/i);
   });

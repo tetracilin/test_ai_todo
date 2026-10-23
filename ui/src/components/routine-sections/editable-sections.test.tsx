@@ -108,7 +108,9 @@ describe("TriggersSection", () => {
     expect(container.textContent).toContain("Every day");
 
     act(() => root.unmount());
-  });
+    // First render in a cold jsdom worker pays the Radix Select/ScheduleEditor module cost
+    // (~5s on a loaded Windows host); give it headroom rather than the 5s default.
+  }, 30_000);
 
   it("disables add trigger while the custom cron draft is invalid locally", () => {
     const createMutate = vi.fn();

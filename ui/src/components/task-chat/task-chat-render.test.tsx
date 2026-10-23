@@ -45,8 +45,9 @@ describe("Task chat state inventory renders", () => {
           );
         });
       }).not.toThrow();
-      expect(container.textContent && container.textContent.length).toBeTruthy();
+      const renderedText = container.textContent ?? "";
       flushSync(() => root.unmount());
+      expect(renderedText.length).toBeGreaterThan(0);
     });
   }
 });

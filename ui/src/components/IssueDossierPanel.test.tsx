@@ -76,13 +76,24 @@ describe("IssueDossierPanel", () => {
     document.body.appendChild(container);
   });
 
+  let mountedRoot: ReturnType<typeof createRoot> | null = null;
+
   afterEach(() => {
+    // Unmount so the panel does not stay mounted against a detached container.
+    if (mountedRoot) {
+      const root = mountedRoot;
+      act(() => {
+        root.unmount();
+      });
+      mountedRoot = null;
+    }
     container.remove();
     vi.restoreAllMocks();
   });
 
   function render(node: ReactNode) {
     const root = createRoot(container);
+    mountedRoot = root;
     act(() => {
       root.render(node);
     });

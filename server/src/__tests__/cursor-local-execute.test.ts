@@ -116,8 +116,11 @@ async function createSkillDir(root: string, name: string) {
   return skillDir;
 }
 
+// POSIX-only: relies on executable shebang scripts, ":"-separated PATH and unprivileged symlinks (Windows lacks all three).
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("cursor execute", () => {
-  it("injects paperclip env vars and prompt note by default", async () => {
+  itPosix("injects paperclip env vars and prompt note by default", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
@@ -192,7 +195,7 @@ describe("cursor execute", () => {
     }
   });
 
-  it("passes --mode when explicitly configured", async () => {
+  itPosix("passes --mode when explicitly configured", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-mode-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
@@ -250,7 +253,7 @@ describe("cursor execute", () => {
     }
   });
 
-  it("injects company-library runtime skills into the Cursor skills home before execution", async () => {
+  itPosix("injects company-library runtime skills into the Cursor skills home before execution", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-runtime-skill-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
@@ -321,7 +324,7 @@ describe("cursor execute", () => {
     }
   });
 
-  it("prefers ~/.local/bin/cursor-agent for remote sandbox execution when using the default command", async () => {
+  itPosix("prefers ~/.local/bin/cursor-agent for remote sandbox execution when using the default command", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-sandbox-execute-"));
     const homeDir = path.join(root, "home");
     const workspace = path.join(root, "workspace");
@@ -385,7 +388,7 @@ describe("cursor execute", () => {
     }
   }, 10_000);
 
-  it("keeps explicit command overrides for remote sandbox execution", async () => {
+  itPosix("keeps explicit command overrides for remote sandbox execution", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-sandbox-explicit-"));
     const homeDir = path.join(root, "home");
     const workspace = path.join(root, "workspace");

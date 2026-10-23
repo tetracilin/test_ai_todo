@@ -105,28 +105,37 @@ describe("useHostNavigation mobile drawer behavior", () => {
     };
   }
 
+  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+  const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
+
+  afterEach(() => {
+    // Restore viewport globals so the stub never leaks into other tests.
+    if (originalInnerWidth) Object.defineProperty(window, "innerWidth", originalInnerWidth);
+    if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
+    else delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
   function setViewport(width: number) {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
       value: width,
     });
-    if (typeof window.matchMedia !== "function") {
-      Object.defineProperty(window, "matchMedia", {
-        configurable: true,
-        writable: true,
-        value: (query: string) => ({
-          matches: /max-width:\s*767px/.test(query) ? width < 768 : false,
-          media: query,
-          onchange: null,
-          addEventListener: () => undefined,
-          removeEventListener: () => undefined,
-          addListener: () => undefined,
-          removeListener: () => undefined,
-          dispatchEvent: () => false,
-        }),
-      });
-    }
+    // Always (re)define so the stub reflects THIS test's width, not the first test's.
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({
+        matches: /max-width:\s*767px/.test(query) ? width < 768 : false,
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
   }
 
   it("closes the sidebar drawer on mobile after a same-origin navigate()", () => {

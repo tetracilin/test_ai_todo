@@ -52,7 +52,13 @@ function listSourceFiles(dir: string): string[] {
 }
 
 const SOURCE_FILES = listSourceFiles(UI_SRC);
-const RELATIVE = new Map(SOURCE_FILES.map((f) => [f, path.relative(UI_SRC, f)]));
+// POSIX-style relative paths so allowlist keys and "fixtures/" checks hold on Windows too.
+const RELATIVE = new Map(
+  SOURCE_FILES.map((f) => [f, path.relative(UI_SRC, f).split(path.sep).join("/")]),
+);
+// Read the tree once: per-test synchronous scans of every file exceed the default
+// 5s test timeout under load (Windows / contended CI).
+const SOURCES = new Map(SOURCE_FILES.map((f) => [f, readFileSync(f, "utf8")]));
 
 /** Client code under test — fixtures are display-only test data. */
 const RUNTIME_FILES = SOURCE_FILES.filter((file) => !RELATIVE.get(file)!.includes("fixtures/"));
@@ -96,7 +102,7 @@ describe("no direct model-provider calls in ui/src", () => {
   it("never fetches, SSE-connects, or WebSocket-connects to a provider origin", () => {
     const offenders: string[] = [];
     for (const file of RUNTIME_FILES) {
-      if (PROVIDER_ORIGIN_RE.test(readFileSync(file, "utf8"))) {
+      if (PROVIDER_ORIGIN_RE.test(SOURCES.get(file)!)) {
         offenders.push(RELATIVE.get(file)!);
       }
     }
@@ -109,7 +115,7 @@ describe("no credential literals in ui/src", () => {
     const offenders: string[] = [];
     for (const file of SOURCE_FILES) {
       const rel = RELATIVE.get(file)!;
-      const source = readFileSync(file, "utf8");
+      const source = SOURCES.get(file)!;
       const allowed = PLACEHOLDER_ALLOWLIST[rel] ?? [];
       for (const match of source.matchAll(new RegExp(CREDENTIAL_LITERAL_RE.source, "g"))) {
         // Accept only if some allowlisted literal contains this exact match.
@@ -129,7 +135,7 @@ describe("no credential literals in ui/src", () => {
   it("persists no token/key/secret into localStorage or sessionStorage", () => {
     const offenders: string[] = [];
     for (const file of RUNTIME_FILES) {
-      const source = readFileSync(file, "utf8");
+      const source = SOURCES.get(file)!;
       const match = source.match(STORAGE_CREDENTIAL_RE);
       if (match) offenders.push(`${RELATIVE.get(file)!}: ${match[0]}`);
     }

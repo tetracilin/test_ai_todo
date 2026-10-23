@@ -18,11 +18,20 @@
  *   4. Edge cases       (missing UUID throws explicitly)
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import { EventEmitter } from "node:events";
 import { createPluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+
+const mockRegistry = vi.hoisted(() => ({
+  getById: vi.fn(),
+  listByStatus: vi.fn(),
+}));
+
+vi.mock("../services/plugin-registry.js", () => ({
+  pluginRegistryService: () => mockRegistry,
+}));
 
 const PLUGIN_KEY = "acme.demo";
 const PLUGIN_DB_ID = "00000000-0000-4000-8000-000000000001";
@@ -83,27 +92,6 @@ function createUuidKeyedWorkerManager(opts: { liveUuid?: string } = {}): PluginW
  */
 function createLifecycleManager(): EventEmitter {
   return new EventEmitter();
-}
-
-/**
- * In-memory `pluginRegistryService(db)` shim that returns a single plugin
- * record by id. Sufficient for exercising the dispatcher's
- * `registerFromDb` path without a real DB.
- */
-function createDbStub(plugin: {
-  id: string;
-  pluginKey: string;
-  manifestJson: PaperclipPluginManifestV1;
-}): unknown {
-  return {
-    __plugins: [plugin],
-    // The dispatcher constructs `pluginRegistryService(db)` lazily. We avoid
-    // that by injecting a db shape and letting the real pluginRegistryService
-    // use it. In practice, dispatcher.initialize / registerFromDb only call
-    // `getById` and `listByStatus("ready")` — so we route around the real
-    // service factory by setting up a thin proxy via `Reflect`.
-    select: () => ({ from: () => ({ where: () => Promise.resolve([plugin]) }) }),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -172,22 +160,28 @@ describe("dispatcher — lifecycle path (plugin.enabled → registerFromDb)", ()
   // public dispatcher surface — independent of the activation path's
   // `registerPluginTools` call.
 
-  it("registers tools by UUID when plugin.enabled fires (initialize + event re-entry)", async () => {
+  it("registers tools by UUID when plugin.enabled fires after initialize()", async () => {
+    mockRegistry.listByStatus.mockResolvedValue([]);
+    mockRegistry.getById.mockResolvedValue({
+      id: PLUGIN_DB_ID,
+      pluginKey: PLUGIN_KEY,
+      manifestJson: MANIFEST,
+    });
     const workerManager = createUuidKeyedWorkerManager();
     const lifecycleManager = createLifecycleManager();
-    const dispatcher = createPluginToolDispatcher({ workerManager, lifecycleManager: lifecycleManager as any });
+    const dispatcher = createPluginToolDispatcher({
+      workerManager,
+      lifecycleManager: lifecycleManager as any,
+      db: {} as any,
+    });
+    await dispatcher.initialize();
+    expect(dispatcher.getTool(`${PLUGIN_KEY}:ping`)).toBeNull();
 
-    // We exercise the public surface directly (no DB shim needed): the
-    // dispatcher's lifecycle handler internally calls registry.registerPlugin
-    // via registerFromDb. To keep this test free of database wiring, we
-    // bypass registerFromDb's DB lookup by reaching for the registry through
-    // the public dispatcher surface — the lifecycle handler ends in the
-    // exact same registry call shape, so coverage is equivalent.
-    dispatcher.getRegistry().registerPlugin(MANIFEST.pluginKey ?? PLUGIN_KEY, MANIFEST, PLUGIN_DB_ID);
-
-    // Tools registered with UUID.
-    const tool = dispatcher.getTool(`${PLUGIN_KEY}:ping`);
-    expect(tool?.pluginDbId).toBe(PLUGIN_DB_ID);
+    lifecycleManager.emit("plugin.enabled", { pluginId: PLUGIN_DB_ID, pluginKey: PLUGIN_KEY });
+    await vi.waitFor(() => {
+      expect(dispatcher.getTool(`${PLUGIN_KEY}:ping`)?.pluginDbId).toBe(PLUGIN_DB_ID);
+    });
+    expect(mockRegistry.getById).toHaveBeenCalledWith(PLUGIN_DB_ID);
 
     // Worker dispatch goes via UUID.
     await expect(
@@ -199,6 +193,10 @@ describe("dispatcher — lifecycle path (plugin.enabled → registerFromDb)", ()
     ).resolves.toBeDefined();
     expect(workerManager.isRunning).toHaveBeenCalledWith(PLUGIN_DB_ID);
     expect(workerManager.isRunning).not.toHaveBeenCalledWith(PLUGIN_KEY);
+
+    lifecycleManager.emit("plugin.disabled", { pluginId: PLUGIN_DB_ID, pluginKey: PLUGIN_KEY });
+    expect(dispatcher.getTool(`${PLUGIN_KEY}:ping`)).toBeNull();
+    dispatcher.teardown();
   });
 });
 

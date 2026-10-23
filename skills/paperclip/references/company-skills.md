@@ -58,7 +58,7 @@ Agent attach and hire/create composition:
 - `POST /api/companies/:companyId/agents`
 
 If a board user, CEO, or manager is driving locally, prefer the
-`paperclipai skills` CLI documented in `doc/CLI.md` — it wraps every endpoint
+`paperclipai skills` CLI documented in `technical-spec/engineering/CLI.md` — it wraps every endpoint
 above, accepts company skill or catalog refs by `id`/`key`/`slug`, and prints
 the same JSON these endpoints return when called with `--json`.
 

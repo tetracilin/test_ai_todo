@@ -44,6 +44,7 @@ describe("admin, asset, and skill parity commands", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     await rm(tempDir, { recursive: true, force: true });
   });
