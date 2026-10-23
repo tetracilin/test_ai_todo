@@ -8,7 +8,7 @@
 // cancels the row, the following approve call fails with action_not_pending.
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   companies,
   createDb,
@@ -38,6 +38,10 @@ describeEmbeddedPostgres("tool review queue vs unsigned ask-first request", () =
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-review-queue-unsigned-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

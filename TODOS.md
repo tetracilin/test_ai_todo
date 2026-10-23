@@ -2,6 +2,32 @@
 
 Deferred work with enough context to pick up cold. Format: what / why / context / effort / priority.
 
+## Deferred from /plan-eng-review of CEO-agent MCP auto-provisioning (2026-09-24)
+
+- [ ] **Backfill MCP grants for already-hired agents** (P3, human: ~1d / CC: ~2-3h)
+  - What: a one-time sweep granting existing ungranted agents their role's default tool-access profile.
+  - Why: `docs/designs/ceo-agent-mcp-auto-provisioning.md` only fixes agents hired going forward; agents hired before this ships stay unprovisioned until backfilled.
+  - Context: reuses the same role→profile lookup that design builds (its Open Question #2). Touches every company's existing agents — higher blast radius than a single new hire, run it deliberately, not automatically.
+  - Depends on: the role→profile lookup (Open Question #2) shipping first.
+
+- [ ] **Re-sync agent MCP grant on role/profile drift** (P3, human: ~2-3d / CC: ~4-6h)
+  - What: when an agent's role changes, or a `toolProfiles` definition it was granted from is later edited, re-sync the agent's MCP scope instead of leaving it fixed at hire-time.
+  - Why: `docs/designs/ceo-agent-mcp-auto-provisioning.md` explicitly deferred this (its Open Question #7) — today a grant is a one-time snapshot.
+  - Context: needs a change-detection/event trigger on role changes and profile edits that doesn't exist yet — real scope, not a quick add.
+  - Depends on: none blocking; independent follow-up.
+
+- [ ] **Clean up tool-profile-bindings on agent termination** (P3, human: ~2h / CC: ~20-30min)
+  - What: extend `agentsSvc.terminate()` (`server/src/services/agents.ts:914`) to also remove/revoke the agent's tool-profile-binding rows, matching the existing API-key-revocation right next to it (lines 929-932).
+  - Why: found during `/plan-eng-review` of the MCP auto-provisioning design — `terminate()` revokes API keys but never touches tool-profile bindings, leaving them dangling on a terminated agent. Inert in practice today (terminated agents never heartbeat, so the binding never resolves into a live MCP server), but real leftover data that a future query or export not filtering by agent status would surface incorrectly.
+  - Context: pre-existing gap, not caused by the MCP auto-provisioning design — that design just makes more grants exist to potentially dangle.
+  - Depends on: none.
+
+- [ ] **Add approvals table to company export/import portability manifest** (P2, human: ~1-2d / CC: ~4-6h)
+  - What: give the `approvals` table (all types, not just the new `tool_access_grant`) a manifest entry + export-fidelity count in `server/src/services/company-portability.ts`, per the existing enumerated-manifest pattern (`packages/shared/src/types/company-portability.ts`'s ~20 `*ManifestEntry` interfaces).
+  - Why: found during `/plan-eng-review` — `company-portability.ts` has zero `approvals` references today, so company export/import silently drops all pending and historical approval records, including the new `tool_access_grant` rows this design introduces. Same failure shape as the `t3-portability-enumerated-manifest` learning (`issue_evidence_links` shipped without a manifest entry in #40).
+  - Context: pre-existing gap across the whole table, not specific to this design; this design just adds more rows that inherit it.
+  - Depends on: none blocking.
+
 ## Deferred from /autoplan CEO review of WP-0 (2026-09-01)
 
 - [ ] **NAS bulk-import tooling for confidential-project evidence** (P3, human: ~2d / CC: ~2h)
@@ -59,4 +85,4 @@ reason the other two went unnoticed for five days.
   - What: #93 (npm minor/patch group, 33 packages), #61 (lucide-react), #60 (@vitejs/plugin-react), #18 (commander), #13 (@types/supertest), #5 (@types/node), #2 (@mdxeditor/editor). None is rebased on current `develop`; the four oldest predate `t3-ci` existing, so their recorded check results are meaningless.
   - Why: PRs #62 and #63 were exactly this shape — opened 2026-09-02, merged 2026-09-07 97 seconds apart. #63 was five days stale with red checks; #62 had just been rebased and its checks were still RUNNING when it was merged, completing red six seconds later — and broke `develop` at `pnpm install --frozen-lockfile` for every job and both nightly stacks. Reverted in PR #91. The remaining seven sit in the PR list looking mergeable and carry the same hazard.
   - How to land one safely, one at a time: rebase it onto current `develop` → wait for `t3-ci` to actually re-run and go green → merge that one → confirm `develop` is still green → only then start the next. Never merge two in the same sitting; their lockfiles are computed independently and the second one's will not account for the first.
-  - Context: `docs/operating-with-claude-code.md` records this as a repo-specific trap. The durable fix is branch protection on `develop` with "require branches to be up to date" — see the branch-protection item above — which makes this class mechanically unmergeable rather than relying on the reviewer remembering.
+  - Context: `technical-spec/fork/operating-with-claude-code.md` records this as a repo-specific trap. The durable fix is branch protection on `develop` with "require branches to be up to date" — see the branch-protection item above — which makes this class mechanically unmergeable rather than relying on the reviewer remembering.

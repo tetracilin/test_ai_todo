@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The first test in this suite imports the large `routes/issues.ts` module
 // through `vi.importActual` inside `createApp`. `vi.resetModules()` in
@@ -151,6 +151,12 @@ async function createApp() {
 }
 
 describe("issue dependency wakeups in issue routes", () => {
+  // Warm the transform cache for the large routes module under a hook-sized timeout so the
+  // cold import (15s+ on a loaded Windows host) is not charged to whichever test runs first.
+  beforeAll(async () => {
+    await vi.importActual("../routes/issues.js");
+  }, 120_000);
+
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../routes/issues.js");

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import {
   adapterAuthSessions,
@@ -730,9 +730,13 @@ describe("SetupTokenSessionService.completeSession", () => {
     service.submitCode(sessionId, OWNER_SCOPE, "code");
     await processes[0].surfaceCredential(SYNTH_TOKEN);
     processes[0].finish("success");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    // The retention timer dropped the in-memory session, so a read is not found.
-    expect(() => service.completeSession(sessionId, OWNER_SCOPE)).toThrow(SETUP_TOKEN_SESSION_NOT_FOUND);
+    // The retention timer drops the in-memory session, so a read becomes not found.
+    // Poll against a bounded deadline instead of racing a fixed sleep against the
+    // 5 ms timer.
+    await vi.waitFor(
+      () => expect(() => service.completeSession(sessionId, OWNER_SCOPE)).toThrow(SETUP_TOKEN_SESSION_NOT_FOUND),
+      { timeout: 2_000 },
+    );
   });
 });
 
@@ -1092,26 +1096,27 @@ describe("confidential transport guard (SR-6, SR-7)", () => {
 });
 
 describe("SetupTokenSessionService durable state scope", () => {
-  it("marks the durable record state by the full owner scope", async () => {
+  it("marks the durable record state by the full owner scope, never by session id alone", async () => {
     const store = new FakeStore();
+    // Capture the identity the service passes on every durable state write. The
+    // service, not the fake store, owns the contract that each write carries the
+    // full company, owner, and adapter scope.
+    const markedIdentities: SetupTokenCleanupIdentity[] = [];
+    const markStateOriginal = store.markState.bind(store);
+    store.markState = async (identity, state) => {
+      markedIdentities.push(identity);
+      return markStateOriginal(identity, state);
+    };
     const { service, processes } = buildService({ store });
     const { sessionId } = await service.start(OWNER_SCOPE);
     processes[0].surfacePrompt(FULL_LOGIN_URL);
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
     expect(store.rows.get(sessionId)?.state).toBe("awaiting_code");
 
-    // A foreign-scope mark leaves the row unchanged, so a write never updates a
-    // row by the session id alone.
-    await store.markState(
-      {
-        sessionId,
-        companyId: OWNER_SCOPE.companyId,
-        ownerUserId: "intruder",
-        adapterType: OWNER_SCOPE.adapterType,
-      },
-      "submitting",
-    );
-    expect(store.rows.get(sessionId)?.state).toBe("awaiting_code");
+    expect(markedIdentities.length).toBeGreaterThan(0);
+    for (const identity of markedIdentities) {
+      expect(identity).toEqual(identityFromScope(OWNER_SCOPE, sessionId));
+    }
   });
 });
 
@@ -1250,6 +1255,8 @@ describeEmbeddedPostgres("durable setup-token cleanup store (embedded postgres)"
       environmentId: secondEnvironment,
     };
     await expect(insertRecord(sameSlot, "awaiting_code", Date.now() + 60_000)).rejects.toThrow();
+    // The rejected insert left the original record untouched.
+    expect((await readRow(scope.sessionId))?.environmentId).toBe(scope.environmentId);
 
     // A different owner in the same company holds an independent slot, so the
     // insert succeeds.
@@ -1311,6 +1318,20 @@ describeEmbeddedPostgres("durable setup-token cleanup store (embedded postgres)"
     const foreign = await store.consumeStoredClaim({ ...identity, adapterType: "codex_local" });
     expect(foreign).toBeNull();
     expect((await readRow(identity.sessionId))?.boundAt).toBeNull();
+  });
+
+  it("marks state only for the full owner scope on the durable store", async () => {
+    const identity = await seedScope();
+    await insertRecord(identity, "awaiting_code", Date.now() + 60_000);
+    const store = createDbSetupTokenCleanupStore(db);
+
+    // A foreign-owner write matches no row, so the state never changes by
+    // session id alone.
+    await store.markState({ ...identity, ownerUserId: "intruder" }, "submitting");
+    expect((await readRow(identity.sessionId))?.status).toBe("awaiting_code");
+
+    await store.markState(identity, "submitting");
+    expect((await readRow(identity.sessionId))?.status).toBe("submitting");
   });
 
   it("returns no row for an expired claim", async () => {
@@ -1398,15 +1419,19 @@ describeEmbeddedPostgres("durable setup-token cleanup store (embedded postgres)"
     // Wait until the lock is truly held, then fire the consume. The consume
     // blocks on the row lock; its initial scan sees the far-future deadline.
     await locked;
-    const consumePromise = store.consumeStoredClaim(identity);
-    // Hold the lock until the near deadline passes, then commit.
-    await delay(600);
-    releaseGate();
-    await lockHeld;
+    try {
+      const consumePromise = store.consumeStoredClaim(identity);
+      // Hold the lock until the near deadline passes, then commit.
+      await delay(600);
+      releaseGate();
+      await lockHeld;
 
-    const consumed = await consumePromise;
-    expect(consumed).toBeNull();
-    expect((await readRow(identity.sessionId))?.boundAt).toBeNull();
-    await lockDb.$client.end();
+      const consumed = await consumePromise;
+      expect(consumed).toBeNull();
+      expect((await readRow(identity.sessionId))?.boundAt).toBeNull();
+    } finally {
+      releaseGate();
+      await lockDb.$client.end();
+    }
   });
 });

@@ -494,7 +494,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
   });
 
   it("fires for another agent running a child of the routine issue", async () => {
-    const { agentId, companyId, projectId, routine, svc } = await seedFixture();
+    const { companyId, projectId, routine, svc } = await seedFixture();
     const windowStart = new Date(Date.now() - 60_000);
     const now = new Date();
     await insertDispatchedRun({ companyId, routineId: routine.id, triggeredAt: windowStart });
@@ -554,7 +554,6 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
       windowStart,
       matchedActivity: { id: activity!.id },
     });
-    expect(agentId).not.toBe(otherAgentId);
   });
 
   it("fires for a human comment and ignores inbox bookkeeping activity", async () => {
@@ -2382,7 +2381,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
         rawBody,
         payload: { ok: true },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ status: 401 });
   });
 
   it("accepts any request with none signing mode", async () => {

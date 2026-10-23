@@ -32,6 +32,9 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
+// Unprivileged symlink creation is unavailable on stock Windows; these cases exercise symlink handling.
+const itSymlinks = it.skipIf(process.platform === "win32");
+
 describeEmbeddedPostgres("companySkillService.list", () => {
   let db!: ReturnType<typeof createDb>;
   let svc!: ReturnType<typeof companySkillService>;
@@ -2124,7 +2127,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(versions).toHaveLength(2);
   });
 
-  it("browses project folders and imports a selected non-standard skill", async () => {
+  itSymlinks("browses project folders and imports a selected non-standard skill", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
@@ -2420,7 +2423,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     ]);
   });
 
-  it("imports only selections rediscovered inside project workspaces", async () => {
+  itSymlinks("imports only selections rediscovered inside project workspaces", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
@@ -2591,7 +2594,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     ]));
   });
 
-  it("skips a selected project skill whose SKILL.md is a symlink outside the workspace", async () => {
+  itSymlinks("skips a selected project skill whose SKILL.md is a symlink outside the workspace", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
@@ -2660,6 +2663,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const persisted = await db.select().from(companySkills).where(eq(companySkills.companyId, companyId));
     expect(persisted.filter((skill) => skill.metadata?.sourceKind === "project_scan")).toEqual([]);
   });
+
   it("files new project imports without moving them back on re-import", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();

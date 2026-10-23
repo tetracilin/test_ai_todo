@@ -377,6 +377,7 @@ describe("Inbox toolbar", () => {
     for (const issueId of getLocalInboxArchiveIssueIds("company-1")) {
       clearLocalInboxArchive("company-1", issueId);
     }
+    localStorage.removeItem("paperclip:inbox:group-by");
     container.remove();
   });
 
@@ -544,6 +545,16 @@ describe("Inbox toolbar", () => {
       );
     });
 
+    // Let the initial queries resolve so the absence assertions below are not
+    // vacuously true against a still-loading page.
+    await vi.waitFor(() => {
+      expect(apiMocks.issuesList).toHaveBeenCalled();
+      expect(apiMocks.experimentalSettings).toHaveBeenCalled();
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
     expect(container.querySelector('input[placeholder="Search inbox…"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="inbox-blocked-tab-badge"]')).toBeNull();
     expect(container.querySelector('button[title="Filter"]')).not.toBeNull();
@@ -573,6 +584,15 @@ describe("Inbox toolbar", () => {
           <Inbox />
         </QueryClientProvider>,
       );
+    });
+
+    // The experimental-settings query must have resolved before the menu is
+    // inspected, otherwise the missing "Workspace" option proves nothing.
+    await vi.waitFor(() => {
+      expect(apiMocks.experimentalSettings).toHaveBeenCalled();
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
 
     const groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');

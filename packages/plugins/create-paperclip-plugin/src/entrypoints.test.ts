@@ -1,11 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
+// The scaffold output MUST live inside the repo: outside it, scaffoldPluginProject runs real
+// `pnpm build`/`pnpm pack` subprocesses instead of using a workspace:* dependency.
 const tempDirs: string[] = [];
+// Resolve paths relative to this file so the test does not depend on process.cwd().
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const SDK_PATH = path.join(REPO_ROOT, "packages", "plugins", "sdk");
 
 function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-create-paperclip-plugin-"));
+  const dir = fs.mkdtempSync(path.join(REPO_ROOT, ".tmp-create-paperclip-plugin-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -23,7 +29,7 @@ describe("create-paperclip-plugin entrypoints", () => {
     const outputRoot = makeTempDir();
 
     try {
-      process.argv = [process.execPath, path.resolve("cli/dist/index.js"), "demo-plugin", "--output", outputRoot];
+      process.argv = [process.execPath, path.join(REPO_ROOT, "cli", "dist", "index.js"), "demo-plugin", "--output", outputRoot];
       const library = await import("./index.js");
 
       expect(library.scaffoldPluginProject).toBeTypeOf("function");
@@ -47,7 +53,7 @@ describe("create-paperclip-plugin entrypoints", () => {
         "--output",
         outputRoot,
         "--sdk-path",
-        path.resolve("packages/plugins/sdk"),
+        SDK_PATH,
       ],
       {
         stdout: (message) => stdout.push(message),

@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -40,6 +40,16 @@ const mockEnvironmentService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockSyncInstructionsBundleConfigFromFilePath = vi.hoisted(() => vi.fn());
 const mockFindServerAdapter = vi.hoisted(() => vi.fn());
+// Keep the real adapter registry (including listSelectableServerAdapters) and
+// stub only the lookups these tests need to control, so the selectable-adapter
+// policy is not a hand-copied constant that can rot.
+const adaptersIndexMockFactory = vi.hoisted(
+  () => async (importOriginal: () => Promise<Record<string, unknown>>) => ({
+    ...(await importOriginal()),
+    findServerAdapter: mockFindServerAdapter,
+    listAdapterModels: vi.fn(),
+  }),
+);
 
 vi.mock("../services/index.js", () => ({
   agentService: () => mockAgentService,
@@ -67,14 +77,7 @@ vi.mock("../services/environments.js", () => ({
   environmentService: () => mockEnvironmentService,
 }));
 
-vi.mock("../adapters/index.js", () => ({
-  findServerAdapter: mockFindServerAdapter,
-  listAdapterModels: vi.fn(),
-  // The enforcement contract (c1ffeec67) exposes only hermes_gateway as
-  // selectable for agent creation / adapter switches. PATCH tests that switch
-  // adapters target hermes_gateway, so the selectable registry lists it.
-  listSelectableServerAdapters: () => [{ type: "hermes_gateway" }],
-}));
+vi.mock("../adapters/index.js", adaptersIndexMockFactory);
 
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
@@ -102,13 +105,7 @@ function registerModuleMocks() {
     environmentService: () => mockEnvironmentService,
   }));
 
-  vi.doMock("../adapters/index.js", () => ({
-    findServerAdapter: mockFindServerAdapter,
-    listAdapterModels: vi.fn(),
-    // See the top-level mock: selectable adapters are hermes_gateway-only
-    // since c1ffeec67.
-    listSelectableServerAdapters: () => [{ type: "hermes_gateway" }],
-  }));
+  vi.doMock("../adapters/index.js", adaptersIndexMockFactory);
 }
 
 function boardActor() {
@@ -199,7 +196,25 @@ function makeReflectionCoachAgent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("agent instructions bundle routes", () => {
+  const originalSelectableAdapters = process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+
+  // Warm the transform cache for the very large agents router so its first
+  // import is not charged to (and does not time out) the first test; a timed-out
+  // test's leaked continuation would otherwise corrupt the next test's mocks.
+  beforeAll(async () => {
+    await vi.importActual("../routes/agents.js");
+    await vi.importActual("../middleware/index.js");
+  }, 120_000);
+
+  afterEach(() => {
+    if (originalSelectableAdapters === undefined) delete process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES;
+    else process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = originalSelectableAdapters;
+  });
+
   beforeEach(() => {
+    // The adapter-switch tests target hermes_gateway; pin the selectable set
+    // rather than inherit it from the runner's environment.
+    process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway";
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");
     vi.doUnmock("../routes/authz.js");
@@ -442,9 +457,9 @@ describe("agent instructions bundle routes", () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
-        // Switching an existing agent is a new selection, and hermes_gateway is
-        // the only selectable adapter since c1ffeec67. The instructions bundle
-        // is adapter-agnostic, so the switch must still carry it over.
+        // Switching an existing agent is a new selection of a selectable adapter
+        // (pinned to hermes_gateway above). The instructions bundle is
+        // adapter-agnostic, so the switch must still carry it over.
         adapterType: "hermes_gateway",
         adapterConfig: {
           apiBaseUrl: "http://127.0.0.1:8642/api",
@@ -492,8 +507,8 @@ describe("agent instructions bundle routes", () => {
       .patch("/api/agents/11111111-1111-4111-8111-111111111111?companyId=company-1")
       .send({
         // Paperclip skill-sync selections are adapter-agnostic and must be
-        // carried over when the agent moves onto the only selectable adapter
-        // (hermes_gateway) since c1ffeec67.
+        // carried over when the agent moves onto the selectable adapter
+        // (hermes_gateway, pinned above).
         adapterType: "hermes_gateway",
         replaceAdapterConfig: true,
         adapterConfig: {

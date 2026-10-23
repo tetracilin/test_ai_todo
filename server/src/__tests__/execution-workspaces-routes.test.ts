@@ -91,6 +91,11 @@ function createApp(actor: Record<string, unknown> = {
 describe.sequential("execution workspace routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations; reset the ones individual tests override
+    // so a mockImplementation set in one test cannot leak into the next.
+    mockExecutionWorkspaceService.fenceClosedWorkspaceDestruction.mockReset();
+    mockExecutionWorkspaceService.archiveWorkspaceUnderLifecycleLock.mockReset();
+    mockExecutionWorkspaceService.getCloseReadiness.mockReset();
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
       action: "company_scope:read",

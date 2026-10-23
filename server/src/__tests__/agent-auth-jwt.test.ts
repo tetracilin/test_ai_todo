@@ -316,4 +316,44 @@ describe("agent local JWT", () => {
       run_id: "run-1",
     });
   });
+
+  it.each([
+    ["an empty string", ""],
+    ["a token with two segments", "aaa.bbb"],
+    ["a token with four segments", "aaa.bbb.ccc.ddd"],
+  ])("rejects %s", (_label, malformed) => {
+    expect(verifyLocalAgentJwt(malformed)).toBeNull();
+  });
+
+  it("rejects a token whose signature has been altered", () => {
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    const [headerB64, claimsB64, signature] = token!.split(".");
+    const flippedLast = signature.endsWith("A") ? "B" : "A";
+    const altered = `${headerB64}.${claimsB64}.${signature.slice(0, -1)}${flippedLast}`;
+
+    expect(verifyLocalAgentJwt(altered)).toBeNull();
+  });
+
+  it("rejects a token whose header declares a non-HS256 algorithm", () => {
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    const [, claimsB64, signature] = token!.split(".");
+    const noneHeaderB64 = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" }), "utf8").toString("base64url");
+
+    expect(verifyLocalAgentJwt(`${noneHeaderB64}.${claimsB64}.${signature}`)).toBeNull();
+    expect(verifyLocalAgentJwt(`${noneHeaderB64}.${claimsB64}.`)).toBeNull();
+  });
+
+  it("accepts a token up to its exp second and rejects it one second later", () => {
+    process.env[ttlEnv] = "1";
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+    expect(verifyLocalAgentJwt(token!)).not.toBeNull();
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:02.000Z"));
+    expect(verifyLocalAgentJwt(token!)).toBeNull();
+  });
 });

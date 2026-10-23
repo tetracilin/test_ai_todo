@@ -42,6 +42,7 @@ async function flushReact() {
 
 // Capture the live hook result so assertions can read it and drive its actions.
 let captured: UseInstallTeamCatalogEntryResult | null = null;
+const cleanups: Array<() => void> = [];
 
 function Harness({ simplified }: { simplified: boolean }) {
   captured = useInstallTeamCatalogEntry({
@@ -65,10 +66,15 @@ async function renderHook(simplified: boolean) {
     );
   });
   await flushReact();
-  return () => {
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
     root.unmount();
     container.remove();
   };
+  cleanups.push(cleanup);
+  return cleanup;
 }
 
 describe("useInstallTeamCatalogEntry", () => {
@@ -79,6 +85,8 @@ describe("useInstallTeamCatalogEntry", () => {
   });
 
   afterEach(() => {
+    // Unmount even when an assertion threw before the inline cleanup() ran.
+    for (const fn of cleanups.splice(0)) fn();
     vi.clearAllMocks();
     document.body.innerHTML = "";
   });

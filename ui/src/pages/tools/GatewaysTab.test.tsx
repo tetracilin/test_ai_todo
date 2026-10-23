@@ -205,12 +205,17 @@ describe("GatewaysTab", () => {
     vi.restoreAllMocks();
   });
 
-  async function render(node: ReactNode) {
+  async function render(node: ReactNode, client?: QueryClient) {
     root = createRoot(container);
     await act(async () => {
       root.render(node);
     });
     await flushReact();
+    // Date.now is frozen in this suite, so bound the wait with performance.now().
+    const deadline = performance.now() + 5_000;
+    while (client && client.isFetching() > 0 && performance.now() < deadline) {
+      await flushReact();
+    }
   }
 
   it("renders future relative times as an in-prefix and preserves past ago labels", async () => {
@@ -252,6 +257,7 @@ describe("GatewaysTab", () => {
       <QueryClientProvider client={client}>
         <GatewaysTab companyId="company-1" />
       </QueryClientProvider>,
+      client,
     );
 
     expect(container.textContent).toContain("expires in 2d");

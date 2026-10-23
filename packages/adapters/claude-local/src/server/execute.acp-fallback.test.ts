@@ -37,15 +37,19 @@ const {
   })),
 }));
 
-vi.mock("./acp.js", () => ({
-  createClaudeAcpExecutor: () => executeClaudeAcp,
-  formatClaudeAcpFallbackMessage: (reason: string) =>
-    `[paperclip] Claude ACP default unavailable; falling back to Claude CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`,
-  resolveClaudeExecutionEngineForRun: async (ctx: { config: Record<string, unknown> }) =>
-    ctx.config.engine === "acp"
-      ? { engine: "acp", explicit: true }
-      : { engine: "acp", explicit: false },
-}));
+// Partial mock: keep every real acp.js export and override only the three seams the
+// fallback path touches, so the mock cannot rot when acp.js gains new exports.
+vi.mock("./acp.js", async () => {
+  const actual = await vi.importActual<typeof import("./acp.js")>("./acp.js");
+  return {
+    ...actual,
+    createClaudeAcpExecutor: () => executeClaudeAcp,
+    resolveClaudeExecutionEngineForRun: async (ctx: { config: Record<string, unknown> }) =>
+      ctx.config.engine === "acp"
+        ? { engine: "acp", explicit: true }
+        : { engine: "acp", explicit: false },
+  };
+});
 
 vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
   const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(

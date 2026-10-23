@@ -117,5 +117,8 @@ describe("ArtifactGroupCard", () => {
     expect(mounted.container.querySelector("img")).toBeNull();
     const card = mounted.container.querySelector('[data-testid="artifact-group-card"]') as HTMLElement;
     expect(card).not.toBeNull();
+    // The card always renders, so assert the placeholder tile (icon in an
+    // aspect-video frame) is what stands in for the missing preview.
+    expect(card.querySelector(".aspect-video svg")).not.toBeNull();
   });
 });

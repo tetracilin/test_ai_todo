@@ -1,5 +1,6 @@
 import express from "express";
 import request from "supertest";
+import { ZodError } from "zod";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { environmentRoutes } from "../routes/environments.js";
 import { HttpError } from "../errors.js";
@@ -194,7 +195,9 @@ function createApp(actor: Record<string, unknown>) {
   });
   app.use("/api", environmentRoutes({} as never));
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status((err as { status?: number }).status ?? 500).json({
+    // Mirror the production errorHandler: schema validation failures are 400s.
+    const status = err instanceof ZodError ? 400 : (err as { status?: number }).status ?? 500;
+    res.status(status).json({
       error: err instanceof Error ? err.message : String(err),
     });
   });
@@ -684,7 +687,7 @@ describe("environment customImage setup routes", () => {
     const unknownKey = await request(app)
       .post("/api/environments/env-1/custom-image-template/relink?companyId=company-1")
       .send({ confirmBootSourceDrift: false, unexpected: true });
-    expect(unknownKey.status).not.toBe(200);
+    expect(unknownKey.status).toBe(400);
     expect(mockEnvironmentCustomImageService.relinkActiveTemplate).toHaveBeenCalledTimes(1);
   });
 

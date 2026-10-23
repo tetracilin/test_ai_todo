@@ -18,7 +18,11 @@ const {
   syncDirectoryToSsh: vi.fn(async (_input: { localDir: string }) => undefined),
 }));
 
-vi.mock("./ssh.js", () => ({
+// Partial mock: keep every real ssh.js export so a new export the SUT starts
+// using does not silently become undefined; only the four network-touching
+// functions are replaced.
+vi.mock("./ssh.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ssh.js")>()),
   prepareWorkspaceForSshExecution,
   restoreWorkspaceFromSshExecution,
   runSshCommand,
@@ -31,7 +35,9 @@ describe("remote managed runtime", () => {
   const cleanupDirs: string[] = [];
 
   afterEach(async () => {
-    vi.clearAllMocks();
+    // resetAllMocks (not clearAllMocks) so a per-test mockImplementation, like the
+    // failing-directory transfer below, cannot leak into the next test.
+    vi.resetAllMocks();
     while (cleanupDirs.length > 0) {
       const dir = cleanupDirs.pop();
       if (!dir) continue;

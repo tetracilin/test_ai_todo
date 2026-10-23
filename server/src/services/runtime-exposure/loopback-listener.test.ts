@@ -128,7 +128,12 @@ describe("listenerBindFactsForPort", () => {
   });
 });
 
-describe("diagnoseRuntimeListenerBinds against live listeners", () => {
+// The diagnosis reads /proc/net/tcp{,6}, which only exists on Linux (the broker
+// host). The pure parsers above are covered on every platform; the live-socket
+// tests are guarded to Linux. Fixed ports are derived from the dedicated
+// exposure range, so a collision with another local process would surface as an
+// EADDRINUSE at listen time rather than a silent pass.
+describe.skipIf(process.platform !== "linux")("diagnoseRuntimeListenerBinds against live listeners", () => {
   const appPort = RUNTIME_EXPOSURE_APP_PORT_MIN + 900;
   const hmrPort = deriveViteHmrPort(appPort);
 

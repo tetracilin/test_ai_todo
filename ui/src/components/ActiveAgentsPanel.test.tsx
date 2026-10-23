@@ -55,18 +55,14 @@ async function flushReact() {
   });
 }
 
-async function waitForMicrotaskAssertion(assertion: () => void, attempts = 20) {
-  let lastError: unknown;
-  for (let index = 0; index < attempts; index += 1) {
+// Retries against vi.waitFor's time budget (not a fixed attempt count), flushing
+// React and pending promises before each check, so a loaded worker gets more
+// time instead of a spurious failure.
+async function waitForMicrotaskAssertion(assertion: () => void) {
+  await vi.waitFor(async () => {
     await flushReact();
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
+    assertion();
+  });
 }
 
 function createRun(index: number) {
@@ -145,17 +141,17 @@ describe("ActiveAgentsPanel", () => {
         </QueryClientProvider>,
       );
     });
-    await flushReact();
+    await waitForMicrotaskAssertion(() => {
+      expect(mockHeartbeatsApi.liveRunsForCompany).toHaveBeenCalledWith("company-1", {
+        minCount: 4,
+        limit: undefined,
+      });
 
-    expect(mockHeartbeatsApi.liveRunsForCompany).toHaveBeenCalledWith("company-1", {
-      minCount: 4,
-      limit: undefined,
+      const moreLink = [...container.querySelectorAll("a")].find((anchor) =>
+        anchor.textContent?.includes("more active/recent"),
+      );
+      expect(moreLink?.getAttribute("href")).toBe("/dashboard/live");
     });
-
-    const moreLink = [...container.querySelectorAll("a")].find((anchor) =>
-      anchor.textContent?.includes("more active/recent"),
-    );
-    expect(moreLink?.getAttribute("href")).toBe("/dashboard/live");
 
     await act(async () => {
       root.unmount();
@@ -182,11 +178,13 @@ describe("ActiveAgentsPanel", () => {
         </QueryClientProvider>,
       );
     });
-    await flushReact();
-
-    expect(mockHeartbeatsApi.liveRunsForCompany).toHaveBeenCalledWith("company-1", {
-      minCount: 50,
-      limit: 50,
+    // The negative assertion is only meaningful once the runs have rendered.
+    await waitForMicrotaskAssertion(() => {
+      expect(mockHeartbeatsApi.liveRunsForCompany).toHaveBeenCalledWith("company-1", {
+        minCount: 50,
+        limit: 50,
+      });
+      expect(container.textContent).toContain("Agent 1");
     });
     expect(container.textContent).not.toContain("more active/recent");
 

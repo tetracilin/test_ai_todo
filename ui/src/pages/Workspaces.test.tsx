@@ -201,7 +201,7 @@ describe("Workspaces", () => {
 
     const loadMoreButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent === "Load more");
-    expect(loadMoreButton).not.toBeNull();
+    expect(loadMoreButton).toBeDefined();
     await act(async () => {
       loadMoreButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });

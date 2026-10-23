@@ -33,6 +33,7 @@ describe("prompt handoff", () => {
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

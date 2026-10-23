@@ -63,6 +63,7 @@ describe("resolver policy vocabulary", () => {
   });
 
   it("previews an effect for every choice without naming a raw policy value", () => {
+    expect(RESOLVER_POLICY_CHOICES.length).toBeGreaterThan(0);
     for (const choice of RESOLVER_POLICY_CHOICES) {
       expect(choice.effect.length).toBeGreaterThan(0);
       expect(choice.effect).not.toContain(choice.value);

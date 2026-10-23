@@ -136,6 +136,47 @@ describe("finalizeServerShutdown", () => {
   });
 });
 
+describe("finalizeServerShutdown failure isolation", () => {
+  it("logs a failed embedded PostgreSQL stop and still flushes instrumentation", async () => {
+    const stopError = new Error("pg stop failed");
+    const stopEmbeddedPostgres = vi.fn(async () => {
+      throw stopError;
+    });
+    const shutdownInstrumentation = vi.fn(async () => undefined);
+    const log = stubLogger();
+
+    await finalizeServerShutdown({
+      signal: "SIGTERM",
+      shutdownAppServices: vi.fn(async () => undefined),
+      stopEmbeddedPostgres,
+      shutdownInstrumentation,
+      log,
+    });
+
+    expect(log.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: stopError }),
+      expect.any(String),
+    );
+    expect(shutdownInstrumentation).toHaveBeenCalledOnce();
+  });
+
+  it("tolerates an absent application-service shutdown hook", async () => {
+    const stopEmbeddedPostgres = vi.fn(async () => undefined);
+    const shutdownInstrumentation = vi.fn(async () => undefined);
+
+    await finalizeServerShutdown({
+      signal: "SIGINT",
+      shutdownAppServices: undefined,
+      stopEmbeddedPostgres,
+      shutdownInstrumentation,
+      log: stubLogger(),
+    });
+
+    expect(stopEmbeddedPostgres).toHaveBeenCalledOnce();
+    expect(shutdownInstrumentation).toHaveBeenCalledOnce();
+  });
+});
+
 describe("loadWithoutCoordinatedShutdownSignalHooks", () => {
   it("removes the eager signal handlers from the real embedded-postgres import", async () => {
     const before = {
@@ -148,6 +189,24 @@ describe("loadWithoutCoordinatedShutdownSignalHooks", () => {
 
     expect(process.rawListeners("SIGINT")).toEqual(before.SIGINT);
     expect(process.rawListeners("SIGTERM")).toEqual(before.SIGTERM);
+  });
+
+  it("removes the signal handlers even when the import rejects, and rethrows the failure", async () => {
+    const signalTarget = new EventEmitter();
+    const preexisting = vi.fn();
+    signalTarget.on("SIGTERM", preexisting);
+    const importError = new Error("import failed");
+
+    await expect(
+      loadWithoutCoordinatedShutdownSignalHooks(async () => {
+        signalTarget.on("SIGTERM", vi.fn());
+        signalTarget.on("SIGINT", vi.fn());
+        throw importError;
+      }, signalTarget),
+    ).rejects.toBe(importError);
+
+    expect(signalTarget.rawListeners("SIGTERM")).toEqual([preexisting]);
+    expect(signalTarget.rawListeners("SIGINT")).toEqual([]);
   });
 
   it("keeps the database available for a marker-backed SIGTERM snapshot", async () => {

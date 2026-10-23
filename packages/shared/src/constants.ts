@@ -1277,7 +1277,7 @@ export const TOOL_ACCESS_ACTIVITY_ACTIONS = [
 export type ToolAccessActivityAction = (typeof TOOL_ACCESS_ACTIVITY_ACTIONS)[number];
 
 // ---------------------------------------------------------------------------
-// Plugin System — see doc/plugins/PLUGIN_SPEC.md for the full specification
+// Plugin System — see technical-spec/architecture/plugins/PLUGIN_SPEC.md for the full specification
 // ---------------------------------------------------------------------------
 
 /**

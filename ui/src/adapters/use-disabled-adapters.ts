@@ -85,3 +85,22 @@ export function useAdapterRegistryLoaded(options: { enabled?: boolean } = {}): b
   });
   return adapters !== undefined;
 }
+
+/**
+ * Adapter types the server allows for agent creation, or null while the list
+ * is loading or when the server does not advertise the `selectable` flag
+ * (callers should then not filter).
+ */
+export function useSelectableAdapterTypes(options: { enabled?: boolean } = {}): Set<string> | null {
+  const enabled = options.enabled ?? true;
+  const { data: adapters } = useQuery({
+    queryKey: queryKeys.adapters.all,
+    queryFn: () => adaptersApi.list(),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+  return useMemo(() => {
+    if (!adapters || !adapters.some((a) => typeof a.selectable === "boolean")) return null;
+    return new Set(adapters.filter((a) => a.selectable).map((a) => a.type));
+  }, [adapters]);
+}

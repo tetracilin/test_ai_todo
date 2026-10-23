@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -146,6 +146,17 @@ async function createApp(actor: Record<string, unknown>) {
 }
 
 describe("issue telemetry routes", () => {
+  // createApp() imports the very large issue routes module inside the test body,
+  // so the cold transform cost used to count against the 10s test timeout. Warm
+  // the transform cache once, outside any test.
+  beforeAll(async () => {
+    registerModuleMocks();
+    await Promise.all([
+      vi.importActual("../middleware/index.js"),
+      vi.importActual("../routes/issues.js"),
+    ]);
+  }, 120_000);
+
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("@paperclipai/shared/telemetry");

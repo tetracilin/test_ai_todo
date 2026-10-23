@@ -304,6 +304,23 @@ async function closeNetServer(server: net.Server) {
   });
 }
 
+async function expectUrlEventuallyUnreachable(url: string, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus: number | null = null;
+  while (Date.now() < deadline) {
+    const reachable = await fetch(url).then(
+      (response) => {
+        lastStatus = response.status;
+        return true;
+      },
+      () => false,
+    );
+    if (!reachable) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Expected ${url} to stop accepting connections within ${timeoutMs}ms (last status ${lastStatus})`);
+}
+
 async function listenOnPort(port: number) {
   const server = net.createServer();
   await new Promise<void>((resolve, reject) => {
@@ -621,6 +638,7 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
     await fs.symlink(expectedPackageDir, path.join(serverNodeModulesScopeDir, "db"));
 
     await ensureServerWorkspaceLinksCurrent(path.join(repoRoot, "server"));
+    expect(await fs.realpath(path.join(serverNodeModulesScopeDir, "db"))).toBe(await fs.realpath(expectedPackageDir));
   });
 
   it("skips relinking outside linked git worktrees", async () => {
@@ -4611,9 +4629,7 @@ describe("ensureRuntimeServicesForRun", () => {
     });
     await releaseRuntimeServicesForRun(runId);
     leasedRunIds.delete(runId);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    await expect(fetch(services[0]!.url!)).rejects.toThrow();
+    await expectUrlEventuallyUnreachable(services[0]!.url!);
   });
 
   it("does not stop services in sibling directories when matching by workspace cwd", async () => {
@@ -5004,6 +5020,10 @@ describe("resolveShell (shell fallback)", () => {
   });
 });
 
+// Declared skips make a missing `lsof` visible in the report instead of the
+// tests silently returning (and passing) without asserting anything.
+const lsofAvailable = await execFileAsync("lsof", ["-v"]).then(() => true, () => false);
+
 describe("readLocalServicePortOwner", () => {
   const originalPlatform = process.platform;
 
@@ -5011,13 +5031,7 @@ describe("readLocalServicePortOwner", () => {
     Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
-  it("detects the owner of a listening TCP port", async () => {
-    try {
-      await execFileAsync("lsof", ["-v"]);
-    } catch {
-      return;
-    }
-
+  it.skipIf(!lsofAvailable)("detects the owner of a listening TCP port", async () => {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
@@ -5074,13 +5088,7 @@ describe("readLocalServicePortOwner", () => {
     await expect(isLocalServiceProcessInWorkspace(serviceCwd, workspace)).resolves.toBe(true);
   });
 
-  it("keeps a live registry record adoptable when cwd inspection is unsupported", async () => {
-    try {
-      await execFileAsync("lsof", ["-v"]);
-    } catch {
-      return;
-    }
-
+  it.skipIf(!lsofAvailable)("keeps a live registry record adoptable when cwd inspection is unsupported", async () => {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -5134,14 +5142,7 @@ describe("readLocalServicePortOwner", () => {
     await expect(isLocalServiceRegistryCwdCompatible(null, process.cwd())).resolves.toBe(false);
   });
 
-  it("refuses to adopt a listener whose real cwd belongs to another workspace", async () => {
-    if (process.platform !== "linux") return;
-    try {
-      await execFileAsync("lsof", ["-v"]);
-    } catch {
-      return;
-    }
-
+  it.skipIf(!lsofAvailable || process.platform !== "linux")("refuses to adopt a listener whose real cwd belongs to another workspace", async () => {
     const targetWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-target-"));
     const ownerWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-owner-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
@@ -8183,9 +8184,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     });
     await releaseRuntimeServicesForRun(runId);
     leasedRunIds.delete(runId);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    await expect(fetch(services[0]!.url!)).rejects.toThrow();
+    await expectUrlEventuallyUnreachable(services[0]!.url!);
 
     const persisted = await db
       .select()

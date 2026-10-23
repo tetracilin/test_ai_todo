@@ -88,14 +88,18 @@ describe("company skill import source parsing", () => {
   it("rejects secret-bearing remote URLs without echoing the secret", () => {
     const source = "https://github.com/acme/private-skill?token=secret#token=secret";
 
-    expect(() => parseSkillImportSourceInput(source)).toThrow(
-      "Remote skill source URLs cannot include credentials, query parameters, or fragments.",
-    );
+    let thrown: unknown;
     try {
       parseSkillImportSourceInput(source);
     } catch (error) {
-      expect((error as Error).message).not.toContain("secret");
+      thrown = error;
     }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe(
+      "Remote skill source URLs cannot include credentials, query parameters, or fragments.",
+    );
+    expect((thrown as Error).message).not.toContain("secret");
   });
 
   it("rejects malformed remote URLs as validation errors", () => {
@@ -192,7 +196,8 @@ describe("project workspace skill discovery", () => {
     expect(imported.metadata?.sourceKind).toBe("project_scan");
   });
 
-  it("rejects symlinks reachable from a project-scanned skill", async () => {
+  // Creating symlinks on Windows needs elevated rights / developer mode.
+  it.skipIf(process.platform === "win32")("rejects symlinks reachable from a project-scanned skill", async () => {
     const workspace = await makeTempDir("paperclip-linked-skill-file-");
     const skillDir = path.join(workspace, ".codex", "skills", "linked-file");
     const outsideFile = path.join(await makeTempDir("paperclip-linked-skill-outside-"), "outside.md");
@@ -366,6 +371,7 @@ describe("project workspace skill discovery", () => {
 
     expect(imported.description).toBe("First line second line");
   });
+
   it("includes explicitly selected skills from non-standard folders", async () => {
     const workspace = await makeTempDir("paperclip-skill-workspace-");
     await writeSkillDir(path.join(workspace, "content", "specialists", "editorial"), "Editorial");
@@ -387,8 +393,6 @@ describe("project workspace skill discovery", () => {
       },
     ]);
   });
-
-
 });
 
 describe("missing local skill reconciliation", () => {

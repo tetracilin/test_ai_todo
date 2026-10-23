@@ -1371,7 +1371,8 @@ describe("claude execute", () => {
     const previousHome = process.env.HOME;
     process.env.HOME = root;
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 3, 22, 10, 15, 0));
+    // Fixed UTC instant (10:15 in America/Chicago) so the result does not depend on the host timezone.
+    vi.setSystemTime(new Date("2026-04-22T15:15:00.000Z"));
 
     try {
       const result = await execute({

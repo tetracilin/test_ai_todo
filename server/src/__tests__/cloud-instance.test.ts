@@ -6,26 +6,23 @@ import {
 } from "../services/cloud-instance.js";
 
 describe("isCloudManagedInstance", () => {
-  it("unifies both prior signals without weakening either restrictive floor", () => {
-    const cases: CloudInstanceEnv[] = [
-      {},
-      { PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN: "tenant-token" },
-      { PAPERCLIP_MANAGED_CONFIG: "" },
+  // Explicit expected values (not a re-derivation of the implementation): the
+  // canonical predicate is the union of the two prior restrictive signals, a
+  // non-blank tenant token OR any presence of PAPERCLIP_MANAGED_CONFIG (even "").
+  it.each<[string, CloudInstanceEnv, boolean]>([
+    ["no signals", {}, false],
+    ["tenant token only", { PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN: "tenant-token" }, true],
+    ["managed config present but empty", { PAPERCLIP_MANAGED_CONFIG: "" }, true],
+    [
+      "both signals",
       {
         PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN: "tenant-token",
         PAPERCLIP_MANAGED_CONFIG: "managed-document",
       },
-    ];
-
-    for (const env of cases) {
-      const priorTokenFloor = Boolean(env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim());
-      const priorManagedConfigFloor = env.PAPERCLIP_MANAGED_CONFIG !== undefined;
-      const canonicalFloor = isCloudManagedInstance(env);
-
-      expect(canonicalFloor).toBe(priorTokenFloor || priorManagedConfigFloor);
-      expect(canonicalFloor || !priorTokenFloor).toBe(true);
-      expect(canonicalFloor || !priorManagedConfigFloor).toBe(true);
-    }
+      true,
+    ],
+  ])("unifies both prior signals without weakening either restrictive floor: %s", (_label, env, expected) => {
+    expect(isCloudManagedInstance(env)).toBe(expected);
   });
 
   it("does not treat a blank tenant token alone as a managed signal", () => {
