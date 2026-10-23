@@ -2,6 +2,32 @@
 
 Deferred work with enough context to pick up cold. Format: what / why / context / effort / priority.
 
+## Deferred from /plan-eng-review of CEO-agent MCP auto-provisioning (2026-09-24)
+
+- [ ] **Backfill MCP grants for already-hired agents** (P3, human: ~1d / CC: ~2-3h)
+  - What: a one-time sweep granting existing ungranted agents their role's default tool-access profile.
+  - Why: `docs/designs/ceo-agent-mcp-auto-provisioning.md` only fixes agents hired going forward; agents hired before this ships stay unprovisioned until backfilled.
+  - Context: reuses the same role→profile lookup that design builds (its Open Question #2). Touches every company's existing agents — higher blast radius than a single new hire, run it deliberately, not automatically.
+  - Depends on: the role→profile lookup (Open Question #2) shipping first.
+
+- [ ] **Re-sync agent MCP grant on role/profile drift** (P3, human: ~2-3d / CC: ~4-6h)
+  - What: when an agent's role changes, or a `toolProfiles` definition it was granted from is later edited, re-sync the agent's MCP scope instead of leaving it fixed at hire-time.
+  - Why: `docs/designs/ceo-agent-mcp-auto-provisioning.md` explicitly deferred this (its Open Question #7) — today a grant is a one-time snapshot.
+  - Context: needs a change-detection/event trigger on role changes and profile edits that doesn't exist yet — real scope, not a quick add.
+  - Depends on: none blocking; independent follow-up.
+
+- [ ] **Clean up tool-profile-bindings on agent termination** (P3, human: ~2h / CC: ~20-30min)
+  - What: extend `agentsSvc.terminate()` (`server/src/services/agents.ts:914`) to also remove/revoke the agent's tool-profile-binding rows, matching the existing API-key-revocation right next to it (lines 929-932).
+  - Why: found during `/plan-eng-review` of the MCP auto-provisioning design — `terminate()` revokes API keys but never touches tool-profile bindings, leaving them dangling on a terminated agent. Inert in practice today (terminated agents never heartbeat, so the binding never resolves into a live MCP server), but real leftover data that a future query or export not filtering by agent status would surface incorrectly.
+  - Context: pre-existing gap, not caused by the MCP auto-provisioning design — that design just makes more grants exist to potentially dangle.
+  - Depends on: none.
+
+- [ ] **Add approvals table to company export/import portability manifest** (P2, human: ~1-2d / CC: ~4-6h)
+  - What: give the `approvals` table (all types, not just the new `tool_access_grant`) a manifest entry + export-fidelity count in `server/src/services/company-portability.ts`, per the existing enumerated-manifest pattern (`packages/shared/src/types/company-portability.ts`'s ~20 `*ManifestEntry` interfaces).
+  - Why: found during `/plan-eng-review` — `company-portability.ts` has zero `approvals` references today, so company export/import silently drops all pending and historical approval records, including the new `tool_access_grant` rows this design introduces. Same failure shape as the `t3-portability-enumerated-manifest` learning (`issue_evidence_links` shipped without a manifest entry in #40).
+  - Context: pre-existing gap across the whole table, not specific to this design; this design just adds more rows that inherit it.
+  - Depends on: none blocking.
+
 ## Deferred from /autoplan CEO review of WP-0 (2026-09-01)
 
 - [ ] **NAS bulk-import tooling for confidential-project evidence** (P3, human: ~2d / CC: ~2h)
@@ -60,3 +86,41 @@ reason the other two went unnoticed for five days.
   - Why: PRs #62 and #63 were exactly this shape — opened 2026-09-02, merged 2026-09-07 97 seconds apart. #63 was five days stale with red checks; #62 had just been rebased and its checks were still RUNNING when it was merged, completing red six seconds later — and broke `develop` at `pnpm install --frozen-lockfile` for every job and both nightly stacks. Reverted in PR #91. The remaining seven sit in the PR list looking mergeable and carry the same hazard.
   - How to land one safely, one at a time: rebase it onto current `develop` → wait for `t3-ci` to actually re-run and go green → merge that one → confirm `develop` is still green → only then start the next. Never merge two in the same sitting; their lockfiles are computed independently and the second one's will not account for the first.
   - Context: `technical-spec/fork/operating-with-claude-code.md` records this as a repo-specific trap. The durable fix is branch protection on `develop` with "require branches to be up to date" — see the branch-protection item above — which makes this class mechanically unmergeable rather than relying on the reviewer remembering.
+
+## From /plan-eng-review of the upstream adapters spec (2026-10-23)
+
+- [ ] **Per-payer budget policy for user-supplied AI keys** (P3, human: ~1d / CC: ~1h)
+  - What: decide whether spend on a user's own provider key counts against the company budget, a per-user budget, or neither.
+  - Why: budgets auto-pause agents. With bring-your-own keys, the provider bills the user, but Paperclip still counts the spend. PR 4 of the series records which connection paid (D11) so either policy stays possible.
+  - Context: `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md` 4.5.
+  - Depends on: PR 4 (`feature/ai-connections-foundation`) merged.
+
+- [ ] **Runbook for rotating `secrets/master.key`** (P3, human: ~2h / CC: ~20min)
+  - What: document how to back up and rotate the local secret-encryption master key without losing stored secrets.
+  - Why: once users store their own AI keys (D5), losing or leaking `master.key` exposes or destroys every user's credentials.
+  - Context: `server/src/services/secrets.ts` (`local_encrypted` provider); instance state under `~/.paperclip/instances/<id>/secrets/`.
+  - Depends on: nothing; more urgent once PR 4 merges.
+
+- [ ] **Per-credential usage view for key owners** (P3, human: M / CC: S)
+  - What: show a key owner which agents use their AI connection and when it last ran.
+  - Why: deferred from /autoplan CEO review (E3), 2026-10-23; owners cannot see where their key is used.
+  - Context: belongs to sub-project 2 (BYO-key onboarding UI); data comes from the D11 payer column and D17 events in `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md`.
+  - Depends on: PR 4 (`feature/ai-connections-foundation`).
+
+- [ ] **Auto-migrate existing Claude `user_secret_ref` bindings to managed connections** (P3, human: M / CC: S)
+  - What: offer existing agents with an `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` `user_secret_ref` binding a one-step move to a managed connection.
+  - Why: deferred (E4); adoption is rejected while a conflicting env binding exists, so every existing agent needs a manual step otherwise.
+  - Context: conflict rule `AI_CONNECTION_CREDENTIAL_CONFLICT` in the spec's 4.5; existing bindings in `server/src/services/secrets.ts` and `agent-secret-bindings.ts`.
+  - Depends on: PR 4; owner choosing approach A at the PR-P2 gate.
+
+- [ ] **Per-credential spend shown to the key owner** (P3, human: M / CC: S)
+  - What: show each key owner the spend recorded against their credential.
+  - Why: deferred (E5); with bring-your-own keys the user pays the provider, and budgets alone do not show that.
+  - Context: builds on the D11 nullable payer column on cost events; related to the per-payer budget TODO above.
+  - Depends on: PR 4.
+
+- [ ] **Server-side provider proxy for subprocess adapter egress** (P3, human: L / CC: M)
+  - What: route Claude Code / Hermes subprocess provider traffic through a server-side proxy that applies the egress guard per connection.
+  - Why: the egress guard in the upstream-adapters spec pins the provider base URL at config write and run start, but a DNS rebind inside the subprocess is a documented residual risk (eng review H3, 2026-10-23).
+  - Context: `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md` 4.4 and 4.6.
+  - Depends on: PR 5 (`feature/custom-model-providers`).
