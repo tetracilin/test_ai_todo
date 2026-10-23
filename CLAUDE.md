@@ -275,5 +275,24 @@ Deploy scripts	deploy/scripts/{healthcheck,image-retention,version-drift}.sh
 Compose	deploy/compose.yaml
 Run logs	GitHub → Actions; Discord channel 1534836487772704800 for summaries
 Runner	kmv8, user ghrunner, label kmv8, systemd service
-Operator guide (how to drive PRs and deploys safely)	technical-spec/fork/operating-with-claude-code.md
-What runs on kmv8, and what depends on it	technical-spec/fork/kmv8-stack-inventory.md
+Operator guide (how to drive PRs and deploys safely)	docs/operating-with-claude-code.md
+What runs on kmv8, and what depends on it	docs/deploy/kmv8-stack-inventory.md
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore
+- Author a backlog-ready spec/issue → invoke /spec
