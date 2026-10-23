@@ -57,4 +57,17 @@ describe("runRetryState", () => {
       secondary: "Bounded retry exhausted after 4 scheduled attempts; no further automatic retry will be queued Manual intervention required.",
     });
   });
+
+  it("does not repeat the manual-intervention suffix when the exhausted reason already has it", () => {
+    const reason = "Retries exhausted. Manual intervention required: check the adapter.";
+    expect(
+      describeRunRetryState({
+        status: "failed",
+        retryOfRunId: "run-1",
+        scheduledRetryAttempt: 4,
+        scheduledRetryReason: "transient_failure",
+        retryExhaustedReason: reason,
+      }),
+    ).toMatchObject({ kind: "exhausted", secondary: reason });
+  });
 });

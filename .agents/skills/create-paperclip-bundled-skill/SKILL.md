@@ -188,7 +188,7 @@ tags:
 Optional frontmatter: `defaultInstall: true` (only for skills every new
 company should get), `requires: [node, python3, ...]` for runtime deps.
 
-Body: follow `docs/guides/agent-developer/writing-a-skill.md` — "When to use"
+Body: follow the existing skills under `skills/` — "When to use"
 / "When not to use" sections, concrete commands over prose, supporting detail
 in `references/`. If the skill came from a tweet or external source, link it
 in the body for attribution.

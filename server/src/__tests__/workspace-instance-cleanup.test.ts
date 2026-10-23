@@ -13,6 +13,8 @@ import type { WorkspaceOperation } from "@paperclipai/shared";
 import type { WorkspaceOperationRecorder } from "../services/workspace-operations.js";
 
 const tempRoots = new Set<string>();
+// Windows only allows unprivileged directory symlinks as junctions; both resolve via realpath.
+const DIR_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
 async function makeTempRoot(prefix: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -271,7 +273,7 @@ describe("worktree instance cleanup", () => {
     const workspacePath = await makeTempRoot("paperclip-cleanup-workspace-");
     const instancesDir = path.join(worktreesDir, "instances");
     await fs.mkdir(instancesDir, { recursive: true });
-    await fs.symlink(outsideRoot, path.join(instancesDir, "escaped"), "dir");
+    await fs.symlink(outsideRoot, path.join(instancesDir, "escaped"), DIR_LINK_TYPE);
     await writeWorkspaceEnv(workspacePath, worktreesDir, "escaped");
 
     const pointer = await readWorktreeInstancePointer(workspacePath);
@@ -295,7 +297,7 @@ describe("worktree instance cleanup", () => {
     const workspacePath = await makeTempRoot("paperclip-cleanup-workspace-");
     const liveInstanceRoot = path.join(liveInstancesDir, "default");
     await fs.mkdir(liveInstanceRoot, { recursive: true });
-    await fs.symlink(liveInstancesDir, path.join(worktreesDir, "instances"), "dir");
+    await fs.symlink(liveInstancesDir, path.join(worktreesDir, "instances"), DIR_LINK_TYPE);
     await writeWorkspaceEnv(workspacePath, worktreesDir, "default");
 
     const pointer = await readWorktreeInstancePointer(workspacePath);

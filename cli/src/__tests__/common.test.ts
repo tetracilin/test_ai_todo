@@ -8,8 +8,17 @@ import { apiPath, inferContentTypeFromPath, resolveApiBase, resolveCommandContex
 
 const ORIGINAL_ENV = { ...process.env };
 
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function createTempPath(name: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-common-"));
+  tempDirs.push(dir);
   return path.join(dir, name);
 }
 

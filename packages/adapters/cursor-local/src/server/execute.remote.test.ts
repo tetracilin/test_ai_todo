@@ -266,6 +266,67 @@ describe("cursor remote execution", () => {
     expect(call?.[2]).toContain("session-123");
   });
 
+  it("does not resume a saved Cursor session whose SSH identity differs from the current target", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-remote-resume-mismatch-"));
+    cleanupDirs.push(rootDir);
+    const workspaceDir = path.join(rootDir, "workspace");
+    await mkdir(workspaceDir, { recursive: true });
+
+    const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-ssh-mismatch/workspace";
+    await execute({
+      runId: "run-ssh-mismatch",
+      agent: {
+        id: "agent-1",
+        companyId: "company-1",
+        name: "Cursor Builder",
+        adapterType: "cursor",
+        adapterConfig: {},
+      },
+      runtime: {
+        sessionId: "session-stale",
+        sessionParams: {
+          sessionId: "session-stale",
+          cwd: managedRemoteWorkspace,
+          remoteExecution: {
+            transport: "ssh",
+            host: "other-host.example",
+            port: 2222,
+            username: "fixture",
+            remoteCwd: managedRemoteWorkspace,
+          },
+        },
+        sessionDisplayId: "session-stale",
+        taskKey: null,
+      },
+      config: {
+        command: "agent",
+      },
+      context: {
+        paperclipWorkspace: {
+          cwd: workspaceDir,
+          source: "project_primary",
+        },
+      },
+      executionTransport: {
+        remoteExecution: {
+          host: "127.0.0.1",
+          port: 2222,
+          username: "fixture",
+          remoteWorkspacePath: "/remote/workspace",
+          remoteCwd: "/remote/workspace",
+          privateKey: "PRIVATE KEY",
+          knownHosts: "[127.0.0.1]:2222 ssh-ed25519 AAAA",
+          strictHostKeyChecking: true,
+        },
+      },
+      onLog: async () => {},
+    });
+
+    const call = runChildProcess.mock.calls[0] as unknown as [string, string, string[]] | undefined;
+    expect(call?.[2]).not.toContain("--resume");
+    expect(call?.[2]).not.toContain("session-stale");
+  });
+
   it("restores the remote workspace if skills sync fails after workspace prep", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-remote-sync-fail-"));
     cleanupDirs.push(rootDir);

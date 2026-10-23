@@ -404,7 +404,7 @@ export interface PluginDefinition {
    * target sandbox paths using a provider-native transport instead of the default
    * base64-over-exec fallback. Defining this hook (together with
    * `onEnvironmentSyncOut`) advertises `environmentSyncIn`; leaving it undefined
-   * keeps the byte-identical fallback. See `doc/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
+   * keeps the byte-identical fallback. See `technical-spec/architecture/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
    */
   onEnvironmentSyncIn?(
     params: PluginEnvironmentSyncInParams,
@@ -414,7 +414,7 @@ export interface PluginDefinition {
    * Optional, opt-in: called after execution to copy sandbox files/directories
    * back to target host paths using a provider-native transport. Defining this
    * hook (together with `onEnvironmentSyncIn`) advertises `environmentSyncOut`.
-   * See `doc/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
+   * See `technical-spec/architecture/plugins/SANDBOX_FILE_SYNC_HOOKS.md`.
    */
   onEnvironmentSyncOut?(
     params: PluginEnvironmentSyncOutParams,

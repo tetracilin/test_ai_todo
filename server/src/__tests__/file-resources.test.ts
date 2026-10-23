@@ -29,6 +29,22 @@ import {
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 const execFileAsync = promisify(execFile);
+
+// Creating symlinks needs privilege on Windows (EPERM without Developer Mode / admin).
+// Probe once so symlink-dependent tests skip visibly instead of failing for the host.
+async function detectSymlinkSupport() {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-symlink-probe-"));
+  try {
+    await fs.writeFile(path.join(dir, "target"), "x");
+    await fs.symlink(path.join(dir, "target"), path.join(dir, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+const symlinksSupported = await detectSymlinkSupport();
 let seedGraphSequence = 0;
 
 type TestGraph = {
@@ -47,8 +63,11 @@ type TestGraph = {
   executionRoot: string;
 };
 
+const workspaceRoots: string[] = [];
+
 async function makeWorkspace() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-file-resources-"));
+  workspaceRoots.push(root);
   const projectRoot = path.join(root, "project");
   const targetProjectRoot = path.join(root, "target-project");
   const executionRoot = path.join(root, "execution");
@@ -206,16 +225,16 @@ describeEmbeddedPostgres("workspace file resources", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
+    for (const root of workspaceRoots.splice(0)) {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("resolves and reads a project file without exposing absolute paths", async () => {
     const { root, projectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, executionRoot });
-    await fs.writeFile(path.join(projectRoot, "src", "app.ts"), "export const ok = true;\n", { encoding: "utf8" }).catch(async (error) => {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      await fs.mkdir(path.join(projectRoot, "src"), { recursive: true });
-      await fs.writeFile(path.join(projectRoot, "src", "app.ts"), "export const ok = true;\n", "utf8");
-    });
+    await fs.mkdir(path.join(projectRoot, "src"), { recursive: true });
+    await fs.writeFile(path.join(projectRoot, "src", "app.ts"), "export const ok = true;\n", "utf8");
 
     const app = createApp(db, {
       type: "board",
@@ -604,7 +623,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
     expect(res.body?.details?.code).toBe("workspace_project_mismatch");
   });
 
-  it("blocks symlink escapes from explicit cross-project workspaces", async () => {
+  it.skipIf(!symlinksSupported)("blocks symlink escapes from explicit cross-project workspaces", async () => {
     const { root, projectRoot, targetProjectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, targetProjectRoot, executionRoot });
     await fs.writeFile(path.join(root, "outside-target.txt"), "secret\n", "utf8");
@@ -620,7 +639,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
     });
   });
 
-  it("blocks symlink directory escapes from explicit cross-project workspaces", async () => {
+  it.skipIf(!symlinksSupported)("blocks symlink directory escapes from explicit cross-project workspaces", async () => {
     const { root, projectRoot, targetProjectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, targetProjectRoot, executionRoot });
     const outsideDir = path.join(root, "outside-dir");
@@ -660,7 +679,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
     expect(content.content.data).toBe(Buffer.from([0, 0, 0, 24, 102, 116, 121, 112]).toString("base64"));
   });
 
-  it("lists and searches safe file candidates from the preferred execution workspace", async () => {
+  it.skipIf(!symlinksSupported)("lists and searches safe file candidates from the preferred execution workspace", async () => {
     const { root, projectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, executionRoot });
     await fs.mkdir(path.join(executionRoot, "src"), { recursive: true });
@@ -953,7 +972,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
     expect(doubleEncoded.status).toBe(404);
   });
 
-  it("blocks symlink escapes and symlinks to denied sensitive files", async () => {
+  it.skipIf(!symlinksSupported)("blocks symlink escapes and symlinks to denied sensitive files", async () => {
     const { root, projectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, executionRoot });
     await fs.writeFile(path.join(root, "outside-secret.txt"), "secret\n", "utf8");
@@ -1000,11 +1019,19 @@ describeEmbeddedPostgres("workspace file resources", () => {
       isInstanceAdmin: false,
     });
 
-    for (const filePath of [".git/config", "folder", "big.txt", "blob.bin", "index.html"]) {
+    const expectedRejections: Array<[string, number, string | null]> = [
+      [".git/config", 403, "denied_path_segment"],
+      ["folder", 422, "not_regular_file"],
+      ["big.txt", 422, "too_large"],
+      ["blob.bin", 422, null],
+      ["index.html", 422, "unsupported_content"],
+    ];
+    for (const [filePath, status, code] of expectedRejections) {
       const res = await request(app)
         .get(`/api/issues/${graph.issueId}/file-resources/content`)
         .query({ workspace: "project", path: filePath });
-      expect([403, 422]).toContain(res.status);
+      expect({ filePath, status: res.status }).toEqual({ filePath, status });
+      if (code) expect({ filePath, code: res.body?.details?.code }).toEqual({ filePath, code });
     }
     const svg = await request(app)
       .get(`/api/issues/${graph.issueId}/file-resources/content`)
@@ -1288,9 +1315,8 @@ describeEmbeddedPostgres("workspace file resources", () => {
     expect(JSON.stringify(rowsAfterLimits.map((row) => row.details))).not.toContain(projectRoot);
   });
 
-  it("holds download concurrency slots until the file stream completes", async () => {
-    if (process.platform === "win32") return;
-
+  // mkfifo is POSIX-only; skip visibly rather than returning early as a silent pass.
+  it.skipIf(process.platform === "win32")("holds download concurrency slots until the file stream completes", async () => {
     const { projectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, executionRoot });
     const fifoPath = path.join(projectRoot, "slow-download.bin");
@@ -1452,7 +1478,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
     expect(third.status).toBe(429);
   });
 
-  it("returns mixed deduplicated availability results with one aggregate audit event", async () => {
+  it.skipIf(!symlinksSupported)("returns mixed deduplicated availability results with one aggregate audit event", async () => {
     const { root, projectRoot, targetProjectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, {
       projectRoot,

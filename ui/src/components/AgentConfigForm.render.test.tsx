@@ -87,7 +87,10 @@ vi.mock("../context/CompanyContext", () => ({
   }),
 }));
 
-vi.mock("../adapters", () => ({
+// Partial mock: keep the real module surface and stub only getUIAdapter, so new
+// exports from the adapters barrel do not silently go missing here.
+vi.mock("../adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../adapters")>()),
   getUIAdapter: (type: string) => ({
     type,
     label: type === "hermes_gateway" ? "Hermes Gateway" : "Codex",

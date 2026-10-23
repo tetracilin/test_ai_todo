@@ -62,22 +62,6 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
-async function ensureIssueRelationsTable(db: ReturnType<typeof createDb>) {
-  await db.execute(sql.raw(`
-    CREATE TABLE IF NOT EXISTS "issue_relations" (
-      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      "company_id" uuid NOT NULL,
-      "issue_id" uuid NOT NULL,
-      "related_issue_id" uuid NOT NULL,
-      "type" text NOT NULL,
-      "created_by_agent_id" uuid,
-      "created_by_user_id" text,
-      "created_at" timestamptz NOT NULL DEFAULT now(),
-      "updated_at" timestamptz NOT NULL DEFAULT now()
-    );
-  `));
-}
-
 async function waitForCondition(fn: () => Promise<boolean>, timeoutMs = 3_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -96,7 +80,6 @@ describeEmbeddedPostgres("heartbeat dependency-aware queued run selection", () =
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-dependency-scheduling-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-    await ensureIssueRelationsTable(db);
   }, 20_000);
 
   afterEach(async () => {

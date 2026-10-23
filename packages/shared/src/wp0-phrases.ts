@@ -235,7 +235,7 @@ export const WP0_MESSAGE_TEMPLATES: Record<Wp0MessageId, Wp0MessageTemplate> = {
     retryOwner: "system",
     usage:
       "Evidence bytes accepted but the object store rejected the write. Send ONLY when the " +
-      "pending write is confirmed queued for replay — the text promises a retry (doc/WP0-OPERATIONS.md §8).",
+      "pending write is confirmed queued for replay — the text promises a retry (technical-spec/fork/WP0-OPERATIONS.md §8).",
   },
   // Op AC9: the engineer owns the retry, and the idempotency fingerprint is cleared first.
   media_fetch_failed: {

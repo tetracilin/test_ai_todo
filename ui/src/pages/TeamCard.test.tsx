@@ -69,20 +69,35 @@ describe("TeamCard", () => {
     cleanup();
   });
 
-  it("hides the TrustChip for markdown_only teams", async () => {
-    // onboardingTeams[0] is markdown_only — no trust chip text should appear.
-    const { container, root, cleanup } = render(null);
+  it("hides the TrustChip for markdown_only teams and shows it for other trust levels", async () => {
+    expect(onboardingTeams[0].trustLevel).toBe("markdown_only");
+    expect(onboardingTeams[1].trustLevel).toBe("assets");
+
+    // The trust chip is an icon-only badge, so the only observable difference is
+    // one extra <svg> next to the always-present Users2 tile icon.
+    const markdownOnly = render(null);
     await act(async () => {
-      root.render(
+      markdownOnly.root.render(
         <TooltipProvider>
           <TeamCard team={onboardingTeams[0]} onSelect={() => {}} />
         </TooltipProvider>,
       );
     });
-    // The "assets" team (index 1) does render a chip; sanity-check the contrast.
-    expect(onboardingTeams[0].trustLevel).toBe("markdown_only");
-    expect(onboardingTeams[1].trustLevel).toBe("assets");
-    expect(container.querySelector("svg")).toBeTruthy(); // the Users2 icon still renders
-    cleanup();
+    const markdownOnlySvgCount = markdownOnly.container.querySelectorAll("svg").length;
+    markdownOnly.cleanup();
+
+    const assets = render(null);
+    await act(async () => {
+      assets.root.render(
+        <TooltipProvider>
+          <TeamCard team={onboardingTeams[1]} onSelect={() => {}} />
+        </TooltipProvider>,
+      );
+    });
+    const assetsSvgCount = assets.container.querySelectorAll("svg").length;
+    assets.cleanup();
+
+    expect(markdownOnlySvgCount).toBeGreaterThanOrEqual(1); // the Users2 icon still renders
+    expect(assetsSvgCount).toBe(markdownOnlySvgCount + 1); // plus the trust chip icon
   });
 });

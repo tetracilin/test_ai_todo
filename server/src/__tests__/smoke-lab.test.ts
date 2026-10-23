@@ -350,7 +350,8 @@ describeEmbeddedPostgres("smoke lab service pack and results API", () => {
     expect(first.body.applications).toHaveLength(2);
     expect(first.body.connections).toHaveLength(2);
     expect(first.body.catalog.length).toBeGreaterThanOrEqual(6);
-    expect(first.body.profileEntries.every((entry: { toolName: string }) => entry.toolName.includes(".") || entry.toolName)).toBe(true);
+    expect(first.body.profileEntries.length).toBeGreaterThan(0);
+    expect(first.body.profileEntries.every((entry: { toolName: string }) => typeof entry.toolName === "string" && entry.toolName.length > 0)).toBe(true);
 
     const applications = await db.select().from(toolApplications).where(eq(toolApplications.companyId, company.id));
     const connections = await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id));

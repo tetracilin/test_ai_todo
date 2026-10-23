@@ -2963,7 +2963,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
       latestBody: "v2",
       latestRevisionId: nextRevisionId,
       latestRevisionNumber: 2,
-    });
+    }).where(eq(documents.id, documentId));
 
     await expect(interactionsSvc.acceptInteraction({
       id: issueId,
@@ -3228,7 +3228,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
       latestBody: "v2",
       latestRevisionId: nextRevisionId,
       latestRevisionNumber: 2,
-    });
+    }).where(eq(documents.id, documentId));
 
     await expect(interactionsSvc.submitItemVerdicts({
       id: issueId,

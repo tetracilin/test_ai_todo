@@ -36,8 +36,12 @@ function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { statu
   return new Response(JSON.stringify(body), init);
 }
 
+const tempDirs: string[] = [];
+
 function createTempContextPath() {
-  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-connect-test-")), "context.json");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-connect-test-"));
+  tempDirs.push(dir);
+  return path.join(dir, "context.json");
 }
 
 function readContext(filePath: string) {
@@ -68,7 +72,11 @@ describe("connect command", () => {
   afterEach(() => {
     Object.defineProperty(process.stdin, "isTTY", { value: originalStdinIsTTY, configurable: true });
     Object.defineProperty(process.stdout, "isTTY", { value: originalStdoutIsTTY, configurable: true });
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("drives the interactive board profile flow through prompts and context writes", async () => {

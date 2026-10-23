@@ -28,4 +28,20 @@ describe("cursorCloud sessionCodec", () => {
       latestRunId: "run-101",
     })).toBe("agent-789");
   });
+
+  it("rejects non-object payloads and skips repos without a url", () => {
+    expect(sessionCodec.deserialize(null)).toBeNull();
+    expect(sessionCodec.deserialize("agent-1")).toBeNull();
+    expect(sessionCodec.deserialize(["agent-1"])).toBeNull();
+    expect(
+      sessionCodec.deserialize({
+        cursorAgentId: "agent-1",
+        repos: [{ startingRef: "main" }, { url: "  " }, { url: "https://example.com/r.git" }],
+      }),
+    ).toEqual({
+      cursorAgentId: "agent-1",
+      runtime: "cloud",
+      repos: [{ url: "https://example.com/r.git" }],
+    });
+  });
 });

@@ -95,9 +95,13 @@ async function flushPromises() {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-async function waitForAssertion(assertion: () => void) {
+// Bounded by wall-clock time rather than a fixed iteration count so a loaded
+// CI host (slow event-loop turns) cannot exhaust the budget before the
+// asynchronous bridge work has had a chance to run.
+async function waitForAssertion(assertion: () => void, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
-  for (let i = 0; i < 20; i += 1) {
+  do {
     await flushPromises();
     try {
       assertion();
@@ -105,7 +109,8 @@ async function waitForAssertion(assertion: () => void) {
     } catch (error) {
       lastError = error;
     }
-  }
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  } while (Date.now() < deadline);
   throw lastError;
 }
 

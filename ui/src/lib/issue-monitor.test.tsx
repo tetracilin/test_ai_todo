@@ -14,6 +14,10 @@ import {
 } from "./issue-monitor";
 
 describe("monitor time formatting", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const now = new Date("2026-07-17T19:56:00.000Z");
 
   it.each([

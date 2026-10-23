@@ -13,14 +13,17 @@ import {
 } from "./home-paths.js";
 
 const ORIGINAL_ENV = { ...process.env };
+const tempDirs: string[] = [];
 
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
+  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe("home path resolution", () => {
   it("resolves config and runtime data directly under the instance root", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-home-paths-"));
+    tempDirs.push(home);
     process.env.PAPERCLIP_HOME = home;
     delete process.env.PAPERCLIP_INSTANCE_ID;
 

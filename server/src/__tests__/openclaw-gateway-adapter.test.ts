@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { execute, testEnvironment } from "@paperclipai/adapter-openclaw-gateway/server";
@@ -373,10 +373,6 @@ async function createMockGatewayServerWithPairing() {
     },
   };
 }
-
-afterEach(() => {
-  // no global mocks
-});
 
 describe("openclaw gateway ui stdout parser", () => {
   it("parses assistant deltas from gateway event lines", () => {

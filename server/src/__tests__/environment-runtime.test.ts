@@ -522,14 +522,8 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("acquires and releases an SSH run lease through the runtime seam", async () => {
-    if (!sshFixtureSupport.supported) {
-      console.warn(
-        `Skipping SSH runtime fixture test: ${sshFixtureSupport.reason ?? "unsupported environment"}`,
-      );
-      return;
-    }
-
+  // Reported as skipped (not as a silent pass) when the SSH lab fixture is unavailable.
+  it.skipIf(!sshFixtureSupport.supported)("acquires and releases an SSH run lease through the runtime seam", async () => {
     const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-environment-runtime-ssh-"));
     fixtureRoots.push(fixtureRoot);
     const statePath = path.join(fixtureRoot, "state.json");
@@ -566,6 +560,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
       expect(released[0]?.environment.driver).toBe("ssh");
       expect(released[0]?.lease.status).toBe("released");
     } finally {
+      // Fixture teardown is handled by afterEach via fixtureRoots.
     }
   });
 
@@ -3875,7 +3870,9 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     } as unknown as PluginWorkerManager;
     const runtimeWithPlugin = environmentRuntimeService(db, {
       pluginWorkerManager: workerManager,
-      pluginWorkerReadyTimeoutMs: 25,
+      // A generous deadline keeps the happy path independent of DB/timer latency
+      // (Windows timers tick at ~15ms); it only bounds how long a failure waits.
+      pluginWorkerReadyTimeoutMs: 10_000,
       pluginWorkerReadyPollMs: 1,
     });
 
@@ -4052,7 +4049,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     } as unknown as PluginWorkerManager;
     const runtimeWithPlugin = environmentRuntimeService(db, {
       pluginWorkerManager: workerManager,
-      pluginWorkerReadyTimeoutMs: 200,
+      pluginWorkerReadyTimeoutMs: 10_000,
       pluginWorkerReadyPollMs: 1,
     });
 

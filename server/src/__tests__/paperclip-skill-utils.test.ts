@@ -1,11 +1,16 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   listPaperclipSkillEntries,
   removeMaintainerOnlySkillSymlinks,
 } from "@paperclipai/adapter-utils/server-utils";
+
+// Resolve repo files from this file, not process.cwd(), so the test also passes when
+// vitest is launched from the server package (pnpm --filter ... exec vitest).
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -47,8 +52,8 @@ describe("paperclip skill utils", () => {
   });
 
   it("documents artifact uploads in the installed Paperclip skill", async () => {
-    const skillBody = await fs.readFile(path.resolve("skills/paperclip/SKILL.md"), "utf8");
-    const referenceBody = await fs.readFile(path.resolve("skills/paperclip/references/artifacts.md"), "utf8");
+    const skillBody = await fs.readFile(path.resolve(REPO_ROOT, "skills/paperclip/SKILL.md"), "utf8");
+    const referenceBody = await fs.readFile(path.resolve(REPO_ROOT, "skills/paperclip/references/artifacts.md"), "utf8");
 
     expect(skillBody).toContain("Generated Artifacts and Work Products");
     expect(skillBody).toContain("references/artifacts.md");
@@ -59,15 +64,14 @@ describe("paperclip skill utils", () => {
     expect(referenceBody).toContain("/api/companies/$PAPERCLIP_COMPANY_ID/issues/$PAPERCLIP_TASK_ID/attachments");
     expect(referenceBody).toContain("/api/issues/$PAPERCLIP_TASK_ID/work-products");
     await expect(
-      fs.access(path.resolve("skills/paperclip/scripts/paperclip-upload-artifact.sh")),
+      fs.access(path.resolve(REPO_ROOT, "skills/paperclip/scripts/paperclip-upload-artifact.sh")),
     ).resolves.toBeUndefined();
-    await expect(fs.access(path.resolve("scripts/paperclip-upload-artifact.sh"))).rejects.toThrow();
+    await expect(fs.access(path.resolve(REPO_ROOT, "scripts/paperclip-upload-artifact.sh"))).rejects.toThrow();
   });
 
   it("documents governed agent interaction resolution invariants", async () => {
-    const apiReference = await fs.readFile(path.resolve("skills/paperclip/references/api-reference.md"), "utf8");
-    const issueDocs = await fs.readFile(path.resolve("docs/api/issues.md"), "utf8");
-    for (const body of [apiReference, issueDocs]) {
+    const apiReference = await fs.readFile(path.resolve(REPO_ROOT, "skills/paperclip/references/api-reference.md"), "utf8");
+    for (const body of [apiReference]) {
       expect(body).toContain('resolverPolicy: "anyone" | "not_creator" | "human_only"');
       expect(body).toContain("requestedResolverPolicy");
       expect(body).toContain("effectiveResolverPolicy");
@@ -81,7 +85,7 @@ describe("paperclip skill utils", () => {
   });
 
   it("uses the authoritative PATCH response to confirm monitor scheduling", async () => {
-    const skillBody = await fs.readFile(path.resolve("skills/paperclip/SKILL.md"), "utf8");
+    const skillBody = await fs.readFile(path.resolve(REPO_ROOT, "skills/paperclip/SKILL.md"), "utf8");
 
     expect(skillBody).toContain("Use that request's default full response");
     expect(skillBody).toContain("do not issue a confirming GET");
@@ -91,7 +95,7 @@ describe("paperclip skill utils", () => {
   });
 
   it("keeps the create-issue-interaction-ui guide as a maintainer-only skill", async () => {
-    const skillPath = path.resolve(".agents/skills/create-issue-interaction-ui/SKILL.md");
+    const skillPath = path.resolve(REPO_ROOT, ".agents/skills/create-issue-interaction-ui/SKILL.md");
     const skillBody = await fs.readFile(skillPath, "utf8");
     const normalizedSkillBody = skillBody.replace(/\s+/g, " ");
     const normalizedLowerSkillBody = normalizedSkillBody.toLowerCase();
@@ -105,7 +109,7 @@ describe("paperclip skill utils", () => {
     expect(skillBody).toContain("server/src/services/issue-thread-interactions.ts");
     expect(skillBody).toContain("ui/src/components/IssueThreadInteractionCard.tsx");
     expect(skillBody).toContain("packages/plugins/sdk/src/testing.ts");
-    await expect(fs.access(path.resolve("skills/create-issue-interaction-ui/SKILL.md"))).rejects.toThrow();
+    await expect(fs.access(path.resolve(REPO_ROOT, "skills/create-issue-interaction-ui/SKILL.md"))).rejects.toThrow();
   });
 
   it("removes stale maintainer-only symlinks from a shared skills home", async () => {

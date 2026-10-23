@@ -177,9 +177,14 @@ describe("FolderControls", () => {
     expect(container.textContent).toContain("All routines");
     expect(container.textContent).toContain("Reporting");
     expect(container.textContent).toContain("Unfiled");
-    expect(container.textContent).toContain("4");
-    expect(container.textContent).toContain("3");
-    expect(container.textContent).toContain("1");
+    // Each count must sit on its own row, not merely appear somewhere in the rail.
+    const rowTextFor = (label: string) => {
+      const button = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes(label));
+      return (button?.parentElement ?? button)?.textContent ?? "";
+    };
+    expect(rowTextFor("All routines")).toContain("4");
+    expect(rowTextFor("Reporting")).toContain("3");
+    expect(rowTextFor("Unfiled")).toContain("1");
 
     const reportingButton = Array.from(container.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("Reporting"),

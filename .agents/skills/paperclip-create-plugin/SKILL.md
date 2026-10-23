@@ -24,9 +24,9 @@ Only edit Paperclip core itself when the user asks to surface a plugin as a bund
 
 Reference docs when you need detail:
 
-1. `doc/plugins/PLUGIN_AUTHORING_GUIDE.md`
+1. `technical-spec/architecture/plugins/PLUGIN_AUTHORING_GUIDE.md`
 2. `packages/plugins/sdk/README.md`
-3. `doc/plugins/PLUGIN_SPEC.md` — future-looking context only
+3. `technical-spec/architecture/plugins/PLUGIN_SPEC.md` — future-looking context only
 
 Current runtime assumptions:
 

@@ -57,18 +57,20 @@ if (!embeddedPostgresSupport.supported) {
 }
 
 describeEmbeddedPostgres("heartbeat plugin environments", () => {
-  let stopDb: (() => Promise<void>) | null = null;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   let db!: ReturnType<typeof createDb>;
   const tempRoots: string[] = [];
 
   beforeAll(async () => {
-    const started = await startEmbeddedPostgresTestDatabase("heartbeat-plugin-environment");
-    stopDb = started.stop;
-    db = createDb(started.connectionString);
+    tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-plugin-environment");
+    db = createDb(tempDb.connectionString);
   }, 20_000);
 
   afterEach(async () => {
     adapterExecute.mockClear();
+    // Instance-level settings are shared across tests in this DB; reset the one a test mutates
+    // so the inherited-default scenario cannot leak into other tests regardless of order.
+    await instanceSettingsService(db).update({ defaultEnvironmentId: null });
     while (tempRoots.length > 0) {
       const root = tempRoots.pop();
       if (root) await rm(root, { recursive: true, force: true }).catch(() => undefined);
@@ -76,8 +78,8 @@ describeEmbeddedPostgres("heartbeat plugin environments", () => {
   });
 
   afterAll(async () => {
-    await db.$client.end();
-    await stopDb?.();
+    await db?.$client.end();
+    await tempDb?.cleanup();
   });
 
   it("acquires plugin environment leases through the heartbeat execution path", async () => {

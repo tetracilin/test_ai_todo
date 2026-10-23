@@ -204,10 +204,9 @@ describe("parseSetupTokenPrompt", () => {
     expect(parseSetupTokenPrompt(completeOutput(duplicate))).toBeNull();
   });
 
-  it("returns null for an unexpected added key with a valid name", () => {
-    // The parser accepts at most four added keys, so a first added key still
-    // needs a valid name; a valid name alone does not fail. This test proves a
-    // fifth added key fails the count bound.
+  it("returns null when the URL carries a fifth added key", () => {
+    // The parser accepts at most four added keys, so a fifth valid-named key
+    // fails the count bound.
     const fiveAdded = `${CLAUDE_COM_URL}&a1=1&b2=2&c3=3&d4=4&e5=5`;
     expect(parseSetupTokenPrompt(completeOutput(fiveAdded))).toBeNull();
   });

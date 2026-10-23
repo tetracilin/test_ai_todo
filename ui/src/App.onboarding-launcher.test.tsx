@@ -115,12 +115,15 @@ describe("the onboarding launcher's Add Agent button", () => {
     });
   }
 
-  async function settle(ticks = 12) {
-    for (let i = 0; i < ticks; i++) {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+  // Waits on the condition (the goals lookup has been issued and the query
+  // client is idle), not on a fixed number of macrotask turns, so a loaded
+  // worker gets more time instead of clicking before the mission is known.
+  async function settle({ expectLookup = true }: { expectLookup?: boolean } = {}) {
+    if (expectLookup) {
+      await vi.waitFor(() => expect(mockGoalsApi.list).toHaveBeenCalled());
     }
+    await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    await act(async () => {});
   }
 
   function addAgentButton(): HTMLButtonElement {
@@ -203,7 +206,7 @@ describe("the onboarding launcher's Add Agent button", () => {
   it("opens with no company when the prefix matches none", async () => {
     routeState.companyPrefix = "NOPE";
     await render();
-    await settle();
+    await settle({ expectLookup: false });
 
     const start = [...container.querySelectorAll("button")].find((b) =>
       b.textContent?.includes("Start Onboarding"),

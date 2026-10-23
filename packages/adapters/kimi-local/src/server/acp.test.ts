@@ -67,5 +67,6 @@ describe("nodeVersionMeetsKimiAcpMinimum", () => {
   });
   it("rejects Node < 20", () => {
     expect(nodeVersionMeetsKimiAcpMinimum("v18.19.0")).toBe(false);
+    expect(nodeVersionMeetsKimiAcpMinimum("v19.9.9")).toBe(false);
   });
 });

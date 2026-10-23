@@ -1771,7 +1771,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     missingSecretFailures: number;
     auditWriteFailures: number;
   }): ToolRuntimeAlertRecommendation[] {
-    const runbookSection = "doc/MCP-RUNTIME-OPERATIONS.md";
+    const runbookSection = "technical-spec/architecture/MCP-RUNTIME-OPERATIONS.md";
     const timeoutSeverity =
       input.timeoutCount >= 10 || input.timeoutRate >= 25
         ? "critical"
@@ -2013,7 +2013,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return {
       status,
       generatedAt,
-      runbookPath: "doc/MCP-RUNTIME-OPERATIONS.md",
+      runbookPath: "technical-spec/architecture/MCP-RUNTIME-OPERATIONS.md",
       metrics,
       supportMatrix: {
         remoteHttp: {
