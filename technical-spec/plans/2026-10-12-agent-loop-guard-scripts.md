@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 22/24 ES modules (`.mjs`), `node:test`, `node:assert/strict`. No dependencies. Same conventions as `scripts/check-no-git-push.mjs`.
 
-**Spec:** `docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md` (sections 4.1, 5, 7, 9 step 1).
+**Spec:** `technical-spec/specs/2026-10-12-agent-issue-loop-design.md` (sections 4.1, 5, 7, 9 step 1).
 
 ## Global Constraints
 
@@ -544,7 +544,7 @@ Create `scripts/agent-guard.mjs`:
  *
  * Decides whether a patch written by an agent may be pushed. Pure rules over a
  * unified git diff; the CLI at the bottom is a thin wrapper for workflows.
- * Design: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md section 5.
+ * Design: technical-spec/specs/2026-10-12-agent-issue-loop-design.md section 5.
  *
  * CLI contract: run AFTER `git apply`, from the repo root, with HEAD at the base
  * commit. `readBefore` is `git show HEAD:<path>`, `readAfter` is the working tree.
@@ -1186,7 +1186,7 @@ Create `scripts/agent-state.mjs`:
  *
  * Pure state rules for the agent issue-to-PR loop: which issues are eligible,
  * label transitions, the daily PR cap and the CI-fix round count.
- * Design: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md sections 4 and 5.
+ * Design: technical-spec/specs/2026-10-12-agent-issue-loop-design.md sections 4 and 5.
  */
 
 export const LABELS = Object.freeze({
@@ -1511,7 +1511,7 @@ gh pr create --base develop --head feature/agent-loop-guard-scripts \
   --title "Add agent loop guard and state scripts" \
   --body-file <path-to-filled-.github/PULL_REQUEST_TEMPLATE.md>
 ```
-The body must fill the repo PR template (Thinking Path, Linked Issues with `Refs: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md` section 9 step 1, What Changed, Verification with the exact test output from Step 1, Risks, Model Used). State plainly that the new tests are **not yet run by t3-ci** until the follow-up `ci` PR merges.
+The body must fill the repo PR template (Thinking Path, Linked Issues with `Refs: technical-spec/specs/2026-10-12-agent-issue-loop-design.md` section 9 step 1, What Changed, Verification with the exact test output from Step 1, Risks, Model Used). State plainly that the new tests are **not yet run by t3-ci** until the follow-up `ci` PR merges.
 
 - [ ] **Step 4: Queue the follow-up `ci` PR**
 
