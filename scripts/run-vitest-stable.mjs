@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
 import { createRunTracker, formatSummary, normalizeExitStatus } from "./vitest-run-summary.mjs";
+import { applySuiteFilter, validateSuiteFilter } from "./vitest-suite-filter.mjs";
 
 const repoRoot = process.cwd();
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,7 @@ const additionalSerializedServerTests = new Set([
 ]);
 const tracker = createRunTracker();
 let bail = false;
+let suiteFilter = { only: [], skip: [] };
 let invocationIndex = 0;
 const serializedModeName = "serialized";
 const generalModeName = "general";
@@ -162,6 +164,8 @@ function parseCliOptions(argv) {
   let group = null;
   let dryRun = false;
   let bailOnFailure = false;
+  const onlySuites = [];
+  const skipSuites = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -171,6 +175,22 @@ function parseCliOptions(argv) {
 
     if (arg === "--bail") {
       bailOnFailure = true;
+      continue;
+    }
+
+    if (arg === "--only-suite" || arg === "--skip-suite") {
+      (arg === "--only-suite" ? onlySuites : skipSuites).push(readOptionValue(argv, index, arg));
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--only-suite=")) {
+      onlySuites.push(arg.slice("--only-suite=".length));
+      continue;
+    }
+
+    if (arg.startsWith("--skip-suite=")) {
+      skipSuites.push(arg.slice("--skip-suite=".length));
       continue;
     }
 
@@ -266,6 +286,8 @@ function parseCliOptions(argv) {
       group: null,
       dryRun,
       bail: bailOnFailure,
+      onlySuites,
+      skipSuites,
     };
   }
 
@@ -276,6 +298,8 @@ function parseCliOptions(argv) {
     group,
     dryRun,
     bail: bailOnFailure,
+    onlySuites,
+    skipSuites,
   };
 }
 
@@ -413,9 +437,12 @@ function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = 
 }
 
 function runSerializedSuites(routeTests, shardIndex, shardCount) {
-  const shardTests = selectSerializedSuites(routeTests, shardIndex, shardCount);
+  // Filter what is RUN, not routeTests itself: the general-server lane builds its
+  // --exclude list from routeTests, so a skipped suite must stay in that list.
+  const eligible = applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath);
+  const shardTests = selectSerializedSuites(eligible, shardIndex, shardCount);
   console.log(
-    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${routeTests.length} suites`,
+    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${eligible.length} suites`,
   );
 
   for (const routeTest of shardTests) {
@@ -455,11 +482,32 @@ const generalServerTestFiles = walk(serverSrcDir)
 
 const options = parseCliOptions(process.argv.slice(2));
 bail = options.bail;
+suiteFilter = { only: options.onlySuites, skip: options.skipSuites };
+if (suiteFilter.only.length > 0 && suiteFilter.skip.length > 0) {
+  fail("--only-suite and --skip-suite cannot combine");
+}
+if (suiteFilter.only.length > 0 && options.mode !== serializedModeName) {
+  fail("--only-suite requires --mode serialized");
+}
+if (suiteFilter.skip.length > 0 && options.mode === generalModeName) {
+  fail("--skip-suite applies to --mode serialized or --mode all");
+}
+const suiteFilterErrors = validateSuiteFilter(
+  routeTests.map((routeTest) => routeTest.repoPath),
+  suiteFilter,
+);
+if (suiteFilterErrors.length > 0) {
+  fail(suiteFilterErrors.join("; "));
+}
 if (options.dryRun) {
   const serializedSuites =
     options.mode === serializedModeName
-      ? selectSerializedSuites(routeTests, options.shardIndex, options.shardCount)
-      : routeTests;
+      ? selectSerializedSuites(
+          applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath),
+          options.shardIndex,
+          options.shardCount,
+        )
+      : applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath);
   console.log(
     JSON.stringify(
       {
@@ -470,6 +518,8 @@ if (options.dryRun) {
         availableGeneralGroups: generalGroupNames,
         nonServerProjects,
         bail: options.bail,
+        onlySuites: suiteFilter.only,
+        skipSuites: suiteFilter.skip,
         serializedSuiteCount: routeTests.length,
         selectedSerializedSuites: serializedSuites.map((routeTest) => routeTest.repoPath),
         generalServerSuiteCount: generalServerTestFiles.length,

@@ -163,6 +163,16 @@ Read from code on 2026-10-13. Nothing here was run against a live server.
 6. **Idempotency exists but is local.** Issue creation can deduplicate by an idempotency key, and the Discord outbox uses keys, but no generic `Idempotency-Key` header convention was found for the scheduling routes.
 7. **An OpenAPI document exists** (`GET /api/openapi.json`, built in `server/src/routes/openapi.ts`) and lists the activity routes. Whether the scheduling routes are in it was not checked.
 
+## 7d. Further findings from planning (read 2026-10-14)
+
+Read from code. Nothing here was run.
+
+1. **Resize sends one request per mouse move.** In `ui/src/components/ScheduleAgendaGrid.tsx`, `handleResizeMove` calls `onResizeItem` on every `mousemove`. `Today.tsx` and `Schedule.tsx` wire that to a mutation that sends `PUT .../scheduling`. Each request writes one `issue.scheduling_updated` activity row. A single drag may therefore write many rows. This is the inference from the code; the number of rows per drag was not measured.
+2. **Create-and-schedule is two requests.** `Schedule.tsx` (`createAndScheduleMutation`) calls `issuesApi.create` with the title "New task", then `schedulingApi.upsertIssueScheduling`. If the second call fails, an unscheduled "New task" remains.
+3. **An estimate without a time cannot be shown.** `Today.tsx` filters items on `scheduledAt`, so an issue with only `scheduledDurationMinutes` does not appear in the grid. Both fields are nullable, so the table already allows the state.
+4. **Scheduling routes are not in OpenAPI.** `server/src/routes/openapi.ts` has no match for `scheduling` or `scheduled-issues`, although the activity routes are listed. A client reading `GET /api/openapi.json` cannot discover scheduling today.
+5. **No tentative state exists.** Any `scheduledAt` is firm. Nothing in the UI draws a projected block.
+
 ## 7c. Questions that block the API decision
 
 1. What does the timesheet-to-payment tool need from Paperclip: a pull API (poll for completed or scheduled work), push events (webhook or outbox), or both? Please share its API contract or a sample payload.

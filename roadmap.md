@@ -90,4 +90,4 @@ The recorder loop with one engineer, reached through a chat evidence-and-briefin
 - **FreeCAD / KiCad / Figma** integrations (enter at Tier 1 first).
 - **Google Calendar sync** — two-way sync of scheduled issues/events with Google Calendar.
   "Someday" per owner (2026-10-13); explicitly out of the scheduling MVP. Design context in
-  `docs/designs/sunsama-quick-add-and-pin-to-schedule-spec.md`.
+  `technical-spec/specs/2026-10-13-sunsama-quick-add-pin-to-schedule-design.md`.
