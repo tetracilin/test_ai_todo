@@ -1,32 +1,14 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
-import {
-  prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
-  startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
 
-// Wrap the staging seam + both sandbox bridges in call-recording spies that
-// still delegate to the real implementations. This mirrors the execute.test.ts
-// harness so the turn characterization tests share the same mocked module graph.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
-  return {
-    ...actual,
-    prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
-    startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
-  };
-});
 import {
   createAcpxEngineExecutor,
   summarizeAcpxTurnUsage,
   type AcpxEngineExecutorOptions,
 } from "./execute.js";
-import { runChildProcess } from "../server-utils.js";
 
 const tempRoots: string[] = [];
 
@@ -50,44 +32,6 @@ afterEach(async () => {
     ),
   );
 });
-
-function createLocalSandboxRunner(
-  onExecute?: (input: {
-    command: string;
-    args?: string[];
-    cwd?: string;
-    env?: Record<string, string>;
-  }) => void,
-) {
-  let counter = 0;
-  return {
-    execute: async (input: {
-      command: string;
-      args?: string[];
-      cwd?: string;
-      env?: Record<string, string>;
-      stdin?: string;
-      timeoutMs?: number;
-      onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
-      onSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
-    }) => {
-      counter += 1;
-      onExecute?.(input);
-      const command = input.command === "bash" ? "/bin/bash" : input.command;
-      return await runChildProcess(`acpx-sandbox-run-${counter}`, command, input.args ?? [], {
-        cwd: input.cwd ?? process.cwd(),
-        env: input.env ?? {},
-        stdin: input.stdin,
-        timeoutSec: Math.max(1, Math.ceil((input.timeoutMs ?? 30_000) / 1000)),
-        graceSec: 5,
-        onLog: input.onLog ?? (async () => {}),
-        onSpawn: input.onSpawn
-          ? async (meta) => input.onSpawn?.({ pid: meta.pid, startedAt: meta.startedAt })
-          : undefined,
-      });
-    },
-  };
-}
 
 function buildRuntime(
   onSetConfigOption?: (input: { key: string; value: string }) => void,

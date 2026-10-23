@@ -12,6 +12,9 @@ async function createSkillDir(root: string, name: string) {
   await fs.mkdir(path.join(root, name), { recursive: true });
 }
 
+// Needs unprivileged symlink creation, unavailable on stock Windows.
+const itPosix = it.skipIf(process.platform === "win32");
+
 describe("cursor local adapter skill injection", () => {
   const cleanupDirs = new Set<string>();
 
@@ -20,7 +23,7 @@ describe("cursor local adapter skill injection", () => {
     cleanupDirs.clear();
   });
 
-  it("links missing Paperclip skills into Cursor skills home", async () => {
+  itPosix("links missing Paperclip skills into Cursor skills home", async () => {
     const skillsDir = await makeTempDir("paperclip-cursor-skills-src-");
     const skillsHome = await makeTempDir("paperclip-cursor-skills-home-");
     cleanupDirs.add(skillsDir);
@@ -50,7 +53,7 @@ describe("cursor local adapter skill injection", () => {
     expect(logs.some((line) => line.includes('Injected Cursor skill "paperclip-create-agent"'))).toBe(true);
   });
 
-  it("preserves existing targets and only links missing skills", async () => {
+  itPosix("preserves existing targets and only links missing skills", async () => {
     const skillsDir = await makeTempDir("paperclip-cursor-preserve-src-");
     const skillsHome = await makeTempDir("paperclip-cursor-preserve-home-");
     cleanupDirs.add(skillsDir);
@@ -70,7 +73,7 @@ describe("cursor local adapter skill injection", () => {
     expect((await fs.lstat(path.join(skillsHome, "paperclip-create-agent"))).isSymbolicLink()).toBe(true);
   });
 
-  it("logs per-skill link failures and continues without throwing", async () => {
+  itPosix("logs per-skill link failures and continues without throwing", async () => {
     const skillsDir = await makeTempDir("paperclip-cursor-fail-src-");
     const skillsHome = await makeTempDir("paperclip-cursor-fail-home-");
     cleanupDirs.add(skillsDir);

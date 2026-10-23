@@ -73,7 +73,11 @@ async function waitForStatus(
   companyId: string,
   status: AdapterAuthSessionRow["status"],
 ): Promise<void> {
-  for (let attempt = 0; attempt < 1000; attempt += 1) {
+  // Bound the wait by wall-clock time, not an iteration count: a count that is
+  // fast on an idle host can run out under load while the store (a real database
+  // in the concurrency block) is still answering.
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     const row = await store.getByPublicId(publicSessionId, companyId);
     if (row?.status === status) return;
     await new Promise((resolve) => setImmediate(resolve));
@@ -868,14 +872,13 @@ if (!embeddedPostgresSupport.supported) {
 }
 
 describeEmbeddedPostgres("codex device login service concurrency (embedded postgres)", () => {
-  let stopDb: (() => Promise<void>) | undefined;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   let db!: ReturnType<typeof createDb>;
 
   beforeAll(async () => {
-    const started = await startEmbeddedPostgresTestDatabase("codex-device-login");
-    stopDb = started.stop;
-    db = createDb(started.connectionString);
-  });
+    tempDb = await startEmbeddedPostgresTestDatabase("codex-device-login");
+    db = createDb(tempDb.connectionString);
+  }, 20_000);
 
   afterEach(async () => {
     await db.delete(adapterAuthSessions);
@@ -884,7 +887,7 @@ describeEmbeddedPostgres("codex device login service concurrency (embedded postg
   });
 
   afterAll(async () => {
-    await stopDb?.();
+    await tempDb?.cleanup();
   });
 
   async function seedCompanyEnvironment(): Promise<{ companyId: string; environmentId: string }> {

@@ -40,6 +40,7 @@ describePg("decisionService", () => {
   let originResponsibleUserId: string;
   let decidedByUserId: string;
   let wakes: Array<Record<string, unknown>>;
+  const originalSigningSecret = process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-decisions-");
@@ -75,7 +76,13 @@ describePg("decisionService", () => {
     await db.delete(decisionEffectExecutions); await db.delete(decisionTargetIssues); await db.delete(decisions); await db.delete(decisionRetention); await db.delete(activityLog);
     await db.delete(issueComments); await db.delete(issueRelations); await db.delete(heartbeatRuns); await db.delete(issues); await db.delete(agents); await db.delete(companyMemberships); await db.delete(authUsers); await db.delete(companies);
   });
-  afterAll(async () => tempDb?.cleanup());
+  afterAll(async () => {
+    // beforeEach sets (and some tests delete) the signing secret; restore the
+    // ambient value so it cannot leak past this suite.
+    if (originalSigningSecret === undefined) delete process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
+    else process.env.PAPERCLIP_DECISION_SIGNING_SECRET = originalSigningSecret;
+    await tempDb?.cleanup();
+  });
 
   const agentActor = () => ({ type: "agent" as const, companyId, agentId, runId, source: "agent_jwt" as const,
     onBehalfOfUserId: originResponsibleUserId, onBehalfOfMemberships: [{ companyId, membershipRole: "member", status: "active" }] });

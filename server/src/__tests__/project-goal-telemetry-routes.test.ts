@@ -149,7 +149,7 @@ describe("project and goal telemetry routes", () => {
       .post("/api/companies/company-1/projects")
       .send({ name: "Telemetry project" });
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created", {});
   });
 
@@ -159,7 +159,7 @@ describe("project and goal telemetry routes", () => {
       .post("/api/companies/company-1/goals")
       .send({ title: "Telemetry goal", level: "team" });
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockTelemetryTrack).toHaveBeenCalledWith("goal.created", { goal_level: "team" });
   });
 });

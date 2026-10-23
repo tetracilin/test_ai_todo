@@ -304,10 +304,10 @@ describe("codex device login reaper", () => {
     expect(deleteCalls).toHaveLength(2);
   });
 
-  it("does not throw on a second sweep over an already-deleted sandbox", async () => {
+  it("is idempotent on a second sweep over an already-deleted sandbox and orphan lease", async () => {
     const store = createMemoryReaperStore();
     const environmentId = randomUUID();
-    store.seed({
+    const seeded = store.seed({
       id: randomUUID(),
       environmentId,
       status: "waiting_for_user",
@@ -321,9 +321,22 @@ describe("codex device login reaper", () => {
     });
     const reaper = createCodexDeviceLoginReaper({ store, runtime, now: () => NOW });
 
-    await expect(reaper.sweep()).resolves.toBeDefined();
-    // The second sweep runs over the now-terminal session and the same orphan
-    // lease. A repeated delete does not throw.
-    await expect(reaper.sweep()).resolves.toBeDefined();
+    // A not_found confirmation counts as a confirmed delete.
+    const first = await reaper.sweep();
+    expect(first).toMatchObject({ expiredTimedOut: 1, orphanLeasesDeleted: 1, cleanupPendingRemaining: 0 });
+    expect((await store.get(seeded.id))?.status).toBe("timed_out");
+
+    // The second sweep finds the session already terminal (nothing to time out
+    // or retry) and the same orphan lease; the repeated delete neither throws
+    // nor reopens the terminal session.
+    const second = await reaper.sweep();
+    expect(second).toMatchObject({
+      expiredTimedOut: 0,
+      cleanupRetried: 0,
+      cleanupCleared: 0,
+      cleanupPendingRemaining: 0,
+      orphanLeasesDeleted: 1,
+    });
+    expect((await store.get(seeded.id))?.status).toBe("timed_out");
   });
 });

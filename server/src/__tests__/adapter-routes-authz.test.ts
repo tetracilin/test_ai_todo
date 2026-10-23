@@ -277,15 +277,9 @@ describe.sequential("adapter management route authorization", () => {
     setOverridePaused("claude_local", false);
   });
 
-  it("rejects mutating adapter routes for a non-instance-admin board user with company membership", async () => {
-    for (const routeName of [
-      "install",
-      "disable",
-      "override",
-      "delete",
-      "reload",
-      "reinstall",
-    ]) {
+  it.each(["install", "disable", "override", "delete", "reload", "reinstall"] as const)(
+    "rejects adapter %s for a non-instance-admin board user with company membership",
+    async (routeName) => {
       resetInstalledExternalAdapterState();
       seedInstalledExternalAdapter();
       const app = createApp(boardMember("admin"));
@@ -293,28 +287,29 @@ describe.sequential("adapter management route authorization", () => {
       const res = await sendMutatingRequest(app, routeName);
 
       expect(res.status, `${routeName}: ${JSON.stringify(res.body)}`).toBe(403);
+      expect(mocks.execFile).not.toHaveBeenCalled();
+      expect(mocks.loadExternalAdapterPackage).not.toHaveBeenCalled();
+      expect(mocks.reloadExternalAdapter).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["install", 201],
+    ["disable", 200],
+    ["override", 200],
+    ["delete", 200],
+    ["reload", 200],
+    ["reinstall", 200],
+  ] as const)("allows instance admins to reach adapter %s", async (routeName, expectedStatus) => {
+    resetInstalledExternalAdapterState();
+    if (routeName !== "install") {
+      seedInstalledExternalAdapter();
     }
-  });
+    const app = createApp(instanceAdmin);
 
-  it("allows instance admins to reach mutating adapter routes", async () => {
-    for (const [routeName, expectedStatus] of [
-      ["install", 201],
-      ["disable", 200],
-      ["override", 200],
-      ["delete", 200],
-      ["reload", 200],
-      ["reinstall", 200],
-    ] as const) {
-      resetInstalledExternalAdapterState();
-      if (routeName !== "install") {
-        seedInstalledExternalAdapter();
-      }
-      const app = createApp(instanceAdmin);
+    const res = await sendMutatingRequest(app, routeName);
 
-      const res = await sendMutatingRequest(app, routeName);
-
-      expect(res.status, `${routeName}: ${JSON.stringify(res.body)}`).toBe(expectedStatus);
-    }
+    expect(res.status, `${routeName}: ${JSON.stringify(res.body)}`).toBe(expectedStatus);
   });
 
   it.each(["viewer", "operator"] as const)(

@@ -1076,6 +1076,8 @@ describe("secret routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
       expect(res.body[0]).toMatchObject({ id: expect.any(String), name: "MY_API_KEY", key: "my_api_key", status: "active" });
+      expect(res.body[0]).not.toHaveProperty("provider");
+      expect(res.body[0]).not.toHaveProperty("referenceCount");
     });
 
     it("rejects unauthenticated requests", async () => {

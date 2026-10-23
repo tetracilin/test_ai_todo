@@ -47,7 +47,7 @@ passed.
   Confirm the port owner's real cwd (`readlink /proc/<pid>/cwd`) before and
   after every repair; the runtime row's recorded `cwd` and `pid` can be
   fabricated by port adoption.
-- Read `doc/DEVELOPING.md` before running Paperclip CLI, dev server, worktree,
+- Read `technical-spec/engineering/DEVELOPING.md` before running Paperclip CLI, dev server, worktree,
   database, build, or test commands.
 - Use the Paperclip CLI and API as the source of truth for worktree and
   database operations. Do not use `psql`, raw embedded-Postgres commands, or

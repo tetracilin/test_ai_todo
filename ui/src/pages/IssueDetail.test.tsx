@@ -1022,9 +1022,12 @@ async function flushReact() {
   });
 }
 
-async function waitForAssertion(assertion: () => void, attempts = 20) {
+async function waitForAssertion(assertion: () => void, timeoutMs = 5_000) {
+  // Bound by time, not iterations: on a loaded CI runner a fixed count of flush
+  // cycles can elapse before lazy-loaded UI mounts (same fix as CompanySettings).
+  const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  do {
     try {
       assertion();
       return;
@@ -1032,7 +1035,7 @@ async function waitForAssertion(assertion: () => void, attempts = 20) {
       lastError = error;
       await flushReact();
     }
-  }
+  } while (Date.now() < deadline);
   throw lastError;
 }
 
@@ -1127,6 +1130,7 @@ describe("IssueDetail", () => {
     queryClient.clear();
     container.remove();
     document.body.innerHTML = "";
+    localStorage.removeItem("paperclip:issue-comment-draft:issue-1");
     vi.restoreAllMocks();
   });
 
@@ -1864,6 +1868,12 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
+    // The comment must actually be rendered, otherwise an undefined queueState
+    // would hold vacuously for a thread that never received the comment.
+    await waitForAssertion(() => {
+      const props = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as { comments?: Array<{ id: string; queueState?: string }> };
+      expect(props.comments?.some((comment) => comment.id === "comment-fresh")).toBe(true);
+    });
     const props = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as { comments?: Array<{ id: string; queueState?: string }> };
     const freshComment = props.comments?.find((comment) => comment.id === "comment-fresh");
     expect(freshComment?.queueState).toBeUndefined();

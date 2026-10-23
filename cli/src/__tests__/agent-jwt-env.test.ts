@@ -13,8 +13,11 @@ import { agentJwtSecretCheck } from "../checks/agent-jwt-secret-check.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
+const tempDirs: string[] = [];
+
 function tempConfigPath(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-jwt-env-"));
+  tempDirs.push(dir);
   const configDir = path.join(dir, "custom");
   fs.mkdirSync(configDir, { recursive: true });
   return path.join(configDir, "config.json");
@@ -28,6 +31,9 @@ describe("agent jwt env helpers", () => {
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("writes .env next to explicit config path", () => {

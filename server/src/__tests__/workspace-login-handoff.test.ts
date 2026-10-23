@@ -132,16 +132,14 @@ describe("verifyWorkspaceHandoffTicket", () => {
 
   it("rejects a ticket minted for another origin, workspace, or instance", () => {
     const wrongOrigin = mintTicket({ origin: "https://other.example.ts.net:42099" });
-    expect(verifyWorkspaceHandoffTicket({ ticket: wrongOrigin.ticket, key: KEY, expected: EXPECTED }).ok).toBe(false);
     expect(
       verifyWorkspaceHandoffTicket({ ticket: wrongOrigin.ticket, key: KEY, expected: EXPECTED }),
     ).toEqual({ ok: false, reason: "origin_mismatch" });
 
     // A ticket for a sibling workspace on the same host cannot be re-signed with
     // this workspace's key, so bind-mismatch is proven with a matching key.
-    const siblingWorkspaceKey = KEY;
     const wrongWorkspace = issueWorkspaceHandoffTicket({
-      key: siblingWorkspaceKey,
+      key: KEY,
       userId: USER_ID,
       email: USER_EMAIL,
       executionWorkspaceId: "ews-sibling",

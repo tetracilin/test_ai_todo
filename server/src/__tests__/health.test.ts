@@ -6,7 +6,6 @@ import express from "express";
 import request from "supertest";
 import type { Db } from "@paperclipai/db";
 import { healthRoutes } from "../routes/health.js";
-import * as devServerStatus from "../dev-server-status.js";
 import { serverVersion } from "../version.js";
 
 const mockReadPersistedDevServerStatus = vi.hoisted(() => vi.fn());
@@ -35,10 +34,21 @@ function createHealthyDb(): Db {
   } as unknown as Db;
 }
 
-vi.mock("../dev-server-status.js", () => ({
+// Partial mock: keep the real exports (e.g. writeDevServerRestartRequest) so the
+// mock cannot silently drift from the module's actual surface.
+vi.mock("../dev-server-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../dev-server-status.js")>()),
   readPersistedDevServerStatus: mockReadPersistedDevServerStatus,
   toDevServerHealthStatus: vi.fn(),
 }));
+
+const tempDirs: string[] = [];
+
+function makeTempDir(prefix: string) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
 
 function createApp(
   db?: Db,
@@ -71,6 +81,9 @@ describe("GET /health", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
   it("returns 200 with status ok", async () => {
     const app = createApp();
@@ -196,7 +209,7 @@ describe("GET /health", () => {
   });
 
   it("surfaces a stale database backup warning in full health details", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
+    const backupDir = makeTempDir("paperclip-health-backups-");
     const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
     fs.writeFileSync(backupFile, "backup");
     fs.utimesSync(
@@ -232,7 +245,7 @@ describe("GET /health", () => {
   });
 
   it("surfaces database backup failure markers in full health details", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
+    const backupDir = makeTempDir("paperclip-health-backups-");
     const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
     const alertFile = path.join(backupDir, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
@@ -264,7 +277,7 @@ describe("GET /health", () => {
   });
 
   it("finds conventional database backup failure markers without an explicit alert file", async () => {
-    const backupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-root-"));
+    const backupRoot = makeTempDir("paperclip-health-backups-root-");
     const backupDir = path.join(backupRoot, "backups");
     fs.mkdirSync(backupDir);
     const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
@@ -297,7 +310,7 @@ describe("GET /health", () => {
   });
 
   it("surfaces redacted database backup warnings for anonymous authenticated probes", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-redacted-backups-"));
+    const backupDir = makeTempDir("paperclip-health-redacted-backups-");
     const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
     fs.writeFileSync(backupFile, "backup");
     fs.utimesSync(

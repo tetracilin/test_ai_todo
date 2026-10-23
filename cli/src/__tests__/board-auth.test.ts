@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   getStoredBoardCredential,
   readBoardAuthStore,
@@ -9,8 +9,17 @@ import {
   setStoredBoardCredential,
 } from "../client/board-auth.js";
 
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function createTempAuthPath(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-auth-"));
+  tempDirs.push(dir);
   return path.join(dir, "auth.json");
 }
 

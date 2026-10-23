@@ -46,6 +46,9 @@ function createHandoffDocument(): IssueDocument {
   };
 }
 
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+
 describe("IssueContinuationHandoff", () => {
   let container: HTMLDivElement;
 
@@ -60,6 +63,13 @@ describe("IssueContinuationHandoff", () => {
 
   afterEach(() => {
     container.remove();
+    // Both were replaced per-test; do not leak the stubs into other tests in this file's worker.
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    if (originalClipboard) {
+      Object.defineProperty(navigator, "clipboard", originalClipboard);
+    } else {
+      delete (navigator as { clipboard?: Clipboard }).clipboard;
+    }
   });
 
   it("renders compact metadata by default with copy access", async () => {

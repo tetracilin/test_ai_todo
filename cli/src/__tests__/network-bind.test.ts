@@ -1,10 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { resolveRuntimeBind, validateConfiguredBindMode } from "@paperclipai/shared";
 import { buildPresetServerConfig } from "../config/server-bind.js";
 
 const ORIGINAL_PATH = process.env.PATH;
+const ORIGINAL_TAILNET_BIND_HOST = process.env.PAPERCLIP_TAILNET_BIND_HOST;
 
 describe("network bind helpers", () => {
+  afterEach(() => {
+    process.env.PATH = ORIGINAL_PATH;
+    if (ORIGINAL_TAILNET_BIND_HOST === undefined) delete process.env.PAPERCLIP_TAILNET_BIND_HOST;
+    else process.env.PAPERCLIP_TAILNET_BIND_HOST = ORIGINAL_TAILNET_BIND_HOST;
+  });
+
   it("rejects non-loopback bind modes in local_trusted", () => {
     expect(
       validateConfiguredBindMode({

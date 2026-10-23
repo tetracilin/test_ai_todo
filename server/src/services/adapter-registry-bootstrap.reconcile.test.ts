@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const setAdapterDisabled = vi.fn();
 
@@ -19,14 +19,16 @@ vi.mock("./adapter-plugin-store.js", () => ({
 const { reconcileAdapterAvailability } = await import("./adapter-registry-bootstrap.js");
 
 describe("reconcileAdapterAvailability", () => {
-  it("is a no-op when registry is null", () => {
+  beforeEach(() => {
     setAdapterDisabled.mockReset();
+  });
+
+  it("is a no-op when registry is null", () => {
     expect(reconcileAdapterAvailability(null)).toEqual({ enabled: [], disabled: [] });
     expect(setAdapterDisabled).not.toHaveBeenCalled();
   });
 
   it("enables declared, disables everything else (e.g. drops claude_local)", () => {
-    setAdapterDisabled.mockReset();
     const result = reconcileAdapterAvailability([
       { adapterType: "opencode_local", enabled: true },
     ]);
@@ -37,9 +39,20 @@ describe("reconcileAdapterAvailability", () => {
   });
 
   it("throws when a declared adapter has no installed implementation", () => {
-    setAdapterDisabled.mockReset();
     expect(() =>
       reconcileAdapterAvailability([{ adapterType: "ghost_adapter", enabled: true }]),
     ).toThrow(/no installed adapter: ghost_adapter/);
+    // Fail loud before mutating any availability state.
+    expect(setAdapterDisabled).not.toHaveBeenCalled();
+  });
+
+  it("disables a declared adapter that is explicitly marked enabled: false", () => {
+    const result = reconcileAdapterAvailability([
+      { adapterType: "opencode_local", enabled: true },
+      { adapterType: "pi_local", enabled: false },
+    ]);
+    expect(result.enabled).toEqual(["opencode_local"]);
+    expect(result.disabled.sort()).toEqual(["claude_local", "pi_local"]);
+    expect(setAdapterDisabled).toHaveBeenCalledWith("pi_local", true);
   });
 });

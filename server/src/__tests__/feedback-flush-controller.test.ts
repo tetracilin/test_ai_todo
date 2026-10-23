@@ -21,4 +21,15 @@ describe("feedback export flush error classification", () => {
       new Error("feedback upload payload mentioned ECONNREFUSED in user content"),
     )).toBe(false);
   });
+
+  it("recognizes a top-level ECONNREFUSED code without a cause chain", () => {
+    expect(isDatabaseConnectionUnavailableError(Object.assign(new Error("boom"), { code: "ECONNREFUSED" }))).toBe(true);
+  });
+
+  it("does not classify other error codes or non-error values as database outages", () => {
+    expect(isDatabaseConnectionUnavailableError(Object.assign(new Error("boom"), { code: "ETIMEDOUT" }))).toBe(false);
+    expect(isDatabaseConnectionUnavailableError(null)).toBe(false);
+    expect(isDatabaseConnectionUnavailableError(undefined)).toBe(false);
+    expect(isDatabaseConnectionUnavailableError("ECONNREFUSED")).toBe(false);
+  });
 });

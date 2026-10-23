@@ -5,27 +5,27 @@ Guidance for human and AI contributors working in this repository.
 ## 1. Purpose
 
 Paperclip is a control plane for AI-agent companies.
-The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
+The current implementation target is V1 and is defined in `technical-spec/product/SPEC-implementation.md`.
 This repository is a hard fork of `paperclipai/paperclip` with an independent roadmap, used as
 the starting scaffold for T3 AI Todo. `main` is the development branch; the former
 `integration/paperclip` integration branch is retired. Nothing is ever contributed back to
 upstream. Upstream changes land only as one-way, selective imports: security fixes (human
 cherry-pick) and feature code an agent imports when the current task requires it — see
-`doc/ORIGIN.md`, "Feature-driven upstream import". No `upstream` remote is configured. Preserve `LICENSE` and `NOTICE` for any
+`technical-spec/fork/ORIGIN.md`, "Feature-driven upstream import". No `upstream` remote is configured. Preserve `LICENSE` and `NOTICE` for any
 code carried over from paperclip. Never force-push `main`.
 
 ## 2. Read This First
 
 Before making changes, read in this order:
 
-1. `doc/GOAL.md`
-2. `doc/PRODUCT.md`
-3. `doc/SPEC-implementation.md`
-4. `doc/DEVELOPING.md`
-5. `doc/DATABASE.md`
+1. `technical-spec/product/GOAL.md`
+2. `technical-spec/product/PRODUCT.md`
+3. `technical-spec/product/SPEC-implementation.md`
+4. `technical-spec/engineering/DEVELOPING.md`
+5. `technical-spec/engineering/DATABASE.md`
 
-`doc/SPEC.md` is long-horizon product context.
-`doc/SPEC-implementation.md` is the concrete V1 build contract.
+`technical-spec/product/SPEC.md` is long-horizon product context.
+`technical-spec/product/SPEC-implementation.md` is the concrete V1 build contract.
 
 ## 3. Repo Map
 
@@ -40,7 +40,7 @@ Before making changes, read in this order:
 - `packages/teams-catalog/`: app-shipped teams catalog (`@paperclipai/teams-catalog`)
 - `cli/`: `paperclipai` CLI package (published bin, agent-facing commands)
 - `skills/`: Paperclip runtime/operational skills (not part of the app catalog)
-- `doc/`: operational and product docs
+- `technical-spec/`: product, architecture, design, fork-operations, engineering docs, dated plans and design specs
 
 ## 4. Dev Setup (Auto DB)
 
@@ -90,13 +90,13 @@ If you change schema/API behavior, update all impacted layers:
 - Activity logging for mutating actions
 
 4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
+Prefer additive updates. Keep `technical-spec/product/SPEC.md` and `technical-spec/product/SPEC-implementation.md` aligned.
 
 5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
+When you are creating a plan file in the repository itself, new plan documents (including `superpowers:writing-plans` output) belong in `technical-spec/plans/` and use `YYYY-MM-DD-slug.md` filenames; design specs (including `superpowers:brainstorming` output) belong in `technical-spec/specs/` and use `YYYY-MM-DD-<topic>-design.md`. Do not create new top-level `doc/` or `docs/` folders. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
 6. Attach inspectable generated artifacts.
-When your task produces a user-inspectable deliverable file, follow the Paperclip skill's "Generated Artifacts and Work Products" workflow before final disposition. In this repo, prefer the self-contained skill helper at `skills/paperclip/scripts/paperclip-upload-artifact.sh` so the file is available through the Paperclip API, create/update an artifact work product when the file is the deliverable, link the uploaded artifact in the final issue comment, and then set status. Do not rely on local filesystem paths as the only access path. If an important file intentionally remains workspace-only, create/update a work product with `metadata.resourceRef.kind: "workspace_file"` and a workspace-relative path, then name that work product and path in the final comment. Treat browse/search as a fallback for recovering workspace files, not the preferred deliverable path. See `doc/AGENT-ARTIFACTS.md` for details and `.mp4`/`.webm` examples.
+When your task produces a user-inspectable deliverable file, follow the Paperclip skill's "Generated Artifacts and Work Products" workflow before final disposition. In this repo, prefer the self-contained skill helper at `skills/paperclip/scripts/paperclip-upload-artifact.sh` so the file is available through the Paperclip API, create/update an artifact work product when the file is the deliverable, link the uploaded artifact in the final issue comment, and then set status. Do not rely on local filesystem paths as the only access path. If an important file intentionally remains workspace-only, create/update a work product with `metadata.resourceRef.kind: "workspace_file"` and a workspace-relative path, then name that work product and path in the final comment. Treat browse/search as a fallback for recovering workspace files, not the preferred deliverable path. See `technical-spec/engineering/AGENT-ARTIFACTS.md` for details and `.mp4`/`.webm` examples.
 
 ## 6. Database Change Workflow
 
@@ -184,7 +184,7 @@ When creating a pull request (via `gh pr create` or any other method), you **mus
 
 A change is done when all are true:
 
-1. Behavior matches `doc/SPEC-implementation.md`
+1. Behavior matches `technical-spec/product/SPEC-implementation.md`
 2. Typecheck, tests, and build pass
 3. Contracts are synced across db/shared/server/ui
 4. Docs updated when behavior or commands change
@@ -192,4 +192,4 @@ A change is done when all are true:
 
 ## Design system
 
-[`docs/designs/DESIGN-UI.md`](docs/designs/DESIGN-UI.md) is the source of truth for UI design decisions. (The repo-root `design.md` is the fork's architecture note, part of the `roadmap.md`/`backlog.md`/`design.md` SSoT trio — a different document.) The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+[`technical-spec/designs/DESIGN-UI.md`](technical-spec/designs/DESIGN-UI.md) is the source of truth for UI design decisions. (The repo-root `design.md` is the fork's architecture note, part of the `roadmap.md`/`backlog.md`/`design.md` SSoT trio — a different document.) The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.

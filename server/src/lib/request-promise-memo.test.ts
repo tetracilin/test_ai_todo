@@ -26,6 +26,10 @@ describe("createRequestPromiseMemo", () => {
     expect(load).toHaveBeenCalledTimes(1);
   });
 
+  // The memo is keyed by request object identity (a WeakMap), not by the actor
+  // snapshot. These rows therefore document that a distinct request object never
+  // inherits another request's decision, whatever differs in its actor; they do
+  // not prove the memo inspects the actor fields.
   it.each([
     ["actor", { userId: "user-2" }],
     ["company", { companyIds: ["company-2"] }],
@@ -34,7 +38,7 @@ describe("createRequestPromiseMemo", () => {
     ["instance admin", { isInstanceAdmin: true }],
     ["agent key scope", { keyScope: "read" }],
     ["responsible user", { responsibleUserId: "user-2" }],
-  ])("never reuses a decision across requests after a %s change", async (_label, actorPatch) => {
+  ])("does not share a decision with a distinct request object whose %s differs", async (_label, actorPatch) => {
     const memoize = createRequestPromiseMemo<TestRequest, string>();
     const load = vi.fn(async () => "allowed");
     const firstRequest = requestFor();
@@ -42,6 +46,17 @@ describe("createRequestPromiseMemo", () => {
 
     await memoize(firstRequest, "issue-1", load);
     await memoize(secondRequest, "issue-1", load);
+
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads different keys on the same request independently", async () => {
+    const memoize = createRequestPromiseMemo<TestRequest, string>();
+    const load = vi.fn(async () => "allowed");
+    const request = requestFor();
+
+    await memoize(request, "issue-1", load);
+    await memoize(request, "issue-2", load);
 
     expect(load).toHaveBeenCalledTimes(2);
   });

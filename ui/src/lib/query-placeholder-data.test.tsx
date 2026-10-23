@@ -41,6 +41,22 @@ function Harness({
   );
 }
 
+describe("keepPreviousDataForSameQueryTail (placeholder function)", () => {
+  type PreviousQuery = Parameters<ReturnType<typeof keepPreviousDataForSameQueryTail<string[]>>>[1];
+  const previousQuery = (queryKey: unknown[]) => ({ queryKey }) as unknown as PreviousQuery;
+
+  it("keeps previous data when the previous query shares the same tail", () => {
+    const placeholder = keepPreviousDataForSameQueryTail<string[]>("issue-a");
+    expect(placeholder(["run-a"], previousQuery(["issues", "live-runs", "issue-a"]))).toEqual(["run-a"]);
+  });
+
+  it("drops previous data when the tail differs or there is no previous query", () => {
+    const placeholder = keepPreviousDataForSameQueryTail<string[]>("issue-b");
+    expect(placeholder(["run-a"], previousQuery(["issues", "live-runs", "issue-a"]))).toBeUndefined();
+    expect(placeholder(["run-a"], undefined)).toBeUndefined();
+  });
+});
+
 describe("keepPreviousDataForSameQueryTail", () => {
   let container: HTMLDivElement;
 

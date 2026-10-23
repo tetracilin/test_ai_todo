@@ -18,7 +18,7 @@ import { BUNDLED_PLUGIN_CATALOG } from "../services/bundled-plugins.js";
  * This guard previously also asserted the shape of upstream's docker.yml
  * (its build-arg, job split, and concurrency block). That workflow was
  * deleted at the hard fork and no t3-* workflow builds the cloud target,
- * so those assertions were removed rather than repointed. See doc/ORIGIN.md.
+ * so those assertions were removed rather than repointed. See technical-spec/fork/ORIGIN.md.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");

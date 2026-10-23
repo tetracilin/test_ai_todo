@@ -18,7 +18,7 @@
  * runner, which imports the S4 catalog.
  *
  * Run (as the woken routine agent, after booting a throwaway local_trusted
- * instance per doc/connections/SMOKE-LAB-BROWSER-RUNNER.md §0):
+ * instance per doc/connections/SMOKE-LAB-BROWSER-RUNNER.md (removed in the doc cleanup; see git history) §0):
  *   node --experimental-strip-types tests/e2e/smoke-lab-routine.mts
  *
  * Target under test (the throwaway instance):
@@ -280,7 +280,7 @@ async function recordAmber(reason: string) {
     `- **Target:** \`${SMOKE_BASE}\``,
     `- **Reason:** ${reason}`,
     ``,
-    `This is expected when no private instance is reachable or the flag can't be enabled for the smoke (see \`doc/connections/SMOKE-LAB-BROWSER-RUNNER.md\` §0). No product issue was filed — an amber/skipped run is not a defect.`,
+    `This is expected when no private instance is reachable or the flag can't be enabled for the smoke (see \`doc/connections/SMOKE-LAB-BROWSER-RUNNER.md (removed in the doc cleanup; see git history)\` §0). No product issue was filed — an amber/skipped run is not a defect.`,
   ].join("\n");
   await cpComment(ROUTINE_ISSUE_ID, body);
 }
@@ -345,7 +345,7 @@ async function recordFailure(result: Json): Promise<"filed" | "suppressed_duplic
     ``,
     ...(shotUrl ? [`### Screenshot of the failing step`, `![failing step](${shotUrl})`, ``] : []),
     `### Repro`,
-    `1. Boot a throwaway \`local_trusted\` instance (see \`doc/connections/SMOKE-LAB-BROWSER-RUNNER.md\` §0).`,
+    `1. Boot a throwaway \`local_trusted\` instance (see \`doc/connections/SMOKE-LAB-BROWSER-RUNNER.md (removed in the doc cleanup; see git history)\` §0).`,
     `2. \`SMOKE_BASE=<url> SMOKE_ONLY=${pathId ?? ""} node --experimental-strip-types tests/e2e/smoke-lab-browser-runner.mts\``,
     `3. Observe the failure above; the failing step's screenshot is attached.`,
     ``,

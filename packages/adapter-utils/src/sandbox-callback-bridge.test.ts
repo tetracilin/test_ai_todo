@@ -106,6 +106,18 @@ describe("sandbox callback bridge", () => {
     throw new Error(`Timed out waiting for a JSON file in ${directory}.`);
   }
 
+  // Poll until `predicate` holds or `timeoutMs` elapses (bounded by wall clock).
+  async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error("waitFor timed out");
+  }
+
   afterEach(async () => {
     while (cleanupFns.length > 0) {
       const cleanup = cleanupFns.pop();
@@ -151,7 +163,6 @@ describe("sandbox callback bridge", () => {
     });
 
     const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
-    const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
     const seenRequests: Array<{
       method: string;
@@ -1564,17 +1575,6 @@ describe("sandbox callback bridge", () => {
     // not write a 503 there; a 503 makes the caller retry while the original
     // mutation still completes, applying it twice. The test proves no 503 lands
     // and the handler's real response is delivered exactly once.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-late.json";
@@ -1677,17 +1677,6 @@ describe("sandbox callback bridge", () => {
     // operation started, so the handler finalizes a non-retryable 504, not a
     // retryable 502; the caller then does not retry a mutation that may have
     // committed.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-abort.json";
@@ -1774,17 +1763,6 @@ describe("sandbox callback bridge", () => {
     // gets a terminal response even when the handler ignores the abort. The 504
     // is non-retryable, so the caller does not retry a mutation that may have
     // committed.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-stuck.json";
@@ -1872,17 +1850,6 @@ describe("sandbox callback bridge", () => {
     // host operation that is in flight. The handler completes late, after the
     // abort. Its response must be a non-retryable 504, never a retryable 502 or
     // 503; a retry of either would apply the mutation twice.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-late-abort.json";
@@ -1977,17 +1944,6 @@ describe("sandbox callback bridge", () => {
     // handler, so the caller waits to its own deadline and gets a generic 502. The
     // recovery path retries the write and removes the request file only after the
     // write lands.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-retry.json";
@@ -2075,17 +2031,6 @@ describe("sandbox callback bridge", () => {
     // once. `finalize` must retry the write and deliver the real response. It
     // must not fence out recovery and leave the request for a retryable 503,
     // which would let the caller repeat a possibly-committed mutation.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-write-retry.json";
@@ -2166,17 +2111,6 @@ describe("sandbox callback bridge", () => {
     // recovery still delivers a non-retryable terminal response. Without the
     // re-arm, a rejected write leaves the request for a retryable 503 and a hung
     // write strands the caller until its own deadline.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-write-backstop.json";
@@ -2265,17 +2199,6 @@ describe("sandbox callback bridge", () => {
     // 503. The first 503 write fails, so the recovery must retry it inside the
     // same pass. It then delivers the 503 and removes the request. The request is
     // unclaimed, so its host mutation never ran; the 503 stays retry-safe.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-503-retry.json";
@@ -2362,17 +2285,6 @@ describe("sandbox callback bridge", () => {
     // of dropping it. Without the fix, the recovery removed the request before its
     // single write attempt, so a failed write left no queue state; a later
     // recovery pass found nothing and the caller waited until its own deadline.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-503-keep.json";
@@ -2464,17 +2376,6 @@ describe("sandbox callback bridge", () => {
     // Prove the reverse race. When the recovery path claims a request before the
     // handler starts its host operation, the handler must bail without running
     // the mutation. A retry after the 503 then applies the mutation once.
-    const waitFor = async (predicate: () => boolean, timeoutMs: number) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (predicate()) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      throw new Error("waitFor timed out");
-    };
-
     const queueDir = "/virtual-bridge/queue";
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const requestFile = "req-early.json";

@@ -53,8 +53,8 @@ describe("startPerfMeasureReaper", () => {
     performance.clearMeasures = undefined as unknown as typeof performance.clearMeasures;
     const stop = startPerfMeasureReaper(10_000);
     vi.advanceTimersByTime(30_000);
-    // nothing to assert other than: it did not throw and returns a callable stop
-    expect(typeof stop).toBe("function");
-    stop();
+    // No interval is scheduled at all, and the returned stop is a safe no-op.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(() => stop()).not.toThrow();
   });
 });
