@@ -23,9 +23,8 @@ Also read, in order, before non-trivial changes: `technical-spec/product/GOAL.md
 All design and technical documentation lives under `technical-spec/` (index:
 `technical-spec/README.md`). There is no `doc/` or `docs/` folder; do not create one.
 
-- Plans, including `superpowers:writing-plans` output → `technical-spec/plans/YYYY-MM-DD-<slug>.md`
-- Design specs, including `superpowers:brainstorming` output → `technical-spec/specs/YYYY-MM-DD-<topic>-design.md`
-- This overrides those skills' default `docs/superpowers/...` locations.
+- Plans → `technical-spec/plans/YYYY-MM-DD-<slug>.md`
+- Design specs → `technical-spec/specs/YYYY-MM-DD-<topic>-design.md`
 
 ## Commands
 
