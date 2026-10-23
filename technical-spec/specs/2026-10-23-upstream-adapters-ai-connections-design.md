@@ -1,7 +1,7 @@
 # Upstream adapter fixes and AI-credentials (Connections) import: design
 
 Date: 2026-10-23
-Status: DRAFT for owner review (nothing implemented)
+Status: DRAFT for owner review (nothing implemented). Owner decisions 2026-10-23: onboarding UI is fork-built; http security fix skipped for now; #14970 in scope.
 Sub-project 1 of 3. Siblings (specs to follow): BYO-key onboarding, documents (WOPI + agent edits).
 
 ## 1. Intent
@@ -76,7 +76,7 @@ C. **Skip Connections; extend the fork's user-secrets and setup-token flows.** L
 ## 4. Design (approach A)
 
 ### 4.1 PR series (each from `origin/develop`, one concern each, provenance `Adapted from paperclipai/paperclip@<sha>:<path>`)
-1. `fix/http-adapter-boundary-hardening`: upstream `9dd6526b47`. A security fix, so per `CLAUDE.md` a human performs the cherry-pick.
+1. ~~`fix/http-adapter-boundary-hardening`~~ (`9dd6526b47`): **skipped for now** (owner decision). Revisit later; per `CLAUDE.md` a human performs the cherry-pick.
 2. `feature/claude-local-upstream-fixes`: `cc549691a1`, `082423000e`, `1ead554bd1`, `dffc2b3ca1`, `3b4b270650`, quota
    classification (`f447990d77`, `d54b750111`, `300a89ec13`), acpx stall handling (`938a441944`, `4b766b8729`, `3935e300dd`),
    model refreshes (`cab4263dc9`, `dfdfc8664e`, `5128b4f323`), with matching upstream tests. Keep #165. Re-test #129.
@@ -85,7 +85,7 @@ C. **Skip Connections; extend the fork's user-secrets and setup-token flows.** L
    next fork number (additive only). Existing agents are untouched until they adopt a connection.
 5. `feature/adapter-test-lanes`: add `adapter-hermes-gateway`, `hermes` and other fork packages to the vitest lanes
    (step 3 of `docs/designs/nightly-slow-tests-analysis.md`); add tests for `server/src/adapters/process` (0 today) and `http` (1).
-6. Optional, decide later: custom model providers (#14970, relevant to #124 Hermes needing OpenRouter).
+6. `feature/custom-model-providers`: upstream #14970 (`9f7057e122`), **in scope** (owner decision), after PR 4. Relevant to #124 (Hermes needing OpenRouter). Same step-0 rule: take only self-contained hunks.
 
 The adapter-fix PRs (2, 3) do not depend on 4 and can proceed in parallel.
 
@@ -100,7 +100,7 @@ The adapter-fix PRs (2, 3) do not depend on 4 and can proceed in parallel.
 - `ai-connections.test.ts` and `ai-legacy-compatibility.test.ts` ported with the core; they prove legacy agents keep working.
 - Manual: a Claude Code run on a non-Windows host (#123), a Windows run after PR 2 (#129), Hermes Gateway end to end (#122).
 
-## 5. Open questions for the owner
-1. Is approach A acceptable, i.e. is it fine that the onboarding UI is fork-built rather than ported from #13248?
-2. Do you want to do the `http` security cherry-pick (PR 1) yourself, as the policy requires, or should I prepare the branch for you to review?
-3. Should #14970 (custom model providers) be in scope now?
+## 5. Decisions
+1. Onboarding UI is fork-built on the ported `/ai-connections` API, not ported from #13248 (decided).
+2. http security fix: skipped for now (decided).
+3. Custom model providers #14970: in scope, PR 6 (decided).
