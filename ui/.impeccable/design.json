@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-23T00:00:00Z",
+  "title": "Design System: T3 Company OS Board",
+  "extensions": {
+    "colorMeta": {
+      "sheet-dark": { "role": "neutral", "displayName": "Dark Sheet", "canonical": "oklch(0.145 0 0)", "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.371 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.87 0 0)"] },
+      "sheet-dark-raised": { "role": "neutral", "displayName": "Raised Sheet", "canonical": "oklch(0.205 0 0)" },
+      "sheet-dark-cell": { "role": "neutral", "displayName": "Cell Gray (dark)", "canonical": "oklch(0.269 0 0)" },
+      "ink-dark": { "role": "neutral", "displayName": "Ink (dark)", "canonical": "oklch(0.985 0 0)" },
+      "ink-dark-muted": { "role": "neutral", "displayName": "Pencil (dark)", "canonical": "oklch(0.708 0 0)" },
+      "rule-dark": { "role": "neutral", "displayName": "Hairline Rule (dark)", "canonical": "oklch(1 0 0 / 10%)" },
+      "graphite-primary-dark": { "role": "primary", "displayName": "Graphite Ink (dark)", "canonical": "oklch(0.922 0 0)" },
+      "sheet-light": { "role": "neutral", "displayName": "White Sheet", "canonical": "oklch(1 0 0)", "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.922 0 0)", "oklch(0.97 0 0)"] },
+      "sheet-light-cell": { "role": "neutral", "displayName": "Cell Gray (light)", "canonical": "oklch(0.97 0 0)" },
+      "ink-light": { "role": "neutral", "displayName": "Ink (light)", "canonical": "oklch(0.145 0 0)" },
+      "ink-light-muted": { "role": "neutral", "displayName": "Pencil (light)", "canonical": "oklch(0.556 0 0)" },
+      "rule-light": { "role": "neutral", "displayName": "Hairline Rule (light)", "canonical": "oklch(0.922 0 0)" },
+      "graphite-primary-light": { "role": "primary", "displayName": "Graphite Ink (light)", "canonical": "oklch(0.205 0 0)" },
+      "focus-ring-light": { "role": "neutral", "displayName": "Focus Ring", "canonical": "oklch(0.708 0 0)" },
+      "destructive-light": { "role": "tertiary", "displayName": "Destructive Red (light)", "canonical": "oklch(0.577 0.245 27.325)" },
+      "destructive-dark": { "role": "tertiary", "displayName": "Destructive Red (dark)", "canonical": "oklch(0.637 0.237 25.331)" },
+      "status-inert": { "role": "secondary", "displayName": "Inert Gray", "canonical": "#a8aeb2" },
+      "status-live": { "role": "secondary", "displayName": "Live Blue", "canonical": "#2563eb" },
+      "status-queued": { "role": "secondary", "displayName": "Queued Amber", "canonical": "#f59e0b" },
+      "status-review": { "role": "secondary", "displayName": "Review Violet", "canonical": "#7c3aed" },
+      "status-done": { "role": "secondary", "displayName": "Done Green", "canonical": "#22c55e" },
+      "status-blocked": { "role": "secondary", "displayName": "Blocked Red", "canonical": "#dc2626" }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "Card and section titles; hierarchy by weight, not size." },
+      "body": { "displayName": "Body", "purpose": "Default UI and content text (text-sm)." },
+      "compact": { "displayName": "Compact", "purpose": "Dense rows and secondary panels (--text-compact)." },
+      "label": { "displayName": "Label", "purpose": "Badges, chips, metadata (text-xs)." },
+      "micro": { "displayName": "Micro", "purpose": "Column headers and small-caps labels (--text-micro)." },
+      "nano": { "displayName": "Nano", "purpose": "Eyebrows and the densest annotations (--text-nano)." },
+      "mono": { "displayName": "Mono", "purpose": "IDs, costs, token counts, timestamps, logs." }
+    },
+    "shadows": [
+      { "name": "shadow-xs", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Tailwind default on outline buttons and inputs; the ceiling for in-plane elements." },
+      { "name": "approval-ring", "value": "0 0 0 2px color-mix(in oklab, var(--primary) 18%, transparent)", "purpose": "Awaiting-approval state ring (static form under reduced motion)." }
+    ],
+    "motion": [
+      { "name": "motion-ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "House signature curve for entrances." },
+      { "name": "motion-ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "House material curve for state transitions." },
+      { "name": "motion-duration-instant", "value": "80ms", "purpose": "Immediate feedback." },
+      { "name": "motion-duration-fast", "value": "160ms", "purpose": "Status and bubble enters." },
+      { "name": "motion-duration-base", "value": "240ms", "purpose": "Markers, tools, diff reveal." },
+      { "name": "motion-duration-slow", "value": "360ms", "purpose": "Count tweens." },
+      { "name": "motion-duration-deliberate", "value": "520ms", "purpose": "Rare, deliberate transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Graphite ink fill; the default action.",
+      "html": "<button class=\"ds-btn-primary\">Lưu thay đổi</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; height:40px; padding:8px 16px; border:none; border-radius:calc(var(--radius, 0.5rem) * 0.8); background:var(--primary, oklch(0.922 0 0)); color:var(--primary-foreground, oklch(0.205 0 0)); font:500 14px/20px InterVariable, Inter, system-ui, sans-serif; cursor:pointer; transition:background-color 160ms cubic-bezier(0.4,0,0.2,1); } .ds-btn-primary:hover { background:color-mix(in oklab, var(--primary, oklch(0.922 0 0)) 90%, transparent); } .ds-btn-primary:focus-visible { outline:none; box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Hairline-ruled secondary action on the sheet.",
+      "html": "<button class=\"ds-btn-outline\">Hủy</button>",
+      "css": ".ds-btn-outline { display:inline-flex; align-items:center; justify-content:center; height:40px; padding:8px 16px; border:1px solid var(--input, oklch(1 0 0 / 15%)); border-radius:calc(var(--radius, 0.5rem) * 0.8); background:color-mix(in oklab, var(--input, oklch(1 0 0 / 15%)) 30%, transparent); color:var(--foreground, oklch(0.985 0 0)); font:500 14px/20px InterVariable, Inter, system-ui, sans-serif; box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05); cursor:pointer; transition:background-color 160ms cubic-bezier(0.4,0,0.2,1); } .ds-btn-outline:hover { background:color-mix(in oklab, var(--input, oklch(1 0 0 / 15%)) 50%, transparent); } .ds-btn-outline:focus-visible { outline:none; border-color:var(--ring, oklch(0.556 0 0)); box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "No fill at rest; a cell fill on hover. Toolbars and rows.",
+      "html": "<button class=\"ds-btn-ghost\">Xem thêm</button>",
+      "css": ".ds-btn-ghost { display:inline-flex; align-items:center; justify-content:center; height:40px; padding:8px 16px; border:none; border-radius:calc(var(--radius, 0.5rem) * 0.8); background:transparent; color:var(--foreground, oklch(0.985 0 0)); font:500 14px/20px InterVariable, Inter, system-ui, sans-serif; cursor:pointer; transition:background-color 160ms cubic-bezier(0.4,0,0.2,1); } .ds-btn-ghost:hover { background:color-mix(in oklab, var(--accent, oklch(0.269 0 0)) 50%, transparent); } .ds-btn-ghost:focus-visible { outline:none; box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Hairline field, md radius, 36px tall.",
+      "html": "<input class=\"ds-input\" placeholder=\"Tìm thẻ, hồ sơ, bằng chứng…\" />",
+      "css": ".ds-input { height:36px; width:100%; min-width:0; padding:4px 12px; border:1px solid var(--input, oklch(1 0 0 / 15%)); border-radius:calc(var(--radius, 0.5rem) * 0.8); background:color-mix(in oklab, var(--input, oklch(1 0 0 / 15%)) 30%, transparent); color:var(--foreground, oklch(0.985 0 0)); font:400 14px/20px InterVariable, Inter, system-ui, sans-serif; box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05); outline:none; transition:box-shadow 160ms cubic-bezier(0.4,0,0.2,1); } .ds-input::placeholder { color:var(--muted-foreground, oklch(0.708 0 0)); } .ds-input:focus-visible { border-color:var(--ring, oklch(0.556 0 0)); box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Pill seeded by a --status-* hue through the colour-mix recipe (dark form shown).",
+      "html": "<span class=\"ds-status-chip\" style=\"--sc:#2563eb\">Đang thực hiện</span> <span class=\"ds-status-chip\" style=\"--sc:#dc2626\">Bị chặn</span> <span class=\"ds-status-chip\" style=\"--sc:#22c55e\">Hoàn thành</span>",
+      "css": ".ds-status-chip { display:inline-flex; align-items:center; padding:2px 8px; border:1px solid color-mix(in srgb, var(--sc) 48%, transparent); border-radius:9999px; background:color-mix(in srgb, var(--sc) 22%, transparent); color:color-mix(in srgb, var(--sc) 80%, white); font:500 12px/16px InterVariable, Inter, system-ui, sans-serif; white-space:nowrap; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Raised tonal sheet with a hairline rule; no shadow.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">PC-002 · Hồ sơ thẻ</div><div class=\"ds-card-desc\">Lệnh công việc · Làm rõ · Nhật ký bằng chứng</div><div class=\"ds-card-meta\">T3-142 · 2026-10-23 09:14</div></div>",
+      "css": ".ds-card { display:flex; flex-direction:column; gap:8px; padding:24px; border:1px solid var(--border, oklch(1 0 0 / 10%)); border-radius:var(--radius, 0.5rem); background:var(--card, oklch(0.205 0 0)); color:var(--card-foreground, oklch(0.985 0 0)); font-family:InterVariable, Inter, system-ui, sans-serif; } .ds-card-title { font-weight:600; font-size:14px; line-height:1; } .ds-card-desc { font-size:14px; color:var(--muted-foreground, oklch(0.708 0 0)); } .ds-card-meta { font:400 12px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:var(--muted-foreground, oklch(0.708 0 0)); }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Inset pill row; active gets the accent cell at full ink.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item is-active\" href=\"#\">Hộp thư</a><a class=\"ds-nav-item\" href=\"#\">Thẻ</a><a class=\"ds-nav-item\" href=\"#\">Tác tử</a></nav>",
+      "css": ".ds-nav { display:flex; flex-direction:column; gap:2px; width:220px; padding:8px 0; background:var(--sidebar, oklch(0.205 0 0)); } .ds-nav-item { display:flex; align-items:center; margin:0 8px; padding:6px 8px; border-radius:var(--radius, 0.5rem); color:color-mix(in oklab, var(--foreground, oklch(0.985 0 0)) 80%, transparent); font:500 13px/20px InterVariable, Inter, system-ui, sans-serif; text-decoration:none; transition:background-color 160ms cubic-bezier(0.4,0,0.2,1); } .ds-nav-item:hover { background:color-mix(in oklab, var(--accent, oklch(0.269 0 0)) 50%, transparent); color:var(--foreground, oklch(0.985 0 0)); } .ds-nav-item.is-active { background:var(--accent, oklch(0.269 0 0)); color:var(--foreground, oklch(0.985 0 0)); } .ds-nav-item:focus-visible { outline:none; box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Engineering Workbook",
+    "overview": "The board is a workbook, not an app skin. It is part spreadsheet (rows, columns, cells you scan), part printed tabular paper (plain sheet, ruled lines, nothing decorative) and part CAD drawing (hairline precision, exact small type, a title block that says what the sheet is). Engineers already trust these three objects to carry a record. The board borrows their authority instead of inventing a brand world.\n\nIt is dense on purpose. The type ladder sits at 10–14px, the neutrals are zero-chroma graphite, and colour appears only when it means something: the status of a card or an agent, or the identity capsule of an agent. Dark is the default sheet (`<html class=\"dark\">`) and light is a full peer. Every value routes through `ui/src/index.css`.\n\nThe current colour and type values are **provisional**. DESIGN-UI.md records that brand colour, type and iconography are being redesigned and will land only as token values. The neutral graphite, the primary and Inter are placeholders. The status vocabulary, the token-only structure and the workbook stance are what future work must keep.",
+    "keyCharacteristics": [
+      "Achromatic graphite neutrals (OKLCH chroma 0) in both themes; colour means status.",
+      "Dense, small, exact type: Inter Variable, a named ladder at 10 / 11 / 12 / 13 / 14px.",
+      "Flat like paper. Hairline rules and tonal cell steps carry structure, not shadows.",
+      "Machine values (IDs, costs, timestamps, logs) set in the monospace stack.",
+      "Dark-default sheet with a full light theme; status hues hold up in both.",
+      "Touch floor of 44px on coarse pointers, because field engineers use it on a phone."
+    ],
+    "rules": [
+      { "name": "The Colour Means State Rule", "body": "On a board surface, a hue other than graphite must name a status, an agent, a match type or a destructive action. Decorative colour is not allowed.", "section": "colors" },
+      { "name": "The One Vocabulary Rule", "body": "A status renders through the same `--status-*` seed in a chip, a row, an icon, a chart and a log line. Never introduce a parallel status palette.", "section": "colors" },
+      { "name": "The Title Block Rule", "body": "Hierarchy is set by weight, position and ruling, not by size. No new step above 14px enters the app chrome without a DESIGN-UI.md change.", "section": "typography" },
+      { "name": "The Machine Type Rule", "body": "If a machine generated the value, it is set in mono through the shared formatting helpers. It is never formatted ad hoc per screen.", "section": "typography" },
+      { "name": "The Grid Before Whitespace Rule", "body": "Density in service of scanning beats whitespace in service of aesthetics. Space separates groups of information; it is never added to look calm.", "section": "layout" },
+      { "name": "The Paper Rule", "body": "Anything on the sheet is flat. If an element needs to stand out, give it a rule, a tonal cell or a status seed. Do not lift it.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** take every colour, size, radius, shadow and motion value from `ui/src/index.css` tokens, and run `pnpm check:token-gates` before committing UI changes.",
+      "**Do** render every status through its `--status-*` seed and the `.status-chip` / `.status-fill` recipes, identically in chip, row, icon, chart and log.",
+      "**Do** set IDs, costs, token counts, timestamps and logs in the mono stack via the shared formatters.",
+      "**Do** separate surfaces with a 1px hairline rule or one tonal step.",
+      "**Do** check both themes. Dark is the default, but light is a full peer.",
+      "**Do** keep the 44px touch floor on coarse pointers for primary controls.",
+      "**Do** use the motion tokens (`--motion-duration-*`, `--motion-ease-out-expo`, `--motion-ease-standard`) and honour `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "**Don't** add hue to the neutrals or introduce decorative colour. A hue must name a state, an agent, a match type or a destructive action.",
+      "**Don't** lift in-plane elements with shadows, or extend the `--shadow-extract-*` debt.",
+      "**Don't** use hex, raw px, Tailwind bracket values or palette classes (`bg-red-500`) in `ui/src/components/**` or `ui/src/pages/**`.",
+      "**Don't** add a type size above 14px to app chrome, or a display face.",
+      "**Don't** treat the current neutrals, primary or Inter as the final brand. They are provisional until the redesign lands as token values.",
+      "**Don't** use the agent gradients for anything but the agent capsule."
+    ]
+  }
+}
