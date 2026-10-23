@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  createScheduledIssueSchema,
   createSchedulingRoutineSchema,
   generateSchedulingRoutineIssuesSchema,
   updateSchedulingRoutineSchema,
@@ -8,7 +9,8 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { badRequest, forbidden } from "../errors.js";
-import { accessService, logActivity, schedulingService } from "../services/index.js";
+import { accessService, logActivity, publishActivity, schedulingService } from "../services/index.js";
+import type { ActivityPublication } from "../services/activity-log.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -90,24 +92,44 @@ export function schedulingRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const issueId = req.params.issueId as string;
       await assertCanGenerate(req, companyId);
-      const scheduling = await svc.upsertIssueScheduling(companyId, issueId, req.body);
       const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
-        action: "issue.scheduling_updated",
-        entityType: "issue",
-        entityId: issueId,
-        details: {
-          scheduledAt: scheduling.scheduledAt,
-          deferUntil: scheduling.deferUntil,
-          scheduledDurationMinutes: scheduling.scheduledDurationMinutes,
-        },
+      const publications: ActivityPublication[] = [];
+      const scheduling = await db.transaction(async (tx) => {
+        const { scheduling: next, previous } = await schedulingService(tx as unknown as Db).upsertIssueSchedulingWithPrevious(
+          companyId,
+          issueId,
+          req.body,
+        );
+        await logActivity(
+          tx as unknown as Db,
+          {
+            companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.scheduling_updated",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              scheduledAt: next.scheduledAt,
+              deferUntil: next.deferUntil,
+              scheduledDurationMinutes: next.scheduledDurationMinutes,
+              _previous: previous
+                ? {
+                    scheduledAt: previous.scheduledAt,
+                    deferUntil: previous.deferUntil,
+                    scheduledDurationMinutes: previous.scheduledDurationMinutes,
+                  }
+                : null,
+            },
+          },
+          publications,
+        );
+        return next;
       });
+      for (const publication of publications) publishActivity(publication);
       res.json({ scheduling });
     },
   );
@@ -116,21 +138,30 @@ export function schedulingRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     const issueId = req.params.issueId as string;
     await assertCanGenerate(req, companyId);
-    const deleted = await svc.clearIssueScheduling(companyId, issueId);
-    if (deleted) {
-      const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
-        action: "issue.scheduling_cleared",
-        entityType: "issue",
-        entityId: issueId,
-      });
-    }
+    const actor = getActorInfo(req);
+    const publications: ActivityPublication[] = [];
+    const deleted = await db.transaction(async (tx) => {
+      const removed = await schedulingService(tx as unknown as Db).clearIssueScheduling(companyId, issueId);
+      if (removed) {
+        await logActivity(
+          tx as unknown as Db,
+          {
+            companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.scheduling_cleared",
+            entityType: "issue",
+            entityId: issueId,
+          },
+          publications,
+        );
+      }
+      return removed;
+    });
+    for (const publication of publications) publishActivity(publication);
     res.json({ deleted });
   });
 
@@ -145,6 +176,66 @@ export function schedulingRoutes(db: Db) {
     const result = await svc.listScheduledIssues(companyId, { from, to, limit, cursor });
     res.json(result);
   });
+
+  router.post(
+    "/companies/:companyId/scheduled-issues",
+    validate(createScheduledIssueSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      // Quick add is a board feature. The agent issue-create route applies low-trust and
+      // task-bridge guards that this route does not, so agents must use that route.
+      if (req.actor.type === "agent") throw forbidden("Agents cannot use quick add");
+      await assertCanGenerate(req, companyId);
+      const actor = getActorInfo(req);
+      const publications: ActivityPublication[] = [];
+      const ids = actorIds(req);
+      const result = await svc.createScheduledIssue(
+        companyId,
+        req.body,
+        { agentId: ids.agentId ?? null, userId: ids.userId },
+        async (tx, created) => {
+            if (created.deduplicated) return;
+            const txDb = tx as unknown as Db;
+            const base = {
+              companyId,
+              actorType: actor.actorType,
+              actorId: actor.actorId,
+              agentId: actor.agentId,
+              runId: actor.runId,
+              agentApiKeyId: actor.agentApiKeyId,
+              entityType: "issue",
+              entityId: created.issueId,
+            };
+            await logActivity(
+              txDb,
+              { ...base, action: "issue.created", details: { title: created.title, identifier: created.identifier } },
+              publications,
+            );
+            await logActivity(
+              txDb,
+              {
+                ...base,
+                action: "issue.scheduling_updated",
+                details: {
+                  scheduledAt: created.scheduling.scheduledAt,
+                  deferUntil: created.scheduling.deferUntil,
+                  scheduledDurationMinutes: created.scheduling.scheduledDurationMinutes,
+                  _previous: null,
+                },
+              },
+              publications,
+            );
+        },
+      );
+      for (const publication of publications) publishActivity(publication);
+      res.status(result.deduplicated ? 200 : 201).json({
+        issueId: result.issueId,
+        identifier: result.identifier,
+        title: result.title,
+        scheduling: result.scheduling,
+      });
+    },
+  );
 
   // --- Recurring scheduling routines (templates) ---
 

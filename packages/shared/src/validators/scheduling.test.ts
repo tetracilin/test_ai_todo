@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createScheduledIssueSchema,
   createSchedulingRoutineSchema,
   generateSchedulingRoutineIssuesSchema,
   updateSchedulingRoutineSchema,
@@ -39,5 +40,24 @@ describe("scheduling routine validators", () => {
     ]) {
       expect(input.schema.safeParse(input.value).success).toBe(false);
     }
+  });
+});
+
+describe("createScheduledIssueSchema", () => {
+  it("accepts a title with an estimate and trims the title", () => {
+    const parsed = createScheduledIssueSchema.parse({ title: "  Write report  ", estimateMinutes: 30 });
+    expect(parsed.title).toBe("Write report");
+    expect(parsed.estimateMinutes).toBe(30);
+  });
+
+  it("rejects an empty or whitespace-only title", () => {
+    expect(createScheduledIssueSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "   " }).success).toBe(false);
+  });
+
+  it("rejects an estimate outside 1 to 1440 minutes and a non-uuid clientRequestId", () => {
+    expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 0 }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 1441 }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "x", clientRequestId: "abc" }).success).toBe(false);
   });
 });
