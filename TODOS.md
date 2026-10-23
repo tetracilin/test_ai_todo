@@ -74,3 +74,27 @@ reason the other two went unnoticed for five days.
   - Why: once users store their own AI keys (D5), losing or leaking `master.key` exposes or destroys every user's credentials.
   - Context: `server/src/services/secrets.ts` (`local_encrypted` provider); instance state under `~/.paperclip/instances/<id>/secrets/`.
   - Depends on: nothing; more urgent once PR 4 merges.
+
+- [ ] **Per-credential usage view for key owners** (P3, human: M / CC: S)
+  - What: show a key owner which agents use their AI connection and when it last ran.
+  - Why: deferred from /autoplan CEO review (E3), 2026-10-23; owners cannot see where their key is used.
+  - Context: belongs to sub-project 2 (BYO-key onboarding UI); data comes from the D11 payer column and D17 events in `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md`.
+  - Depends on: PR 4 (`feature/ai-connections-foundation`).
+
+- [ ] **Auto-migrate existing Claude `user_secret_ref` bindings to managed connections** (P3, human: M / CC: S)
+  - What: offer existing agents with an `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` `user_secret_ref` binding a one-step move to a managed connection.
+  - Why: deferred (E4); adoption is rejected while a conflicting env binding exists, so every existing agent needs a manual step otherwise.
+  - Context: conflict rule `AI_CONNECTION_CREDENTIAL_CONFLICT` in the spec's 4.5; existing bindings in `server/src/services/secrets.ts` and `agent-secret-bindings.ts`.
+  - Depends on: PR 4; owner choosing approach A at the PR-P2 gate.
+
+- [ ] **Per-credential spend shown to the key owner** (P3, human: M / CC: S)
+  - What: show each key owner the spend recorded against their credential.
+  - Why: deferred (E5); with bring-your-own keys the user pays the provider, and budgets alone do not show that.
+  - Context: builds on the D11 nullable payer column on cost events; related to the per-payer budget TODO above.
+  - Depends on: PR 4.
+
+- [ ] **Server-side provider proxy for subprocess adapter egress** (P3, human: L / CC: M)
+  - What: route Claude Code / Hermes subprocess provider traffic through a server-side proxy that applies the egress guard per connection.
+  - Why: the egress guard in the upstream-adapters spec pins the provider base URL at config write and run start, but a DNS rebind inside the subprocess is a documented residual risk (eng review H3, 2026-10-23).
+  - Context: `technical-spec/specs/2026-10-23-upstream-adapters-ai-connections-design.md` 4.4 and 4.6.
+  - Depends on: PR 5 (`feature/custom-model-providers`).
