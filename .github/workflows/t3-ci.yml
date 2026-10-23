@@ -11,6 +11,11 @@
 # branch protection then waits forever for a context that never reports — the same
 # deadlock the deleted pr.yml's `verify`/`e2e` left on main.
 #
+# Docs-only pull requests skip `build` and `build-image` (see the `changes` job). They
+# still report: a job skipped by its `if:` counts as passed for a required check, while a
+# workflow-level `paths-ignore` would never report and the PR would wait forever. `unit`
+# always runs, so the SSoT guards still gate every docs change.
+#
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
 # See PLAN_CICD.md §1.2 and technical-spec/fork/ORIGIN.md.
@@ -31,6 +36,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether a pull request changes only documentation. Fails safe: pushes,
+  # an empty diff, or any error in this job all mean "build everything", because
+  # the downstream `if:` only skips on an explicit docs_only == 'true'.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          # The PR merge commit and its first parent (the base branch tip).
+          fetch-depth: 2
+      - id: detect
+        shell: bash
+        run: |
+          docs_only=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only HEAD^1 HEAD)
+            if [ -n "$files" ]; then
+              docs_only=true
+              while IFS= read -r f; do
+                case "$f" in
+                  # Markdown here can be runtime data (SKILL.md, TEAM.md, ...).
+                  packages/*|server/*|cli/*|skills/*|ui/src/*) docs_only=false ;;
+                  technical-spec/*|*.md) ;;
+                  *) docs_only=false ;;
+                esac
+              done <<< "$files"
+            fi
+            echo "Changed files:"
+            echo "$files"
+          fi
+          echo "docs_only=$docs_only"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+
   # Salvaged from pr.yml `policy` (fork guards only — the release-manifest and
   # lockfile-bot steps were deleted) plus the typecheck half of
   # pr.yml `typecheck_release_registry`.
@@ -114,6 +157,8 @@ jobs:
   # is a required check rather than nightly-only.
   build:
     name: build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -140,6 +185,8 @@ jobs:
   # Same build-args as the deploy workflows so CI exercises the same Dockerfile path.
   build-image:
     name: build-image
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

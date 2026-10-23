@@ -10,7 +10,7 @@ Three workflows, all prefixed `t3-`:
 
 | File | Trigger | Runs on | Purpose |
 |---|---|---|---|
-| `t3-ci.yml` | PR / push to `develop`, `main` | GitHub-hosted | Merge gate: image builds + fast unit/typecheck |
+| `t3-ci.yml` | PR / push to `develop`, `main` | GitHub-hosted | Merge gate: image builds + fast unit/typecheck. Docs-only PRs (`technical-spec/**`, `*.md` outside code dirs) skip `build`/`build-image`; skipped jobs still satisfy the required checks |
 | `t3-nightly.yml` | 22:00 UTC, on demand | kmv8 | Deploy `develop` to `t3-nightly` (:33130), then e2e against it |
 | `t3-release.yml` | tag `v*` on `main` | kmv8 | Deploy to `t3-prod` (:33100) behind a human approval gate |
 
