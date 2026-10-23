@@ -109,7 +109,7 @@ Mode notes:
   The generated/claimed key material is kept only in the per-run state directory,
   which is deleted on success unless HERMES_SMOKE_KEEP=1.
 
-See doc/HERMES_GATEWAY_SMOKE.md for Docker Desktop, Linux, same-network,
+See technical-spec/fork/hermes/HERMES_GATEWAY_SMOKE.md for Docker Desktop, Linux, same-network,
 LAN/private-network, and reverse-proxy/TLS examples.
 EOF
 }

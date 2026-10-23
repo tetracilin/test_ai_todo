@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.unmock("http");
 vi.unmock("node:http");
@@ -117,89 +117,8 @@ vi.mock("../telemetry.js", () => ({
   getTelemetryClient: mockGetTelemetryClient,
 }));
 
-vi.mock("../routes/authz.js", async () => {
-  const { forbidden, unauthorized } = await vi.importActual<typeof import("../errors.js")>("../errors.js");
-  function assertAuthenticated(req: Express.Request) {
-    if (req.actor.type === "none") {
-      throw unauthorized();
-    }
-  }
-
-  function assertBoard(req: Express.Request) {
-    if (req.actor.type !== "board") {
-      throw forbidden("Board access required");
-    }
-  }
-
-  function assertCompanyAccess(req: Express.Request, expectedCompanyId: string) {
-    assertAuthenticated(req);
-    if (req.actor.type === "agent" && req.actor.companyId !== expectedCompanyId) {
-      throw forbidden("Agent key cannot access another company");
-    }
-    if (req.actor.type === "board" && req.actor.source !== "local_implicit") {
-      const allowedCompanies = req.actor.companyIds ?? [];
-      if (!allowedCompanies.includes(expectedCompanyId)) {
-        throw forbidden("User does not have access to this company");
-      }
-    }
-  }
-
-  function hasCompanyAccess(req: Express.Request, expectedCompanyId: string): boolean {
-    if (req.actor.type === "none") return false;
-    if (req.actor.type === "agent") return req.actor.companyId === expectedCompanyId;
-    if (req.actor.source === "local_implicit") return true;
-    return (req.actor.companyIds ?? []).includes(expectedCompanyId);
-  }
-
-  async function getAccessibleResource<T extends { companyId: string }>(
-    req: Express.Request,
-    res: { status(code: number): { json(body: unknown): unknown } },
-    resource: T | null | undefined | Promise<T | null | undefined>,
-    notFoundMessage: string,
-  ): Promise<T | null> {
-    const resolved = await resource;
-    if (!resolved || !hasCompanyAccess(req, resolved.companyId)) {
-      res.status(404).json({ error: notFoundMessage });
-      return null;
-    }
-    assertCompanyAccess(req, resolved.companyId);
-    return resolved;
-  }
-
-  function assertInstanceAdmin(req: Express.Request) {
-    assertBoard(req);
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
-    throw forbidden("Instance admin access required");
-  }
-
-  function getActorInfo(req: Express.Request) {
-    assertAuthenticated(req);
-    if (req.actor.type === "agent") {
-      return {
-        actorType: "agent" as const,
-        actorId: req.actor.agentId ?? "unknown-agent",
-        agentId: req.actor.agentId ?? null,
-        runId: req.actor.runId ?? null,
-      };
-    }
-    return {
-      actorType: "user" as const,
-      actorId: req.actor.userId ?? "board",
-      agentId: null,
-      runId: req.actor.runId ?? null,
-    };
-  }
-
-  return {
-    assertAuthenticated,
-    assertBoard,
-    assertCompanyAccess,
-    assertInstanceAdmin,
-    getAccessibleResource,
-    getActorInfo,
-    hasCompanyAccess,
-  };
-});
+// routes/authz.js is intentionally NOT mocked: this suite exists to prove the real
+// company-boundary checks reject cross-tenant callers.
 
 vi.mock("../services/index.js", () => ({
   agentService: () => mockAgentService,
@@ -342,6 +261,13 @@ function resetMockDefaults() {
 }
 
 describe.sequential("agent cross-tenant route authorization", () => {
+  // The agents router is a very large module; import it once up front so the
+  // import cost is not charged to (and does not time out) the first test, whose
+  // leaked continuation would otherwise reset mocks under later tests.
+  beforeAll(async () => {
+    await loadRouteModules();
+  }, 120_000);
+
   beforeEach(() => {
     resetMockDefaults();
   });

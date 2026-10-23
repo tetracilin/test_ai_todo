@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
@@ -64,6 +64,7 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   let previousAgentJwtSecret: string | undefined;
+  const tempDirs: string[] = [];
 
   beforeAll(async () => {
     previousAgentJwtSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
@@ -73,6 +74,10 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
   }, 20_000);
 
   afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
     await db.execute(sql.raw(`
       TRUNCATE TABLE
         "environment_leases",
@@ -161,6 +166,7 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
     const agentId = randomUUID();
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     const tempDir = await mkdtemp(join(tmpdir(), "paperclip-process-env-"));
+    tempDirs.push(tempDir);
     const envPath = join(tempDir, "env.json");
 
     await db.insert(companies).values({

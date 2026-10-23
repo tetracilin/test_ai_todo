@@ -112,7 +112,6 @@
     "server/src/__tests__/low-trust-red-team-routes.test.ts": 25333,
     "server/src/__tests__/multilingual-issues-routes.test.ts": 11329,
     "server/src/__tests__/onboarding-seed-route.test.ts": 8981,
-    "server/src/__tests__/openapi-routes.test.ts": 3234,
     "server/src/__tests__/openclaw-invite-prompt-route.test.ts": 3938,
     "server/src/__tests__/opencode-local-adapter-environment.test.ts": 1071,
     "server/src/__tests__/permissions-upgrade-boundary-routes.test.ts": 11054,

@@ -18,6 +18,7 @@ function createDevServerStatusFile(payload: unknown) {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -211,3 +212,89 @@ describe("POST /health/dev-server/restart", () => {
     }
   });
 });
+
+describe("GET /health dev-server token rejection", () => {
+  it("keeps dev-server metadata redacted when the supervisor token is wrong or missing", async () => {
+    vi.stubEnv(
+      "PAPERCLIP_DEV_SERVER_STATUS_FILE",
+      createDevServerStatusFile({
+        dirty: true,
+        lastChangedAt: "2026-03-20T12:00:00.000Z",
+        changedPathCount: 1,
+        changedPathsSample: ["server/src/routes/health.ts"],
+        pendingMigrations: [],
+        lastRestartAt: null,
+      }),
+    );
+    vi.stubEnv("PAPERCLIP_DEV_SERVER_STATUS_TOKEN", "dev-runner-token");
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue([{ count: 1 }]),
+        })),
+      })),
+    } as unknown as Db;
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).actor = { type: "none", source: "none" };
+      next();
+    });
+    app.use(
+      "/health",
+      healthRoutes(db, {
+        deploymentMode: "authenticated",
+        deploymentExposure: "private",
+        authReady: true,
+        companyDeletionEnabled: true,
+        serverInfo: {
+          processStartedAt: "2026-03-20T11:00:00.000Z",
+          git: { available: false, unavailableReason: "git_unavailable" },
+        },
+      }),
+    );
+
+    const wrong = await request(app).get("/health").set("X-Paperclip-Dev-Server-Status-Token", "not-the-token");
+    const missing = await request(app).get("/health");
+
+    for (const res of [wrong, missing]) {
+      expect(res.status).toBe(200);
+      expect(res.body.devServer).toBeUndefined();
+      expect(res.body.serverInfo).toBeUndefined();
+    }
+  });
+});
+
+describe("POST /health/dev-server/restart preconditions", () => {
+  it("answers 404 when no dev-server supervisor status file is configured", async () => {
+    vi.stubEnv("PAPERCLIP_DEV_SERVER_STATUS_FILE", "");
+    const app = express();
+    app.use("/health", healthRoutes(undefined));
+
+    const res = await request(app).post("/health/dev-server/restart");
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "dev_server_supervisor_unavailable" });
+  });
+
+  it("answers 409 and writes no request when no restart is required", async () => {
+    const statusFile = createDevServerStatusFile({
+      dirty: false,
+      lastChangedAt: null,
+      changedPathCount: 0,
+      changedPathsSample: [],
+      pendingMigrations: [],
+      lastRestartAt: null,
+    });
+    vi.stubEnv("PAPERCLIP_DEV_SERVER_STATUS_FILE", statusFile);
+    const app = express();
+    app.use("/health", healthRoutes(undefined));
+
+    const res = await request(app).post("/health/dev-server/restart");
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: "restart_not_required" });
+    expect(existsSync(path.join(path.dirname(statusFile), "dev-server-restart-request.json"))).toBe(false);
+  });
+});
+

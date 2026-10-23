@@ -69,6 +69,28 @@
       }
     },
     {
+      "name": "update-record-ok",
+      "request": {
+        "method": "PATCH",
+        "path": "/api/table/tblSlice1Pilot/record/recEvidence01",
+        "query": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "id": "recEvidence01",
+          "name": "WP-1 evidence",
+          "fields": { "Ten cong viec": "Lap rap phan co khi", "Trang thai": "done" },
+          "autoNumber": 17,
+          "createdTime": "2026-09-10T02:14:05.000Z",
+          "lastModifiedTime": "2026-09-14T03:00:00.000Z",
+          "createdBy": "Paperclip Bot",
+          "lastModifiedBy": "Paperclip Bot"
+        }
+      }
+    },
+    {
       "name": "list-records-403-restricted",
       "request": {
         "method": "GET",

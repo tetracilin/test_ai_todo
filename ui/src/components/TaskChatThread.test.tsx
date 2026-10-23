@@ -903,18 +903,19 @@ describe("TaskChatThread feed controls (TVR-A04)", () => {
     // on a macrotask, not synchronously (same convention as
     // TaskMessageScroller.test.tsx).
     scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="task-chat-jump-to-latest"]')).not.toBeNull(),
+    );
 
     const jump = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-jump-to-latest"]');
-    expect(jump).not.toBeNull();
     flushSync(() => jump!.click());
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(scrollToSpy).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
 
     // Arrival at the bottom re-pins and hides the control.
     scroller.scrollTop = 600; // 1000 - 600 - 400 = 0 → pinned
     scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container.querySelector('[data-testid="task-chat-jump-to-latest"]')).toBeNull();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="task-chat-jump-to-latest"]')).toBeNull(),
+    );
   });
 });

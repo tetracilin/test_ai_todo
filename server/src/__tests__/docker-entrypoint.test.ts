@@ -116,9 +116,27 @@ describe("docker-entrypoint.sh", () => {
     ).rejects.toMatchObject({ stderr: expect.stringContaining("BETTER_AUTH_SECRET_FILE is not readable") });
   });
 
+  it("fails closed when BETTER_AUTH_SECRET_FILE is empty", async () => {
+    installStubs({ uid: 1000, gid: 1000 });
+    const secretFile = join(stubDir, "empty-secret");
+    writeFileSync(secretFile, "", { mode: 0o600 });
+
+    await expect(
+      execFileAsync("sh", [ENTRYPOINT, "echo", "must-not-run"], {
+        env: {
+          PATH: `${stubDir}:${process.env.PATH}`,
+          USER_UID: "1000",
+          USER_GID: "1000",
+          BETTER_AUTH_SECRET_FILE: secretFile,
+        },
+      }),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("BETTER_AUTH_SECRET_FILE is empty") });
+  });
+
   it("remaps the node user and chowns /paperclip before gosu when root requests a different UID/GID", async () => {
-    // The stubbed node uid stays 1000 while the stat probe reports the old
-    // ownership, modelling the post-remap mismatch that must trigger chown.
+    // The stubbed node uid stays 1000 while the stubbed find probe reports a
+    // mismatched entry, modelling the post-remap ownership drift that must
+    // trigger chown.
     installStubs({ uid: 0, gid: 0, homeMismatch: true });
 
     const { stdout, calls } = await runEntrypoint({ USER_UID: "1001", USER_GID: "1001", PAPERCLIP_HOME: stubDir });

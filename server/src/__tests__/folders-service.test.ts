@@ -20,6 +20,17 @@ import { folderService } from "../services/folders.js";
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
+describe("folder slug schema", () => {
+  // Pure validation: runs on hosts without embedded Postgres.
+  it("accepts lowercase kebab slugs", () => {
+    expect(folderSlugSchema.safeParse("valid-slug-2").success).toBe(true);
+  });
+
+  it.each(["../escape", "Valid Slug", "", "a/b", "-leading"])("rejects the invalid slug %j", (slug) => {
+    expect(folderSlugSchema.safeParse(slug).success).toBe(false);
+  });
+});
+
 describeEmbeddedPostgres("folder service", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
@@ -197,11 +208,7 @@ describeEmbeddedPostgres("folder service", () => {
     });
   });
 
-  it("rejects invalid slugs, cycles, and folders deeper than four levels", async () => {
-    expect(folderSlugSchema.safeParse("../escape").success).toBe(false);
-    expect(folderSlugSchema.safeParse("Valid Slug").success).toBe(false);
-    expect(folderSlugSchema.safeParse("valid-slug-2").success).toBe(true);
-
+  it("rejects cycles and folders deeper than four levels", async () => {
     const companyId = await seedCompany();
     const svc = folderService(db);
     const level1 = await svc.create(companyId, { kind: "skill", name: "Level 1" });

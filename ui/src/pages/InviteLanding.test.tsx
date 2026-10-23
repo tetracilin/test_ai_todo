@@ -80,6 +80,13 @@ async function flushReact() {
 
 describe("InviteLandingPage", () => {
   let container: HTMLDivElement;
+  const originalGetContext = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+  const originalToDataURL = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "toDataURL");
+
+  function restoreCanvasDescriptor(name: "getContext" | "toDataURL", descriptor: PropertyDescriptor | undefined) {
+    if (descriptor) Object.defineProperty(HTMLCanvasElement.prototype, name, descriptor);
+    else delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)[name];
+  }
 
   beforeEach(() => {
     localStorage.clear();
@@ -128,6 +135,9 @@ describe("InviteLandingPage", () => {
     container.remove();
     document.body.innerHTML = "";
     vi.clearAllMocks();
+    localStorage.clear();
+    restoreCanvasDescriptor("getContext", originalGetContext);
+    restoreCanvasDescriptor("toDataURL", originalToDataURL);
   });
 
   it("defaults invite auth to account creation and guides existing users back to sign in", async () => {

@@ -24,6 +24,7 @@ import {
   findServerAdapter,
   findActiveServerAdapter,
   listEnabledServerAdapters,
+  listSelectableServerAdapters,
   registerServerAdapter,
   resolveExternalAdapterRegistration,
   unregisterServerAdapter,
@@ -132,6 +133,8 @@ interface AdapterInfo {
   modelsCount: number;
   loaded: boolean;
   disabled: boolean;
+  /** True when operators may pick this adapter when creating an agent (see listSelectableServerAdapters). */
+  selectable: boolean;
   capabilities: AdapterCapabilities;
   acp?: ServerAdapterModule["acp"];
   /** True when an external plugin has replaced a built-in adapter of the same type. */
@@ -197,7 +200,7 @@ export function buildAdapterCapabilities(adapter: ServerAdapterModule): AdapterC
   };
 }
 
-function buildAdapterInfo(adapter: ServerAdapterModule, externalRecord: AdapterPluginRecord | undefined, disabledSet: Set<string>): AdapterInfo {
+function buildAdapterInfo(adapter: ServerAdapterModule, externalRecord: AdapterPluginRecord | undefined, disabledSet: Set<string>, selectableSet: Set<string>): AdapterInfo {
   const fromDisk = externalRecord ? readAdapterPackageVersionFromDisk(externalRecord) : undefined;
   return {
     type: adapter.type,
@@ -206,6 +209,7 @@ function buildAdapterInfo(adapter: ServerAdapterModule, externalRecord: AdapterP
     modelsCount: (adapter.models ?? []).length,
     loaded: true, // If it's in the registry, it's loaded
     disabled: disabledSet.has(adapter.type),
+    selectable: selectableSet.has(adapter.type) && !disabledSet.has(adapter.type),
     capabilities: buildAdapterCapabilities(adapter),
     ...(adapter.acp ? { acp: adapter.acp } : {}),
     overriddenBuiltin: externalRecord ? BUILTIN_ADAPTER_TYPES.has(adapter.type) : undefined,
@@ -282,9 +286,10 @@ export function adapterRoutes() {
       listAdapterPlugins().map((r) => [r.type, r]),
     );
     const disabledSet = new Set(getDisabledAdapterTypes());
+    const selectableSet = new Set(listSelectableServerAdapters().map((a) => a.type));
 
     const result: AdapterInfo[] = registeredAdapters.map((adapter) =>
-      buildAdapterInfo(adapter, externalRecords.get(adapter.type), disabledSet),
+      buildAdapterInfo(adapter, externalRecords.get(adapter.type), disabledSet, selectableSet),
     ).sort((a, b) => a.type.localeCompare(b.type));
 
     res.json(result);
@@ -437,7 +442,8 @@ export function adapterRoutes() {
 
     const externalRecord = getAdapterPluginByType(adapterType);
     const disabledSet = new Set(getDisabledAdapterTypes());
-    res.json(buildAdapterInfo(adapter, externalRecord, disabledSet));
+    const selectableSet = new Set(listSelectableServerAdapters().map((a) => a.type));
+    res.json(buildAdapterInfo(adapter, externalRecord, disabledSet, selectableSet));
   });
 
   /**

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHostClientHandlers } from "../../../packages/plugins/sdk/src/host-client-factory.js";
 import type { WorkerHostCallContext } from "../../../packages/plugins/sdk/src/protocol.js";
 import { SANDBOX_STARTUP_SPAN_ATTRS as A } from "@paperclipai/adapter-utils/acpx-engine/startup-timing";
@@ -42,6 +42,14 @@ function handlersFor(capabilities: readonly string[]) {
 describe("plugin provider span host handler", () => {
   beforeEach(() => {
     mockRecordSpan.mockReset();
+    // Pin only Date so the host's timestamp-skew/age bounds are evaluated
+    // against a fixed clock rather than the wall clock.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("records a span with the clamped name and the allowlisted attributes", async () => {

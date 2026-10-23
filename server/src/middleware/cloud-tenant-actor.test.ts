@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Request } from "express";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -170,6 +170,33 @@ describe("resolveCloudTenantActor (shared-pool hardening)", () => {
 
     expect(insertedTables.filter((table) => table === authUsers)).toHaveLength(3);
     expect(insertedTables.filter((table) => table === companyMemberships)).toHaveLength(3);
+  });
+
+  it("debounces identical repeat contexts inside the window but still purges stale admin rows", async () => {
+    const { db, insertedTables, deletedTables } = createFakeDb();
+
+    await resolveCloudTenantActor(db, fakeReq(VALID_HEADERS));
+    await resolveCloudTenantActor(db, fakeReq(VALID_HEADERS));
+
+    expect(insertedTables.filter((table) => table === authUsers)).toHaveLength(1);
+    expect(insertedTables.filter((table) => table === companyMemberships)).toHaveLength(1);
+    // The stale instance_admin purge is a security control and is never debounced.
+    expect(deletedTables.filter((table) => table === instanceUserRoles)).toHaveLength(2);
+  });
+
+  it("resyncs an identical context once the debounce window has elapsed", async () => {
+    vi.useFakeTimers({ now: new Date("2026-09-01T00:00:00.000Z") });
+    try {
+      const { db, insertedTables } = createFakeDb();
+
+      await resolveCloudTenantActor(db, fakeReq(VALID_HEADERS));
+      vi.setSystemTime(new Date("2026-09-01T00:00:06.000Z"));
+      await resolveCloudTenantActor(db, fakeReq(VALID_HEADERS));
+
+      expect(insertedTables.filter((table) => table === authUsers)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns null when the server token is unset", async () => {

@@ -518,7 +518,7 @@ describe("probeManagedWorkspaceReadiness", () => {
     expect(resolveManagedWorkspaceIdentity({ ...complete, env: {} })).toBeNull();
   });
 
-  it("derives distinct key material per company on the same workspace", () => {
+  it("records the company in the identity while sharing one per-workspace handoff key", () => {
     const base = {
       workspaceCwd: "/srv/worktree",
       executionWorkspaceId: "ews-1",
@@ -681,7 +681,7 @@ describe("waitForManagedWorkspaceReadiness", () => {
       },
     });
     expect(result).toMatchObject({ ok: false, reason: "unreachable" });
-    // 1s budget at the 250ms retry interval: four probes, then the budget is spent.
+    // 1s budget at the 250ms retry interval: probes at t=0,250,500,750,1000ms, then the budget is spent.
     expect(attempt).toBe(5);
   });
 });

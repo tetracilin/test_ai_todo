@@ -13,7 +13,7 @@
 #
 # Hard fork of paperclipai/paperclip: upstream's pr.yml is gone. Its FAST code-behaviour
 # jobs live here; its SLOW jobs (sharded vitest, e2e) moved to t3-nightly.yml.
-# See PLAN_CICD.md §1.2 and doc/ORIGIN.md.
+# See PLAN_CICD.md §1.2 and technical-spec/fork/ORIGIN.md.
 
 name: t3-ci
 
@@ -70,6 +70,11 @@ jobs:
         run: node --test ./scripts/__tests__/e2e-shard.test.mjs
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+      - name: Test agent loop guard and state scripts
+        # The guard decides whether an agent patch may be pushed
+        # (docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md section 5).
+        # List the files: Node 22 does not accept a directory argument to --test.
+        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs
       - name: Test plugin-SDK dev symlinker
         # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
         # otherwise release-only and is deleted with the rest of upstream's

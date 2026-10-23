@@ -325,7 +325,7 @@ describe("routine routes", () => {
     expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, { projectId });
   });
 
-  it("lists routine revisions for a board member in newest-first service order", async () => {
+  it("lists routine revisions for a board member by returning the service result unchanged", async () => {
     const app = await createApp({
       type: "board",
       userId: "board-user",

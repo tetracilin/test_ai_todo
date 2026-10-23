@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockProjectService = vi.hoisted(() => ({
   create: vi.fn(),
@@ -206,6 +206,17 @@ describe.sequential("workspace runtime service route authorization", () => {
   const projectId = "11111111-1111-4111-8111-111111111111";
   const workspaceId = "22222222-2222-4222-8222-222222222222";
   const executionWorkspaceId = "33333333-3333-4333-8333-333333333333";
+
+  // The route modules pull in a large dependency graph. Pay that one-off cold-import cost here
+  // so it is not charged against (and does not time out) the first test's request budget.
+  beforeAll(async () => {
+    registerWorkspaceRouteMocks();
+    await Promise.all([
+      import("../routes/projects.js"),
+      import("../routes/execution-workspaces.js"),
+      import("../middleware/index.js"),
+    ]);
+  }, 120_000);
 
   beforeEach(() => {
     vi.clearAllMocks();

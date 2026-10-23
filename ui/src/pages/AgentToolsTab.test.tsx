@@ -8,7 +8,7 @@ import type {
   ToolPolicy,
   ToolProfileEffectiveSummary,
 } from "@paperclipai/shared";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 
 const mockToolsApi = vi.hoisted(() => ({
@@ -101,6 +101,14 @@ function makePolicy(overrides: Partial<ToolPolicy>): ToolPolicy {
 }
 
 describe("AgentToolsTab", () => {
+  let tabModule: typeof import("./AgentToolsTab");
+
+  // Import the (heavy) page module once, outside any single test's 5s budget, so a cold
+  // transform cannot be misreported as a test failure.
+  beforeAll(async () => {
+    tabModule = await import("./AgentToolsTab");
+  }, 120_000);
+
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -124,7 +132,7 @@ describe("AgentToolsTab", () => {
   });
 
   async function renderTab() {
-    const { AgentToolsTab } = await import("./AgentToolsTab");
+    const { AgentToolsTab } = tabModule;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const agent = { id: "agent-1", name: "Coder" } as never;
     await act(async () => {
@@ -141,7 +149,7 @@ describe("AgentToolsTab", () => {
   }
 
   it("preserves checkbox changes made after the last saved install state", async () => {
-    const { mergeInstallDraft } = await import("./AgentToolsTab");
+    const { mergeInstallDraft } = tabModule;
 
     expect(
       mergeInstallDraft(

@@ -42,6 +42,12 @@ if (!embeddedPostgresSupport.supported) {
  * These cases run against real Postgres because the recovery guarantee is a
  * compare-and-swap over `workspace_operations`, not an in-process lock.
  */
+/**
+ * A pid no OS will ever hand out: it is above Linux's hard pid_max ceiling (2^22) and every
+ * macOS/Windows pid range, so `process.kill(pid, 0)` always reports it as gone.
+ */
+const DEAD_PID = 2_147_483_646;
+
 describeEmbeddedPostgres("managed runtime-control operation recovery", () => {
   let db!: ReturnType<typeof createDb>;
   let stopDb: (() => Promise<void>) | null = null;
@@ -171,8 +177,7 @@ describeEmbeddedPostgres("managed runtime-control operation recovery", () => {
   it("recovers a start abandoned by a dead server process and frees managed control", async () => {
     const { companyId, executionWorkspaceId } = await seedWorkspace();
     const service = workspaceOperationService(db);
-    // pid 2^22-1 is above every Linux/macOS pid ceiling, so it can never be alive.
-    const deadPid = 4_194_303;
+    const deadPid = DEAD_PID;
     const staleId = await seedRunningStart({
       companyId,
       executionWorkspaceId,
@@ -276,7 +281,7 @@ describeEmbeddedPostgres("managed runtime-control operation recovery", () => {
     const legacyId = await seedRunningStart({
       companyId,
       executionWorkspaceId,
-      owner: { ownerId: randomUUID(), pid: 4_194_303, heartbeatAt: new Date() },
+      owner: { ownerId: randomUUID(), pid: DEAD_PID, heartbeatAt: new Date() },
       columnDefaultTimestamps: true,
       withLog: true,
     });
@@ -294,7 +299,7 @@ describeEmbeddedPostgres("managed runtime-control operation recovery", () => {
     const staleId = await seedRunningStart({
       companyId,
       executionWorkspaceId,
-      owner: { ownerId: randomUUID(), pid: 4_194_303, heartbeatAt: new Date() },
+      owner: { ownerId: randomUUID(), pid: DEAD_PID, heartbeatAt: new Date() },
     });
 
     const [a, b] = await Promise.all([
@@ -341,12 +346,12 @@ describeEmbeddedPostgres("managed runtime-control operation recovery", () => {
     const staleA = await seedRunningStart({
       companyId: laneA.companyId,
       executionWorkspaceId: laneA.executionWorkspaceId,
-      owner: { ownerId: randomUUID(), pid: 4_194_303, heartbeatAt: new Date() },
+      owner: { ownerId: randomUUID(), pid: DEAD_PID, heartbeatAt: new Date() },
     });
     const staleB = await seedRunningStart({
       companyId: laneB.companyId,
       executionWorkspaceId: laneB.executionWorkspaceId,
-      owner: { ownerId: randomUUID(), pid: 4_194_303, heartbeatAt: new Date() },
+      owner: { ownerId: randomUUID(), pid: DEAD_PID, heartbeatAt: new Date() },
     });
 
     await expect(

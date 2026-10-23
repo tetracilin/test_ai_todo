@@ -7,17 +7,42 @@ import {
   type LoginRunnerResult,
 } from "./login-runner-lifecycle.js";
 
+// Run `body`, then give the event loop a few turns so a rejection nobody handled
+// surfaces as an "unhandledRejection" event. Returns every reason collected.
+async function collectUnhandledRejections(body: () => Promise<void>): Promise<unknown[]> {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    await body();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  return unhandled;
+}
+
+// These two are compile-time contracts (the Record forces an exact key set, so an
+// added or removed union member fails typecheck); the runtime assertions only pin
+// the documented shape.
 describe("LoginRunnerOutcome", () => {
   it("names the four terminal outcomes", () => {
-    const outcomes: LoginRunnerOutcome[] = ["success", "failure", "timeout", "cancelled"];
-    expect(new Set(outcomes).size).toBe(4);
+    const outcomes: Record<LoginRunnerOutcome, true> = {
+      success: true,
+      failure: true,
+      timeout: true,
+      cancelled: true,
+    };
+    expect(Object.keys(outcomes).sort()).toEqual(["cancelled", "failure", "success", "timeout"]);
   });
 });
 
 describe("LoginRunnerResult", () => {
-  it("carries the fixed status fields", () => {
-    const result: LoginRunnerResult = { outcome: "success", exitCode: 0, promptSurfaced: true };
-    expect(result).toEqual({ outcome: "success", exitCode: 0, promptSurfaced: true });
+  it("carries only the fixed, non-secret status fields", () => {
+    const result = { outcome: "success", exitCode: 0, promptSurfaced: true } satisfies LoginRunnerResult;
+    expect(Object.keys(result).sort()).toEqual(["exitCode", "outcome", "promptSurfaced"]);
   });
 });
 
@@ -82,8 +107,10 @@ describe("raceLoginRunnerExit", () => {
     // The pre-aborted signal already cancelled the race. The work then rejects.
     // The helper consumes the late rejection, so it never becomes an unhandled
     // rejection.
-    expect(() => rejectWork(new Error("late"))).not.toThrow();
-    await Promise.resolve();
+    const unhandled = await collectUnhandledRejections(async () => {
+      rejectWork(new Error("late"));
+    });
+    expect(unhandled).toEqual([]);
   });
 
   it("rejects when the work rejects", async () => {
@@ -119,8 +146,10 @@ describe("raceLoginRunnerExit", () => {
     expect(raced).toEqual<LoginRunnerRaceResult>({ kind: "timeout" });
     // The race already settled on the timeout. The work then rejects. The helper
     // consumes the late rejection, so it never becomes an unhandled rejection.
-    expect(() => rejectWork(new Error("late"))).not.toThrow();
-    await Promise.resolve();
+    const unhandled = await collectUnhandledRejections(async () => {
+      rejectWork(new Error("late"));
+    });
+    expect(unhandled).toEqual([]);
   });
 });
 

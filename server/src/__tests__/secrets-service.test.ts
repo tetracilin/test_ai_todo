@@ -1161,13 +1161,13 @@ describeEmbeddedPostgres("secretService", () => {
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const rejected = results.find((result) => result.status === "rejected");
-    expect(rejected).toBeTruthy();
-    if (rejected?.status === "rejected") {
-      expect(rejected.reason).toMatchObject({
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: {
         status: 409,
         message: "User secret value already exists",
-      });
-    }
+      },
+    });
 
     const rows = await db
       .select()
@@ -1316,13 +1316,13 @@ describeEmbeddedPostgres("secretService", () => {
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const rejected = results.find((result) => result.status === "rejected");
-    expect(rejected).toBeTruthy();
-    if (rejected?.status === "rejected") {
-      expect(rejected.reason).toMatchObject({
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: {
         status: 409,
         message: "User secret definition already exists: github_token",
-      });
-    }
+      },
+    });
 
     const rows = await db
       .select()
@@ -3774,6 +3774,6 @@ describeEmbeddedPostgres("secretService", () => {
         actorType: "user",
         actorId: "user-without-membership",
       }),
-    ).rejects.toThrow(/active member|secrets:read|forbidden/i);
+    ).rejects.toMatchObject({ status: 403 });
   });
 });

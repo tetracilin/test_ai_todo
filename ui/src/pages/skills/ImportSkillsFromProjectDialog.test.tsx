@@ -89,9 +89,19 @@ describe("ImportSkillsFromProjectDialog selection logic", () => {
     expect(selectAll.has(selectionKey(WS_A, ".claude/skills/delta"))).toBe(false);
   });
 
-  it("deselect all yields an empty selection (N = 0)", () => {
-    const deselectAll = new Map<string, { workspaceId: string; path: string }>();
-    expect(deselectAll.size).toBe(0);
+  it("deselect all state (an empty map, as defaultSelection returns) differs from select all and stays independent of it", () => {
+    // The dialog's deselectAll() resets to an empty Map, i.e. the same state
+    // defaultSelection() produces. Asserting on a locally-built empty Map would
+    // test nothing, so pin the observable contract: the empty state is not
+    // aliased to a select-all result and later mutation of one does not leak.
+    const candidates = mixedCandidates();
+    const selected = selectAllSelection(candidates);
+    const cleared = defaultSelection(candidates);
+    expect(selected.size).toBeGreaterThan(0);
+    expect(cleared.size).toBe(0);
+    selected.clear();
+    expect(defaultSelection(candidates).size).toBe(0);
+    expect(selectAllSelection(candidates).size).toBeGreaterThan(0);
   });
 
   it("selection payload carries workspaceId + path for each checked new candidate", () => {

@@ -44,20 +44,14 @@ jobs:
   deploy:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
-    # Every value another job (chiefly `summary`) needs after this job finishes,
-    # so those jobs can report accurately without needing `environment: staging`
-    # or the deploy secrets themselves. `tester_email` is computed in its own
-    # always-run step below because the seed step it used to live next to is
-    # skipped when the guard skips the deploy.
-    outputs:
-      skip: ${{ steps.guard.outputs.skip }}
-      compare: ${{ steps.guard.outputs.compare }}
-      last_sha: ${{ steps.guard.outputs.last }}
-      head_sha: ${{ steps.guard.outputs.head }}
-      changes: ${{ steps.guard.outputs.changes }}
-      image: ${{ steps.tag.outputs.image }}
-      drift: ${{ steps.drift.outputs.report }}
-      tester_email: ${{ steps.report.outputs.tester_email }}
+    # Deploy is gated on the test jobs: staging only ever receives a sha whose
+    # full vitest suite (slow-tests) and Playwright run (e2e) both passed. If
+    # either fails or is cancelled, this job is skipped and the deployed sha is
+    # unchanged (the marker file is only written after a deploy). The reverse
+    # direction stays decoupled on purpose (ASSUMPTION A6): the test jobs do not
+    # `needs:` deploy, because Playwright bootstraps its own instance on a
+    # GitHub-hosted runner and must run even when the deploy guard skips.
+    needs: [slow-tests, e2e]
     environment:
       name: staging
       url: http://100.103.41.112:33130
@@ -210,7 +204,7 @@ jobs:
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `staging` GitHub Environment to override this default.
-          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway,claude_local' }}
+          PAPERCLIP_SELECTABLE_ADAPTER_TYPES: ${{ vars.SELECTABLE_ADAPTER_TYPES || 'hermes_gateway,claude_local,hermes_local' }}
           # deploy/compose.yaml's secrets: block reads these two *_FILE vars,
           # not SECRETS_DIR directly — without them it falls back to a
           # relative ./secrets/... path that doesn't exist on the runner.
@@ -322,7 +316,7 @@ jobs:
         # Deliberately Playwright's bundled Chromium, NOT the runner's stable
         # Google Chrome. pr.yml and e2e.yml both pinned
         # PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome; this fork drops that on purpose
-        # (docs/migration/test-ai-todo-inventory.md: replace Google Chrome
+        # (technical-spec/fork/migration/test-ai-todo-inventory.md: replace Google Chrome
         # invocation with vendor-neutral browser tooling; see also the
         # check:no-google-runtime gate in t3-ci). Bundled Chromium is also
         # version-pinned by the Playwright dependency, so nightly results do
@@ -412,6 +406,19 @@ jobs:
 
       - name: serialized shard ${{ matrix.shard }}/2
         run: pnpm run test:run:serialized --shard-index ${{ matrix.shard }} --shard-count 2
+      - name: Full vitest suite (general + serialized)
+        # pnpm test:run (bare) skips the plugin-sdk build step that
+        # test:run:general / test:run:serialized include, so
+        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
+        # test file that imports it (ERR_MODULE_NOT_FOUND).
+        #
+        # workspace-runtime.test.ts runs in its own job below (non-blocking), so
+        # one flaky suite cannot fail this job or close the deploy gate. The flag
+        # only skips RUNNING it here; the runner still excludes it from the
+        # general-server lane, so it does not run twice or by accident.
+        run: >-
+          pnpm --filter @paperclipai/plugin-sdk ensure-build-deps &&
+          pnpm test:run --skip-suite server/src/__tests__/workspace-runtime.test.ts
 
   workspaces_a:
     name: server-tests (workspaces-a — ui, cli)
@@ -558,4 +565,65 @@ jobs:
           # PR titles are contributor text: never let them ping @everyone,
           # @here, a user, or a role.
           jq -n --arg c "$content" '{content: $c, allowed_mentions: {parse: []}}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+
+  # workspace-runtime.test.ts, on its own.
+  #
+  # It builds real git worktrees and runs pnpm installs, takes about 2 minutes, and
+  # failed once (2026-10-13) on a busy runner. A separate job means:
+  #  - a failure here does not fail slow-tests, so it cannot close the deploy gate;
+  #  - it can be re-run alone from the Actions page ("Re-run failed jobs") to debug;
+  #  - its full log is kept as an artifact.
+  #
+  # continue-on-error keeps the workflow run green when this job fails, and the
+  # deploy job does not `needs:` it. The cost is that a real regression in
+  # workspace setup no longer blocks a deploy. The Discord report below, and the red
+  # job in the Actions UI, are how it is noticed. To make it blocking again, add it
+  # to deploy's `needs:` and remove continue-on-error.
+  workspace-runtime:
+    name: workspace-runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || 'develop' }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: workspace-runtime suite
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+          pnpm test:run --mode serialized --only-suite server/src/__tests__/workspace-runtime.test.ts 2>&1 | tee workspace-runtime.log
+
+      - name: Upload workspace-runtime log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-runtime-log
+          path: workspace-runtime.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Discord report (workspace-runtime)
+        if: failure()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$WEBHOOK" ]] || exit 0
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          jq -n --arg c "$(printf '⚠️ nightly workspace-runtime FAILED on develop (non-blocking, deploy not affected)\n<%s>' "$run_url")" '{content: $c}' \
             | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null

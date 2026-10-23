@@ -941,7 +941,7 @@ describe.sequential("agent skill routes", () => {
         adapterConfig: {},
       }));
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     const createdAgentId = expectResponseId(res.body.id);
     expect(mockAgentService.create).toHaveBeenCalledWith(
       "company-1",
@@ -992,7 +992,7 @@ describe.sequential("agent skill routes", () => {
         adapterConfig: {},
       }));
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     const createdAgentId = expectResponseId(res.body.id);
     expect(res.body).toMatchObject({
       role: "security",
@@ -1028,7 +1028,7 @@ describe.sequential("agent skill routes", () => {
         },
       }));
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     const createdAgentId = expectResponseId(res.body.id);
     expect(mockAgentService.update).toHaveBeenCalledWith(
       createdAgentId,
@@ -1079,7 +1079,7 @@ describe.sequential("agent skill routes", () => {
         adapterConfig: {},
       }));
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     const createdAgentId = expectResponseId(res.body.id);
     expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1107,7 +1107,7 @@ describe.sequential("agent skill routes", () => {
         adapterConfig: {},
       }));
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     const createdAgentId = expectResponseId(res.body.id);
     await vi.waitFor(() => {
       expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(

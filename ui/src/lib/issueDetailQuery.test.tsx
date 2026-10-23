@@ -9,11 +9,16 @@ import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { getIssueDetailQueryOptions } from "./issueDetailCache";
 
-vi.mock("@/api/issues", () => ({
-  issuesApi: {
-    get: vi.fn(),
-  },
-}));
+vi.mock("@/api/issues", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/issues")>();
+  return {
+    ...actual,
+    issuesApi: {
+      ...actual.issuesApi,
+      get: vi.fn(),
+    },
+  };
+});
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -103,32 +108,34 @@ describe("getIssueDetailQueryOptions", () => {
     const partialIssue = makeIssue({ description: null });
     const fullIssue = makeIssue({ description: "GitHub Security Advisory body" });
 
-    queryClient.setQueryData(queryKeys.issues.detail("issue-1"), partialIssue);
-    queryClient.setQueryData(queryKeys.issues.detail("PAP-1442"), partialIssue);
-    vi.mocked(issuesApi.get).mockResolvedValue(fullIssue);
+    try {
+      queryClient.setQueryData(queryKeys.issues.detail("issue-1"), partialIssue);
+      queryClient.setQueryData(queryKeys.issues.detail("PAP-1442"), partialIssue);
+      vi.mocked(issuesApi.get).mockResolvedValue(fullIssue);
 
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetailQueryHarness
-            issueRef="PAP-1442"
-            placeholderIssue={{ id: partialIssue.id, identifier: partialIssue.identifier }}
-          />
-        </QueryClientProvider>,
-      );
-    });
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <IssueDetailQueryHarness
+              issueRef="PAP-1442"
+              placeholderIssue={{ id: partialIssue.id, identifier: partialIssue.identifier }}
+            />
+          </QueryClientProvider>,
+        );
+      });
 
-    await flush();
+      await flush();
 
-    expect(issuesApi.get).toHaveBeenCalledWith("PAP-1442", {
-      signal: expect.any(AbortSignal),
-    });
-    expect(container.textContent).toContain("GitHub Security Advisory body");
-
-    await act(async () => {
-      root.unmount();
-    });
-    queryClient.clear();
-    container.remove();
+      expect(issuesApi.get).toHaveBeenCalledWith("PAP-1442", {
+        signal: expect.any(AbortSignal),
+      });
+      expect(container.textContent).toContain("GitHub Security Advisory body");
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      queryClient.clear();
+      container.remove();
+    }
   });
 });

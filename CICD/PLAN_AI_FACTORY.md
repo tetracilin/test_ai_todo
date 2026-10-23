@@ -2,7 +2,7 @@
 
 Repo: `tetracilin/test_ai_todo` · Host: `kmv8` · Status: **DRAFT, awaiting owner review**
 Extends `CICD/PLAN_CICD.md` (Phase 1–4 there are treated as done or superseded here) and
-`docs/designs/t3-agent-host-access.md` (its Phase 2 becomes Phase 3 below).
+`technical-spec/designs/t3-agent-host-access.md` (its Phase 2 becomes Phase 3 below).
 Written 2026-09-18. Every claim about pipeline state was checked against the Actions API
 that day, not inferred from documents; the documents were wrong in three places (§0.4).
 
@@ -34,7 +34,7 @@ is produced by the **legacy Hermes cron nightly** on kmv8, not by GitHub Actions
 
 `t3-nightly.yml:3` says it *replaces* `/root/.hermes/scripts/t3-nightly-build.sh` and Hermes
 cron `8b51805f9dc5`. `PLAN_CICD.md` §4 step 2 says to disable that cron at cutover. It was
-never disabled: `docs/deploy/kmv8-stack-inventory.md` gap 4 records the owner still receiving
+never disabled: `technical-spec/fork/kmv8-stack-inventory.md` gap 4 records the owner still receiving
 its morning notifications, and `t3-agent-host-access.md` ("Status Quo") says the same.
 
 **Two consequences.** First, every "troubleshooting attempt" aimed at the Actions workflow was
@@ -90,7 +90,7 @@ since 2026-09-17:
 
 | Document | Says | Reality (2026-09-18) |
 |---|---|---|
-| `CLAUDE.md` "Staging / nightly", `TODOS.md:35`, `PLAN_CICD.md` §0 and §8, `docs/operating-with-claude-code.md` "Traps" | `DISCORD_WEBHOOK_URL` unset, no alert ever sent | Set since 2026-09-17; runs 23 and 24 posted |
+| `CLAUDE.md` "Staging / nightly", `TODOS.md:35`, `PLAN_CICD.md` §0 and §8, `technical-spec/fork/operating-with-claude-code.md` "Traps" | `DISCORD_WEBHOOK_URL` unset, no alert ever sent | Set since 2026-09-17; runs 23 and 24 posted |
 | `CLAUDE.md`, operator guide, `PLAN_CICD.md` §0 | e2e has never executed | Executed and passed in runs 23 and 24 |
 | `PLAN_CICD.md` §4, §8 | Hermes cron retired at cutover | Still firing nightly; it is the source of the failure email |
 | `.github/CODEOWNERS` | Owners `@cryppadotta @devinfoley @nickyleach` for `.github/**`, `package.json`, `pnpm-lock.yaml`, `skills/**` | Upstream maintainers, not collaborators here. "Require review from code owners" cannot be enabled until this is rewritten |
@@ -99,7 +99,7 @@ since 2026-09-17:
 
 ## 1. What "AI factory" means for this repository
 
-The charter (`design.md:85-94`, `docs/designs/t3-company-os-ssot.md` premise 5) commits to an
+The charter (`design.md:85-94`, `technical-spec/designs/t3-company-os-ssot.md` premise 5) commits to an
 agent loop that authors and merges PRs, measured on *merged auto-PRs vs. regressions and
 rollbacks*. Industry practice in 2026 (sources in §9) converges on the same shape:
 
@@ -201,7 +201,7 @@ it. Do not `git checkout -- .` or `git clean` it: the dirty state may be somebod
 
 **0.3 Close or refresh the 19 open PRs.** Eleven predate the fork flow and target `main` or
 retired branches (#22, #25, #26, #27, #28, #29, #30, #36, #38, #39, #42); close them with a
-one-line comment pointing at `doc/ORIGIN.md`. Seven are Dependabot (#2, #5, #13, #18, #60,
+one-line comment pointing at `technical-spec/fork/ORIGIN.md`. Seven are Dependabot (#2, #5, #13, #18, #60,
 #61, #93): #93 is red on `t3-ci`; the rest are stale by two weeks. Close all seven and let the
 monthly grouped run (`.github/dependabot.yml`) reopen a single fresh grouped PR against the
 current lockfile. #106 (ci) is current; review and merge it. Result: an open-PR list that
@@ -211,7 +211,7 @@ contains only live work, which is what a steward agent will later be allowed to 
 "Where things live". Docs only, no workflow changes, so it can merge without the `ci` label.
 
 Verification for Phase 0: no legacy email for two consecutive mornings; open PRs ≤ 3;
-`docs/deploy/kmv8-stack-inventory.md` gap 4 closed.
+`technical-spec/fork/kmv8-stack-inventory.md` gap 4 closed.
 
 ### Phase 1 — First fully green nightly (one `fix/*` PR, one `ci` PR)
 
@@ -331,7 +331,7 @@ owner"; confirm `docker inspect` on staging shows a `ghcr.io/…@sha256:` image.
 
 ### Phase 3 — Host operations through a workflow (`t3-hostops`, one `ci` PR)
 
-Exactly `docs/designs/t3-agent-host-access.md` Phase 2, with one addition. Operations as
+Exactly `technical-spec/designs/t3-agent-host-access.md` Phase 2, with one addition. Operations as
 checked-in scripts under `deploy/scripts/hostops/` with the exec bit committed, exposed via
 `workflow_dispatch` with a `choice` input, run on `[self-hosted, kmv8]` under a new `hostops`
 environment with `@tetracilin` as required reviewer:
@@ -406,8 +406,74 @@ job and posted weekly:
 **5.5 Kill switch.** Repository variable `T3_AGENT_AUTOMATION` (`on`/`off`) checked in the
 first step of every agent workflow. Flipping it needs no PR and no deploy.
 
+**5.6 Issue-driven development loop (proposed 2026-09-22, not yet decided — see D10).**
+Owner request, verbatim: an agent reads a GitHub issue, decides using this repo's
+architecture and docs, develops, tests, opens a PR, loops CI to green, merges, documents,
+and logs the run into the nightly report. No part of this exists as one pipeline today.
+Each step maps to something already built, partially built, or genuinely new:
+
+| Step | Maps to | Status |
+|---|---|---|
+| 1. Read the issue | new: an issue-intake step that fetches one open issue by label | not built |
+| 2. Decide using architecture/docs | new: point it at the SSoT trio (`roadmap.md` → `backlog.md` → `design.md`) plus `AGENTS.md`/`CLAUDE.md`, the same reading order every human contributor follows | not built |
+| 3. Develop | existing convention: `feature/*`/`fix/*` from `develop`, one PR per task (`CLAUDE.md`) | convention exists, not automated |
+| 4. Test | existing: `pnpm test`, server suites once §2.1 lands | exists |
+| 5. Open PR | existing convention (PR template, thinking path, model-used field) | convention exists, not automated |
+| 6. Loop CI to green | `.agents/skills/prcheckloop` (merged) and the fuller draft in PR #113 (`t3-pr-loop`, open) | **already built** |
+| 7. Merge | forbidden today, everywhere it is mentioned — `CLAUDE.md`: "Do not merge your own PR unless the task explicitly says so"; `.agents/skills/pr-gardening` and PR #113 both stop at opening/updating a PR | **the one real policy gap** |
+| 8. Document | PR #113 posts a hand-off comment to a human; nothing writes a durable record | partial |
+| 9. Nightly log | the Phase 1.3 summary already lists commit/PR titles since the last deploy | partial, generic |
+
+`CLAUDE.md`'s rule already lets an agent merge *when a human says so for that task* — that
+is what happened repeatedly this session. Step 7 as described asks for something different:
+standing authorization to merge without a human present at each instance. Every other agent
+capability in this file — 5.1 (advisory review), 5.2 (CI-fix on request), 5.3 (nightly triage
+PR) — stops at "open or update a PR" on purpose, so a human's click stays the last gate
+before code lands on `develop`. This plan does not decide that for you; it describes what
+would have to exist if you say yes.
+
+**If approved, scope it narrower than "any issue":**
+
+- **Issue eligibility.** Only issues carrying a label such as `auto-eligible`, applied
+  deliberately by a human when filing or triaging — never every open issue by default.
+  Exclude anything labelled `decision` outright (this session's #126–129 and #133 exist
+  precisely because they need a human judgment call, not code). Exclude anything that would
+  touch `.github/workflows/`, `deploy/compose.yaml`, `deploy/scripts/`, or a secret — those
+  stay `ci`-labelled and human-reviewed regardless (`CLAUDE.md` hard rule).
+- **Branch and diff scope.** `feature/*`/`fix/*` from `develop` only, same as every rule in
+  this file; a diff-size or file-count cap, so the loop declines rather than guesses on a
+  large refactor.
+- **The merge gate itself.** Auto-merge fires only when every required check is green
+  (§2.1's `server-tests` included) and Greptile is clean (a checklist item every PR already
+  carries) — and, as the new mechanical control, a second, independent agent pass (or
+  `t3-claude-review`, 5.1) reviews the diff and returns a pass, so the agent that wrote the
+  code is never the only thing that approved it.
+- **Reuse, don't rebuild, step 6.** `.agents/skills/prcheckloop` already does "read the
+  failed check, fix, push, loop, escalate a precise blocker after N rounds" — retarget it at
+  this fork's `develop` (5.2 already calls for the same retarget) rather than writing a
+  second CI-loop skill.
+- **Kill switch and cap.** Gated by the same `T3_AGENT_AUTOMATION` variable (5.5), plus a
+  per-day merge cap, so a bad day fails loud and small instead of quiet and large.
+- **Step 9, concretely.** Extend the Phase 1.3 nightly summary with one more section, sourced
+  from the PR's own "What Changed"/"Verification" fields (already required by the PR
+  template and `CONTRIBUTING.md`) instead of inventing a new log format:
+  ```
+  Agent-authored merges since last deploy:
+  • #NNN (closes #issue) — <one-line "What Changed">, model: claude-sonnet-5, CI: 2 rounds to green
+  ```
+
+**Sequencing.** Not Phase 5 work — it depends on 5.1–5.3 running clean for the one-week
+observation period the top of Phase 5 already requires, plus the second-reviewer gate above
+landing as its own PR. Treat it as Phase 6 if approved. Do not fold it into 5.2/5.3: those
+are deliberately narrower (CI-fix on an existing PR; one failing test's triage) and this is
+issue-to-merge from a cold start.
+
+Verification if built: one issue labelled `auto-eligible` goes from open to a merged PR with
+zero human commits and zero human PR comments, and the nightly summary names it, inside one
+`T3_AGENT_AUTOMATION=on` window; flipping the variable to `off` mid-loop stops it before merge.
+
 Verification: one agent-authored `fix/*` PR merges through the full gate with no human
-commit; the weekly metrics message posts; the kill switch stops 5.1–5.3 within one run.
+commit; the weekly metrics message posts; the kill switch stops 5.1–5.6 within one run.
 
 ---
 
@@ -441,6 +507,7 @@ Phase 0.1 and 0.2 are the only host commands in this plan and they are the owner
 | D7 | Create a GitHub App identity for agents (2.6) | **Yes**, before any agent pushes | Yes |
 | D8 | Enable Claude review on PRs (5.1) with a monthly cap | **Yes**, advisory only, after Phase 2 | Yes (kill switch) |
 | D9 | Release cadence after v0.2.0 | **Weekly tag from `develop` when nightly was green the night before**; a rule, not a schedule | Yes |
+| D10 | Build the issue-driven auto-merge loop (§5.6) | **Not yet — needs your explicit scope decision** (eligible-issue label, second-reviewer gate, per-day cap). Steps 1–6, 8–9 can be built now under existing rules; only step 7 (merge) is blocked pending this | Yes (kill switch, or never build it) |
 
 ---
 

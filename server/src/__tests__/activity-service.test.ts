@@ -36,7 +36,7 @@ async function waitForIssueRun(
   issueId: string,
   predicate: (run: IssueRun) => boolean,
 ) {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + 8_000;
   let latestRuns: IssueRun[] = [];
   while (Date.now() < deadline) {
     latestRuns = await service.runsForIssue(companyId, issueId);
@@ -54,7 +54,7 @@ describeEmbeddedPostgres("activity service", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-activity-service-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  }, 90_000);
 
   afterEach(async () => {
     await db.delete(activityLog);

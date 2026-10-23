@@ -92,10 +92,17 @@ async function flush() {
   });
 }
 
-async function flushDebounce() {
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 300));
-  });
+// The dialog debounces the search box by 250ms of real time. Poll against a
+// deadline instead of sleeping a fixed 300ms, which left a 50ms margin that a
+// loaded runner can lose.
+async function waitForPreviewCalls(count: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (
+    mockSecretsApi.remoteImportPreview.mock.calls.length < count &&
+    Date.now() < deadline
+  ) {
+    await flush();
+  }
 }
 
 function makeWrapper() {
@@ -809,7 +816,9 @@ describe("ImportFromVaultDialog", () => {
       valueSetter?.call(search, "stripe");
       search.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await flushDebounce();
+    // Typing alone must not fire a new preview: that only happens once the debounce elapses.
+    expect(mockSecretsApi.remoteImportPreview).toHaveBeenCalledTimes(1);
+    await waitForPreviewCalls(2);
     await flush();
 
     expect(mockSecretsApi.remoteImportPreview).toHaveBeenCalledTimes(2);

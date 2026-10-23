@@ -20,6 +20,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveHermesHomeDir } from "../shared/hermes-home.js";
 
 import type {
   AdapterExecutionContext,
@@ -365,7 +366,7 @@ export async function execute(
 
   if (!explicitProvider) {
     try {
-      detectedConfig = await detectModel();
+      detectedConfig = await detectModel(path.join(resolveHermesHomeDir(config), "config.yaml"));
     } catch {
       // Non-fatal — detection failure shouldn't block execution
     }

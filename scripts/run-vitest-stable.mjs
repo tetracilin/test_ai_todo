@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { createRunTracker, formatSummary, normalizeExitStatus } from "./vitest-run-summary.mjs";
+import { applySuiteFilter, validateSuiteFilter } from "./vitest-suite-filter.mjs";
 
 const repoRoot = process.cwd();
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -17,20 +19,24 @@ const serializedShardDurations = loadShardDurations(
 const serverRoot = path.join(repoRoot, "server");
 const serverSrcDir = path.join(repoRoot, "server", "src");
 const serverTestsDir = path.join(repoRoot, "server", "src", "__tests__");
-const nonServerProjects = [
-  "@paperclipai/shared",
-  "@paperclipai/skills-catalog",
-  "@paperclipai/db",
-  "@paperclipai/adapter-utils",
-  "@paperclipai/adapter-claude-local",
-  "@paperclipai/adapter-codex-local",
-  "@paperclipai/adapter-openclaw-gateway",
-  "@paperclipai/adapter-opencode-local",
-  "@paperclipai/plugin-sdk",
-  "@paperclipai/create-paperclip-plugin",
-  "@paperclipai/ui",
-  "paperclipai",
-];
+// Derived from vitest.config.ts so the runner cannot silently drop a project the
+// config declares (five adapter projects had drifted out of a hand-kept list).
+// A project's vitest name is its package.json name.
+function readConfiguredProjectNames() {
+  const config = readFileSync(path.join(repoRoot, "vitest.config.ts"), "utf8");
+  const block = /projects\s*:\s*\[([^\]]*)\]/.exec(config);
+  if (!block) {
+    throw new Error("[test:run] could not find the `projects: [...]` list in vitest.config.ts");
+  }
+  const dirs = [...block[1].replace(/\/\/.*$/gm, "").matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  return dirs.map((dir) => {
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, dir, "package.json"), "utf8"));
+    return pkg.name;
+  });
+}
+const nonServerProjects = readConfiguredProjectNames().filter(
+  (name) => name !== "@paperclipai/server",
+);
 const routeTestPattern = /[^/]*(?:route|routes|authz)[^/]*\.test\.ts$/;
 const additionalSerializedServerTests = new Set([
   "server/src/__tests__/approval-routes-idempotency.test.ts",
@@ -69,6 +75,9 @@ const additionalSerializedServerTests = new Set([
   // sibling file's child processes competing for CPU.
   "server/src/__tests__/workspace-runtime.test.ts",
 ]);
+const tracker = createRunTracker();
+let bail = false;
+let suiteFilter = { only: [], skip: [] };
 let invocationIndex = 0;
 const serializedModeName = "serialized";
 const generalModeName = "general";
@@ -154,10 +163,34 @@ function parseCliOptions(argv) {
   let shardCount = null;
   let group = null;
   let dryRun = false;
+  let bailOnFailure = false;
+  const onlySuites = [];
+  const skipSuites = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--") {
+      continue;
+    }
+
+    if (arg === "--bail") {
+      bailOnFailure = true;
+      continue;
+    }
+
+    if (arg === "--only-suite" || arg === "--skip-suite") {
+      (arg === "--only-suite" ? onlySuites : skipSuites).push(readOptionValue(argv, index, arg));
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--only-suite=")) {
+      onlySuites.push(arg.slice("--only-suite=".length));
+      continue;
+    }
+
+    if (arg.startsWith("--skip-suite=")) {
+      skipSuites.push(arg.slice("--skip-suite=".length));
       continue;
     }
 
@@ -252,6 +285,9 @@ function parseCliOptions(argv) {
       shardCount: shardCount ?? 1,
       group: null,
       dryRun,
+      bail: bailOnFailure,
+      onlySuites,
+      skipSuites,
     };
   }
 
@@ -261,6 +297,9 @@ function parseCliOptions(argv) {
     shardCount,
     group,
     dryRun,
+    bail: bailOnFailure,
+    onlySuites,
+    skipSuites,
   };
 }
 
@@ -294,18 +333,30 @@ function runVitest(args, label) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-  });
+  const startedAt = Date.now();
+  // PAPERCLIP_VITEST_RUNNER_FAKE swaps pnpm for a node script; only the runner's own tests set it.
+  const fake = process.env.PAPERCLIP_VITEST_RUNNER_FAKE;
+  const vitestArgs = ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args];
+  const result = fake
+    ? spawnSync(process.execPath, [fake, ...vitestArgs], { cwd: repoRoot, env, stdio: "inherit" })
+    : spawnSync("pnpm", vitestArgs, { cwd: repoRoot, env, stdio: "inherit" });
   if (result.error) {
+    // Could not even start vitest: every later invocation would fail the same way.
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+  const status = normalizeExitStatus(result.status);
+  tracker.record(label, status, Date.now() - startedAt);
+  if (status !== 0 && bail) {
+    finish();
   }
+}
+
+// Run every invocation and report all failures at the end. --bail restores the
+// old stop-at-first-failure behaviour for quick local runs.
+function finish() {
+  console.log(formatSummary(tracker.results));
+  process.exit(tracker.failures().length === 0 ? 0 : 1);
 }
 
 function runGeneralSuites(routeTests) {
@@ -386,9 +437,12 @@ function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = 
 }
 
 function runSerializedSuites(routeTests, shardIndex, shardCount) {
-  const shardTests = selectSerializedSuites(routeTests, shardIndex, shardCount);
+  // Filter what is RUN, not routeTests itself: the general-server lane builds its
+  // --exclude list from routeTests, so a skipped suite must stay in that list.
+  const eligible = applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath);
+  const shardTests = selectSerializedSuites(eligible, shardIndex, shardCount);
   console.log(
-    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${routeTests.length} suites`,
+    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${eligible.length} suites`,
   );
 
   for (const routeTest of shardTests) {
@@ -427,11 +481,33 @@ const generalServerTestFiles = walk(serverSrcDir)
   .sort((a, b) => a.localeCompare(b));
 
 const options = parseCliOptions(process.argv.slice(2));
+bail = options.bail;
+suiteFilter = { only: options.onlySuites, skip: options.skipSuites };
+if (suiteFilter.only.length > 0 && suiteFilter.skip.length > 0) {
+  fail("--only-suite and --skip-suite cannot combine");
+}
+if (suiteFilter.only.length > 0 && options.mode !== serializedModeName) {
+  fail("--only-suite requires --mode serialized");
+}
+if (suiteFilter.skip.length > 0 && options.mode === generalModeName) {
+  fail("--skip-suite applies to --mode serialized or --mode all");
+}
+const suiteFilterErrors = validateSuiteFilter(
+  routeTests.map((routeTest) => routeTest.repoPath),
+  suiteFilter,
+);
+if (suiteFilterErrors.length > 0) {
+  fail(suiteFilterErrors.join("; "));
+}
 if (options.dryRun) {
   const serializedSuites =
     options.mode === serializedModeName
-      ? selectSerializedSuites(routeTests, options.shardIndex, options.shardCount)
-      : routeTests;
+      ? selectSerializedSuites(
+          applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath),
+          options.shardIndex,
+          options.shardCount,
+        )
+      : applySuiteFilter(routeTests, suiteFilter, (routeTest) => routeTest.repoPath);
   console.log(
     JSON.stringify(
       {
@@ -440,6 +516,10 @@ if (options.dryRun) {
         shardCount: options.shardCount,
         group: options.group,
         availableGeneralGroups: generalGroupNames,
+        nonServerProjects,
+        bail: options.bail,
+        onlySuites: suiteFilter.only,
+        skipSuites: suiteFilter.skip,
         serializedSuiteCount: routeTests.length,
         selectedSerializedSuites: serializedSuites.map((routeTest) => routeTest.repoPath),
         generalServerSuiteCount: generalServerTestFiles.length,
@@ -485,3 +565,5 @@ if (options.mode === generalModeName || options.mode === allModeName) {
 if (options.mode === serializedModeName || options.mode === allModeName) {
   runSerializedSuites(routeTests, options.shardIndex ?? 0, options.shardCount ?? 1);
 }
+
+finish();

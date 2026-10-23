@@ -46,7 +46,8 @@ process.exit(0);
   await fs.chmod(commandPath, 0o755);
 }
 
-describe("pi_local execute", () => {
+// Fake CLI is a shebang script; Windows cannot exec it directly.
+describe.skipIf(process.platform === "win32")("pi_local execute", () => {
   it("fails the run when Pi exhausts automatic retries despite exiting 0", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-pi-execute-"));
     const workspace = path.join(root, "workspace");

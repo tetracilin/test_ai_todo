@@ -44,7 +44,9 @@ describePostgres("agent action audit routes", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-action-audit-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+    // Warm the route module import so it is not charged to the first test.
+    await import("../routes/activity.js");
+  }, 90_000);
 
   afterEach(async () => {
     await db.delete(activityLog);
@@ -151,7 +153,7 @@ describePostgres("agent action audit routes", () => {
     ]).returning();
   }
 
-  it("denies agents and board users without the audit permission", async () => {
+  it("denies the default scope to agents and board users without the audit permission, and gives agents only redacted all-actors rows", async () => {
     const { company, agent } = await seed();
     const agentResponse = await request(await createApp(db, {
       type: "agent", agentId: agent.id, companyId: company.id, runId: null, source: "agent_jwt",

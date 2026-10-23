@@ -85,6 +85,14 @@ describe("runHealth + failingPaths", () => {
     expect(runHealth(run({ status: "passed" }), [])).toBe("amber");
   });
 
+  it("is red for a failed run even when no step failed", () => {
+    expect(runHealth(run({ status: "failed" }), [step({ path: "P1", scenarioStep: "connect", status: "pass" })])).toBe("red");
+  });
+
+  it("is amber for a cancelled run without failing steps", () => {
+    expect(runHealth(run({ status: "cancelled" }), [step({ path: "P1", scenarioStep: "connect", status: "pass" })])).toBe("amber");
+  });
+
   it("is unknown when there is no run", () => {
     expect(runHealth(undefined, [])).toBe("unknown");
   });

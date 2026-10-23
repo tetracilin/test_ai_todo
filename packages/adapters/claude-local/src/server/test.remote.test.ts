@@ -8,6 +8,7 @@ const {
   runAdapterExecutionTargetProcess,
   describeAdapterExecutionTarget,
   resolveAdapterExecutionTargetCwd,
+  prepareAdapterExecutionTargetRuntime,
   probeResult,
 } = vi.hoisted(() => {
   const probeResult: { value: { exitCode: number; stdout: string; stderr: string } } = {
@@ -29,6 +30,13 @@ const {
     })),
     describeAdapterExecutionTarget: vi.fn(() => "Daytona"),
     resolveAdapterExecutionTargetCwd: vi.fn(() => "/home/daytona/paperclip-workspace"),
+    // Hermetic stand-in for the host-side workspace/asset staging, which shells out to
+    // the host `tar` (POSIX-only). These tests exercise probe classification, not staging.
+    prepareAdapterExecutionTargetRuntime: vi.fn(async () => ({
+      runtimeRootDir: "/home/daytona/paperclip-workspace/.paperclip-runtime/claude",
+      assetDirs: {} as Record<string, string>,
+      restoreWorkspace: async () => {},
+    })),
   };
 });
 
@@ -44,6 +52,7 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
     runAdapterExecutionTargetProcess,
     describeAdapterExecutionTarget,
     resolveAdapterExecutionTargetCwd,
+    prepareAdapterExecutionTargetRuntime,
   };
 });
 

@@ -66,6 +66,17 @@ describe("buildKimiLocalConfig", () => {
     expect(config.extraArgs).toEqual(["--add-dir /tmp/other", "--plan"]);
   });
 
+  it("prefers a secret binding over a legacy env var with the same key", () => {
+    const config = buildKimiLocalConfig(makeValues({
+      envVars: "KIMI_MODEL_API_KEY=plain-leak",
+      envBindings: { KIMI_MODEL_API_KEY: { type: "secret_ref", secretId: "secret-1" } },
+    }));
+
+    expect(config.env).toEqual({
+      KIMI_MODEL_API_KEY: { type: "secret_ref", secretId: "secret-1" },
+    });
+  });
+
   it("merges legacy env vars with secret bindings", () => {
     const config = buildKimiLocalConfig(makeValues({
       envVars: "KIMI_MODEL_NAME=kimi-code/k3\n# comment\nINVALID LINE",

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { nextCronFires, parseCronExpression, previewFirePolicies } from "./cron-fires";
 
+// nextCronFires walks minute-by-minute through Intl.DateTimeFormat, so multi-day searches
+// are CPU-heavy (about 6s on a contended Windows box). Give them an explicit budget
+// instead of relying on the 5s default.
+const MINUTE_WALK_TIMEOUT_MS = 30_000;
+
 describe("parseCronExpression", () => {
   it("parses a standard 5-field expression", () => {
     const parsed = parseCronExpression("0 14 * * 1-5");
@@ -16,6 +21,15 @@ describe("parseCronExpression", () => {
     expect(parseCronExpression("")).toBeNull();
     expect(parseCronExpression(null)).toBeNull();
   });
+
+  it("returns null for out-of-range values, inverted ranges, and non-positive steps", () => {
+    expect(parseCronExpression("60 * * * *")).toBeNull();
+    expect(parseCronExpression("* 24 * * *")).toBeNull();
+    expect(parseCronExpression("* * 0 * *")).toBeNull();
+    expect(parseCronExpression("* * * 13 *")).toBeNull();
+    expect(parseCronExpression("5-1 * * * *")).toBeNull();
+    expect(parseCronExpression("*/0 * * * *")).toBeNull();
+  });
 });
 
 describe("nextCronFires", () => {
@@ -27,7 +41,7 @@ describe("nextCronFires", () => {
       "2026-06-10T14:00:00.000Z",
       "2026-06-11T14:00:00.000Z",
     ]);
-  });
+  }, MINUTE_WALK_TIMEOUT_MS);
 
   it("skips weekends for a weekday schedule", () => {
     // 2026-06-12 is a Friday; the next weekday fire after Fri is Mon 2026-06-15.
@@ -37,7 +51,7 @@ describe("nextCronFires", () => {
       "2026-06-15T14:00:00.000Z",
       "2026-06-16T14:00:00.000Z",
     ]);
-  });
+  }, MINUTE_WALK_TIMEOUT_MS);
 
   it("uses OR semantics when day-of-month and day-of-week are both restricted", () => {
     const after = new Date("2026-06-09T10:00:00Z");
@@ -47,13 +61,18 @@ describe("nextCronFires", () => {
       "2026-06-15T09:00:00.000Z",
       "2026-06-19T09:00:00.000Z",
     ]);
-  });
+  }, MINUTE_WALK_TIMEOUT_MS);
 
   it("interprets cron fields in the trigger timezone", () => {
     // 14:00 in New York (EDT, UTC-4 in June) is 18:00 UTC.
     const after = new Date("2026-06-09T10:00:00Z");
     const fires = nextCronFires("0 14 * * *", 1, { after, timeZone: "America/New_York" });
     expect(fires[0]?.toISOString()).toBe("2026-06-09T18:00:00.000Z");
+  }, MINUTE_WALK_TIMEOUT_MS);
+
+  it("returns no fires for an unknown time zone instead of throwing", () => {
+    const after = new Date("2026-06-09T10:00:00Z");
+    expect(nextCronFires("0 14 * * *", 1, { after, timeZone: "Not/AZone" })).toEqual([]);
   });
 
   it("returns an empty list for an unparseable expression", () => {

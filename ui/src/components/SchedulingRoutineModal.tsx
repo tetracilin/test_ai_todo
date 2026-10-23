@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "../lib/utils";
+import { browserTimeZone, timeZoneOptions } from "../lib/time-zones";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -27,6 +28,7 @@ export interface SchedulingRoutineFormValues {
   assigneeUserId: string | null;
   priority: string;
   recurrenceRule: { kind: "daily" } | { kind: "weekly"; daysOfWeek: number[] };
+  timezone: string;
   scheduledTime: string | null;
   estimateMinutes: number | null;
 }
@@ -57,6 +59,8 @@ export function SchedulingRoutineModal({ open, routine, onClose, onSave, saving 
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(
     routine?.recurrenceRule.kind === "weekly" ? routine.recurrenceRule.daysOfWeek : [],
   );
+  // A new routine defaults to the viewer's zone; an existing one keeps its stored zone.
+  const [timezone, setTimezone] = useState(routine?.timezone ?? browserTimeZone());
   const [scheduledTime, setScheduledTime] = useState(routine?.scheduledTime ?? "09:00");
   const [estimateMinutes, setEstimateMinutes] = useState(routine?.estimateMinutes ?? 30);
 
@@ -87,10 +91,13 @@ export function SchedulingRoutineModal({ open, routine, onClose, onSave, saving 
       assigneeUserId: assigneeKind === "user" ? (assigneeId ?? null) : null,
       priority,
       recurrenceRule: frequency === "daily" ? { kind: "daily" } : { kind: "weekly", daysOfWeek },
+      timezone,
       scheduledTime: scheduledTime || null,
       estimateMinutes: estimateMinutes || null,
     });
   }
+
+  const zoneOptions = useMemo(() => timeZoneOptions(timezone), [timezone]);
 
   const assigneeOptions = useMemo(
     () => ({
@@ -210,6 +217,22 @@ export function SchedulingRoutineModal({ open, routine, onClose, onSave, saving 
                 onChange={(e) => setEstimateMinutes(Number(e.target.value))}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="routine-timezone">Time zone</Label>
+            <Select value={timezone} onValueChange={setTimezone}>
+              <SelectTrigger id="routine-timezone">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {zoneOptions.map((zone) => (
+                  <SelectItem key={zone} value={zone}>
+                    {zone}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

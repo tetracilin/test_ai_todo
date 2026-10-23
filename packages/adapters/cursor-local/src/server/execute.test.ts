@@ -271,7 +271,10 @@ printf '%s\\n' '{"type":"result","subtype":"success","session_id":"cursor-sessio
     const runner = {
       execute: async (input: { command: string; args?: string[]; env?: Record<string, string> }) => {
         runnerState.commands.push(input.command);
-        if (input.command === "sh") {
+        // The managed-runtime download reads the archive back with wc/dd/base64 over
+        // sh and needs real output; every other sh call is a no-op probe here.
+        const readsRemoteFile = /wc -c|dd if=/.test((input.args ?? []).join(" "));
+        if (input.command === "sh" && !readsRemoteFile) {
           return {
             exitCode: 0,
           signal: null,

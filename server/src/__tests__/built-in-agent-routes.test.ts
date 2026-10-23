@@ -423,7 +423,7 @@ describe("built-in agent routes", () => {
     }));
   });
 
-  it("denies agent actors from provisioning across company boundaries", async () => {
+  it("denies agent actors from resetting built-in agents across company boundaries", async () => {
     const app = await createApp({
       type: "agent",
       agentId: "manager-agent",

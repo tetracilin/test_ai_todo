@@ -41,19 +41,19 @@ describe("sniffAndValidateContentType", () => {
   });
 
   it("refuses a declared image/png whose bytes are something else", () => {
-    expect(() => sniffAndValidateContentType(JPEG_BYTES, "image/png")).toThrowError();
+    expect(() => sniffAndValidateContentType(JPEG_BYTES, "image/png")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses a declared application/pdf whose bytes are a PNG", () => {
-    expect(() => sniffAndValidateContentType(PNG_BYTES, "application/pdf")).toThrowError();
+    expect(() => sniffAndValidateContentType(PNG_BYTES, "application/pdf")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses a declared image/gif whose bytes are plain text", () => {
-    expect(() => sniffAndValidateContentType(TEXT_BYTES, "image/gif")).toThrowError();
+    expect(() => sniffAndValidateContentType(TEXT_BYTES, "image/gif")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses a content type that is not on the allowlist regardless of bytes", () => {
-    expect(() => sniffAndValidateContentType(TEXT_BYTES, "application/x-executable")).toThrowError();
+    expect(() => sniffAndValidateContentType(TEXT_BYTES, "application/x-executable")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("trusts a declared text/plain with no known signature to sniff", () => {
@@ -66,11 +66,11 @@ describe("sniffAndValidateContentType", () => {
   });
 
   it("refuses a declared text/plain whose bytes are unambiguously a PNG (disguised binary)", () => {
-    expect(() => sniffAndValidateContentType(PNG_BYTES, "text/plain")).toThrowError();
+    expect(() => sniffAndValidateContentType(PNG_BYTES, "text/plain")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("refuses a declared application/msword whose bytes are unambiguously a PDF", () => {
-    expect(() => sniffAndValidateContentType(PDF_BYTES, "application/msword")).toThrowError();
+    expect(() => sniffAndValidateContentType(PDF_BYTES, "application/msword")).toThrowError(expect.objectContaining({ status: 422 }));
   });
 
   it("is case-insensitive on the declared content type", () => {

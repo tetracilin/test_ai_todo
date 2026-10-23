@@ -310,6 +310,7 @@ describe("GitHub external object provider", () => {
       object: githubObject("pull/42", "pull_request"),
     });
 
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain("ghp_secret");
   });

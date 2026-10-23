@@ -10,8 +10,16 @@ const ORIGINAL_CWD = process.cwd();
 const ORIGINAL_PATH = process.env.PATH;
 const ORIGINAL_EXIT_CODE = process.exitCode;
 
+const tempRoots: string[] = [];
+
+function makeTempRoot(prefix: string): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempRoots.push(root);
+  return root;
+}
+
 function createExistingConfigFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-"));
+  const root = makeTempRoot("paperclip-onboard-");
   const runtimeRoot = path.join(root, "runtime");
   const configPath = path.join(root, ".paperclip", "config.json");
   const config: PaperclipConfig = {
@@ -78,7 +86,7 @@ function createExistingConfigFixture() {
 }
 
 function createFreshConfigPath() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-fresh-"));
+  const root = makeTempRoot("paperclip-onboard-fresh-");
   return path.join(root, ".paperclip", "config.json");
 }
 
@@ -109,6 +117,9 @@ describe("onboard", () => {
     process.env = { ...ORIGINAL_ENV };
     process.chdir(ORIGINAL_CWD);
     process.exitCode = ORIGINAL_EXIT_CODE;
+    for (const root of tempRoots.splice(0)) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("preserves an existing config when rerun without flags", async () => {
@@ -160,8 +171,8 @@ describe("onboard", () => {
   });
 
   it("creates instance-root config and data paths for a fresh PAPERCLIP_HOME", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-home-"));
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-cwd-"));
+    const home = makeTempRoot("paperclip-onboard-home-");
+    const cwd = makeTempRoot("paperclip-onboard-cwd-");
     process.chdir(cwd);
     process.env.PAPERCLIP_HOME = home;
 

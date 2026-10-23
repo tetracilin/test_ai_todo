@@ -97,7 +97,7 @@ Record the classification in the PR body. Then delete `pr.yml`.
 **ASSUMPTION A7:** the failing `pr.yml` jobs fail for infrastructure reasons (missing upstream secrets, runner limits), not because the todo-merge broke paperclip tests. **Verify by reading one failed run's first error.** If tests genuinely fail on the merged code, that is a code bug: open a separate `fix/*` PR; do not drop the test.
 
 ### 1.3 Record the fork
-Create `doc/ORIGIN.md`:
+Create `technical-spec/fork/ORIGIN.md`:
 ```
 Hard fork of https://github.com/paperclipai/paperclip
 Forked at upstream commit: <sha>   (git merge-base HEAD <last upstream sha>)
@@ -114,7 +114,7 @@ Remove the remote: `git remote remove upstream` (on every clone that has it, inc
 ### 1.5 Prevent accidental publish
 - `package.json`: set `"private": true` at the root (and in any workspace package that upstream published to npm), or rename the package scope. **ASSUMPTION A8:** check whether any workspace package is published; `pnpm -r exec npm pkg get name` lists them.
 
-Acceptance: `.github/workflows/` contains only `t3-ci.yml`, `t3-nightly.yml`, `t3-release.yml`; `git remote -v` shows only `origin`; `doc/ORIGIN.md` exists; `t3-ci` green on the PR.
+Acceptance: `.github/workflows/` contains only `t3-ci.yml`, `t3-nightly.yml`, `t3-release.yml`; `git remote -v` shows only `origin`; `technical-spec/fork/ORIGIN.md` exists; `t3-ci` green on the PR.
 
 ---
 
@@ -173,7 +173,7 @@ Settings → General → Default branch → `develop`. PRs and `gh pr create` no
 
 | Env | Settings |
 |---|---|
-| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. **Two different defaults, do not conflate them:** unset, the deploy path falls back to `hermes_gateway,claude_local` (`deploy/compose.yaml:53`, `t3-nightly.yml:126`), while the application's own fallback is `hermes_gateway` only (`server/src/adapters/registry.ts:715`). |
+| `staging` | No protection. Var `NIGHTLY_PORT=33130`. Optional var `SELECTABLE_ADAPTER_TYPES` — comma-separated adapter types selectable when hiring an agent. Unset, the deploy path falls back to `hermes_gateway,claude_local,hermes_local` (`deploy/compose.yaml`, `t3-nightly.yml`, `t3-release.yml`). The application's own fallback (`server/src/adapters/registry.ts`, `listSelectableServerAdapters`) is the same list. `hermes_local` needs the `hermes` CLI in the image (Dockerfile, `HERMES_AGENT_VERSION`). |
 | `production` | Required reviewer: `tetracilin` (+ second dev). Deployment branches: `main` and `v*`. Var `PROD_PORT=33100`. Var `SELECTABLE_ADAPTER_TYPES` (same as `staging`) |
 
 ### 2.3 Secrets and variables
@@ -286,7 +286,7 @@ echo "FAILED: $url did not become healthy with commit $want" >&2; exit 1
 
 Marks verified against the repo and the Actions API on 2026-09-07.
 
-- [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `doc/ORIGIN.md`, remote removed, `private: true`
+- [x] Phase 1 PR merged: upstream workflows gone, tests salvaged, `technical-spec/fork/ORIGIN.md`, remote removed, `private: true`
 - [x] Default branch `develop`; protections on `develop` and `main` use only `t3-ci` checks
   — **done 2026-09-09.** Both branches require exactly `unit` / `build` / `build-image`.
   `develop` also requires an up-to-date branch and blocks force pushes. `main`'s

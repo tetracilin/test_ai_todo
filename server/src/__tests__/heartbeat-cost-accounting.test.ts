@@ -58,6 +58,29 @@ describe("heartbeat cost accounting", () => {
     })).toBe("reported");
   });
 
+  it("treats a zero reported cost as reported, not unpriced, even with token usage", () => {
+    expect(resolveLedgerCostStatus({
+      costUsd: 0,
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      outputTokens: 10,
+    })).toBe("reported");
+  });
+
+  it("does not mark a run with no token usage and no cost as unpriced", () => {
+    expect(resolveLedgerCostStatus({
+      costUsd: null,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+    })).toBe("reported");
+  });
+
+  it("rejects negative costs and falls back to the other reported value", () => {
+    expect(resolveCacheAdjustedCostUsd({ costUsd: -1, cacheAdjustedCostUsd: -0.5 })).toBeNull();
+    expect(resolveCacheAdjustedCostUsd({ costUsd: 2, cacheAdjustedCostUsd: -0.5 })).toBe(2);
+  });
+
   it("bills the discounted amount when both nominal and cache-adjusted costs are reported", () => {
     expect(resolveCacheAdjustedCostUsd({
       costUsd: 3.1,

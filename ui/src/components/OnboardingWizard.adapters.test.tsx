@@ -82,6 +82,7 @@ vi.mock("../adapters/adapter-display-registry", () => ({
 vi.mock("../adapters/use-disabled-adapters", () => ({
   useDisabledAdaptersSync: () => mockAdapterRegistry.disabled,
   useAdapterRegistryLoaded: () => mockAdapterRegistry.loaded,
+  useSelectableAdapterTypes: () => null,
 }));
 vi.mock("../adapters/use-adapter-capabilities", () => ({
   useAdapterCapabilities: () => () => ({
