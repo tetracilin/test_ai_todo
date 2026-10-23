@@ -45,13 +45,15 @@ jobs:
     name: build-and-deploy-nightly
     runs-on: [self-hosted, kmv8]
     # Deploy is gated on the test jobs: staging only ever receives a sha whose
-    # full vitest suite (slow-tests) and Playwright run (e2e) both passed. If
-    # either fails or is cancelled, this job is skipped and the deployed sha is
+    # full vitest suite (the server-tests and workspaces jobs below, which
+    # replaced the single slow-tests job) and Playwright run (e2e) all passed.
+    # workspace-runtime is non-blocking on purpose and is not in this list. If
+    # any gate fails or is cancelled, this job is skipped and the deployed sha is
     # unchanged (the marker file is only written after a deploy). The reverse
     # direction stays decoupled on purpose (ASSUMPTION A6): the test jobs do not
     # `needs:` deploy, because Playwright bootstraps its own instance on a
     # GitHub-hosted runner and must run even when the deploy guard skips.
-    needs: [slow-tests, e2e]
+    needs: [e2e, server_tests_general, server_tests_serialized, workspaces_a, workspaces_b]
     environment:
       name: staging
       url: http://100.103.41.112:33130
