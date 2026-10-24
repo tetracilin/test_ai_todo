@@ -136,7 +136,7 @@ Diff `adapter-utils` at the fork point against upstream before taking the acpx f
 
 | Files | Tests | Verify locally | Merge gates |
 |---|---|---|---|
-| `packages/adapters/claude-local/*`, `packages/adapter-utils/*` | ported upstream tests (unmodified, or edit + reason in manifest) | `pnpm --filter @paperclipai/adapter-claude-local test`; workspace group b | t3-ci green; one Windows run on this branch (#129), log in PR body; 11-step flow unchanged on a Claude Code agent |
+| `packages/adapters/claude-local/*`, `packages/adapter-utils/*` | ported upstream tests (unmodified, or edit + reason in manifest) | `npx vitest run --project @paperclipai/adapter-claude-local` from the repository root (the package has no `test` script); workspace group b | t3-ci green; one Windows run on this branch (#129), log in PR body; 11-step flow unchanged on a Claude Code agent |
 
 **PR 3 `feature/hermes-upstream-fixes`.** `abbd88007f`, `ed0c6958f8`, `2145925f71`, `4b8ec588f3`; keep `hermes-home.ts`.
 
@@ -222,6 +222,9 @@ links an anchor in the operator doc.
 - No ambient fallback: with a host `ANTHROPIC_API_KEY` set and the grant revoked, the run fails and does not use
   the host key; a host credentials file (`~/.claude`, `~/.hermes`) is not read; both on Linux and on Windows.
 - Isolation: agent B's run cannot read agent A's key from env or files.
+- Session resume: two runs of one adopted agent, where the second passes the saved session id to `--resume`,
+  continue the conversation; afterwards the per-run directory is gone and the canary key is absent from the
+  agent's session store. Run on Linux and on Windows.
 - Lifecycle: invalid key refused at save; rotate (the new secret version is used from the next run); revoke
   (effective next run, running runs finish); offboarding per 4.4.
 - Authorization: extend the table in `server/src/__tests__/agent-cross-tenant-authz-routes.test.ts` with every
@@ -256,7 +259,18 @@ links an anchor in the operator doc.
   inherited. Provider-key variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`,
   `CLAUDE_CODE_OAUTH_TOKEN`, the Bedrock and Vertex variables) are stripped unless they come from the grant.
   `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and `XDG_CONFIG_HOME` point at a per-run directory, extending the
-  existing `CLAUDE_CONFIG_DIR` remap (`acp.test.ts:555`). The per-run directory is deleted when the run ends.
+  existing `CLAUDE_CONFIG_DIR` remap (`acp.test.ts:555`). The per-run directory holds credentials and is deleted
+  when the run ends. Session history is kept apart from it, so `--resume` still works:
+  - Each agent has a persistent session store under its existing agent workspace. It holds only the adapter's
+    session files (for Claude Code, the transcript and session state that `--resume` reads) and never a key, a
+    token or a credentials file.
+  - At run start the adapter mounts that store into the per-run config directory (a link, or a copy-in and
+    copy-out where links are not available, such as some Windows setups). Credential files are written only to
+    the per-run directory.
+  - At run end the adapter copies session files back to the store and deletes the per-run directory. Files that
+    match credential names (for example `.credentials.json`) are never copied back.
+  - A revoke does not delete the session store. The next resume re-resolves the credential and fails if the grant
+    is revoked (4.3).
   Scope: locally spawned adapters that receive a managed credential (claude-local, hermes_local). hermes-gateway
   receives the credential per request; it must not persist it, and the transport relies on the tailnet's WireGuard
   encryption. `process` and `http` receive no managed credential. codex-local is out of this series.

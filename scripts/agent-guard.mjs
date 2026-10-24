@@ -4,7 +4,7 @@
  *
  * Decides whether a patch written by an agent may be pushed. Pure rules over a
  * unified git diff; the CLI at the bottom is a thin wrapper for workflows.
- * Design: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md section 5.
+ * Design: technical-spec/specs/2026-10-12-agent-issue-loop-design.md section 5.
  *
  * CLI contract: run AFTER `git apply`, from the repo root, with HEAD at the base
  * commit. `readBefore` is `git show HEAD:<path>`, `readAfter` is the working tree.
