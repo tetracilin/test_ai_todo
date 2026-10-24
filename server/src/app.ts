@@ -46,6 +46,7 @@ import { artifactRoutes } from "./routes/artifacts.js";
 import { wopiRoutes } from "./routes/wopi.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { schedulingRoutes } from "./routes/scheduling.js";
+import { calendarEventsRoutes } from "./routes/calendar-events.js";
 import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
@@ -593,6 +594,7 @@ export async function createApp(
     api.use(wopiRoutes(db, opts.storageService, wopiSessions));
   }
   api.use(schedulingRoutes(db));
+  api.use(calendarEventsRoutes(db));
   app.use(mcpGatewayProtocolRoutes(toolGateway));
   api.use(toolAccessRoutes(db, {
     deploymentMode: opts.deploymentMode,

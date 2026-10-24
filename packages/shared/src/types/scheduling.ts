@@ -86,3 +86,35 @@ export interface GenerateSchedulingRoutineIssuesResult {
   createdIssueIds: string[];
   lastGeneratedForDate: string | null;
 }
+
+export interface CreateScheduledIssueRequest {
+  title: string;
+  estimateMinutes?: number | null;
+  scheduledAt?: string | null;
+  projectId?: string | null;
+  clientRequestId?: string;
+}
+
+export interface CreateScheduledIssueResult {
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  scheduling: IssueScheduling;
+}
+
+export interface CalendarEvent {
+  id: string;
+  companyId: string;
+  issueId: string | null;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PinIssueEventRequest {
+  startsAt: string;
+  endsAt?: string;
+  durationMinutes?: number;
+}
