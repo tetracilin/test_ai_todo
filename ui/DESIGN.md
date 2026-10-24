@@ -25,6 +25,11 @@ colors:
   status-done: "#22c55e"
   status-blocked: "#dc2626"
 typography:
+  headline:
+    fontFamily: "InterVariable, Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "18px"
+    fontWeight: 600
+    lineHeight: 1.56
   title:
     fontFamily: "InterVariable, Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "14px"
@@ -124,7 +129,7 @@ CAD drawing (hairline precision, exact small type, a title block that says what 
 is). Engineers already trust these three objects to carry a record. The board borrows their
 authority instead of inventing a brand world.
 
-It is dense on purpose. The type ladder sits at 10–14px, the neutrals are zero-chroma
+It is dense on purpose. The working type ladder for rows, chips and controls sits at 10–14px, the neutrals are zero-chroma
 graphite, and colour appears only when it means something: the status of a card or an
 agent, or the identity capsule of an agent. Dark is the default sheet (`<html class="dark">`)
 and light is a full peer. Every value routes through `ui/src/index.css`.
@@ -136,7 +141,8 @@ token-only structure and the workbook stance are what future work must keep.
 
 **Key Characteristics:**
 - Achromatic graphite neutrals (OKLCH chroma 0) in both themes; colour means status.
-- Dense, small, exact type: Inter Variable, a named ladder at 10 / 11 / 12 / 13 / 14px.
+- Dense, small, exact type: Inter Variable, a named ladder at 10 / 11 / 12 / 13 / 14px for
+  working UI; headings step up on the Tailwind scale.
 - Flat like paper. Hairline rules and tonal cell steps carry structure, not shadows.
 - Machine values (IDs, costs, timestamps, logs) set in the monospace stack.
 - Dark-default sheet with a full light theme; status hues hold up in both.
@@ -196,9 +202,12 @@ never signal state.
 
 **Character:** one neutral grotesque used at small, exact sizes, like the lettering in a
 drawing title block, with a monospace stack for anything a machine produced. There is no
-display face; hierarchy comes from weight and position, not size jumps.
+display face. Weight and position carry most of the hierarchy; headings step up in size
+on the Tailwind scale.
 
 ### Hierarchy
+- **Headline** (600, 18–30px, `text-lg` to `text-3xl`): page and section headings.
+  `text-lg` and `text-xl` are the common steps; the larger steps are for page-level titles.
 - **Title** (600, 14px, leading 1): card and section titles.
 - **Body** (400, 14px / `text-sm`): default UI and content text. Inputs use 16px on
   mobile (`text-base`) to prevent iOS zoom, and 14px from `md` up.
@@ -213,8 +222,9 @@ display face; hierarchy comes from weight and position, not size jumps.
 Headings h1–h3 use `text-wrap: balance`.
 
 ### Named Rules
-**The Title Block Rule.** Hierarchy is set by weight, position and ruling, not by size.
-No new step above 14px enters the app chrome without a DESIGN-UI.md change.
+**The Title Block Rule.** Hierarchy comes from weight, position and ruling first. When size
+must step up, use the Tailwind scale (`text-lg` to `text-3xl`), never a bracket value or a
+new raw size.
 
 **The Machine Type Rule.** If a machine generated the value, it is set in mono through
 the shared formatting helpers. It is never formatted ad hoc per screen.
@@ -338,7 +348,8 @@ gradient in the system and the only place the agent palette appears.
 - **Don't** lift in-plane elements with shadows, or extend the `--shadow-extract-*` debt.
 - **Don't** use hex, raw px, Tailwind bracket values or palette classes (`bg-red-500`) in
   `ui/src/components/**` or `ui/src/pages/**`.
-- **Don't** add a type size above 14px to app chrome, or a display face.
+- **Don't** introduce a display face, or a font size outside the token ladder and the
+  Tailwind scale.
 - **Don't** treat the current neutrals, primary or Inter as the final brand. They are
   provisional until the redesign lands as token values.
 - **Don't** use the agent gradients for anything but the agent capsule.

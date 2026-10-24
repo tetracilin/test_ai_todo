@@ -28,6 +28,7 @@
       "status-blocked": { "role": "secondary", "displayName": "Blocked Red", "canonical": "#dc2626" }
     },
     "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page and section headings on the Tailwind scale (text-lg to text-3xl)." },
       "title": { "displayName": "Title", "purpose": "Card and section titles; hierarchy by weight, not size." },
       "body": { "displayName": "Body", "purpose": "Default UI and content text (text-sm)." },
       "compact": { "displayName": "Compact", "purpose": "Dense rows and secondary panels (--text-compact)." },
@@ -85,9 +86,9 @@
       "name": "Text Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "Hairline field, md radius, 36px tall.",
+      "description": "Hairline field, md radius, 36px tall. 16px text below md prevents iOS focus zoom; 14px from md up.",
       "html": "<input class=\"ds-input\" placeholder=\"Tìm thẻ, hồ sơ, bằng chứng…\" />",
-      "css": ".ds-input { height:36px; width:100%; min-width:0; padding:4px 12px; border:1px solid var(--input, oklch(1 0 0 / 15%)); border-radius:calc(var(--radius, 0.5rem) * 0.8); background:color-mix(in oklab, var(--input, oklch(1 0 0 / 15%)) 30%, transparent); color:var(--foreground, oklch(0.985 0 0)); font:400 14px/20px InterVariable, Inter, system-ui, sans-serif; box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05); outline:none; transition:box-shadow 160ms cubic-bezier(0.4,0,0.2,1); } .ds-input::placeholder { color:var(--muted-foreground, oklch(0.708 0 0)); } .ds-input:focus-visible { border-color:var(--ring, oklch(0.556 0 0)); box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); }"
+      "css": ".ds-input { height:36px; width:100%; min-width:0; padding:4px 12px; border:1px solid var(--input, oklch(1 0 0 / 15%)); border-radius:calc(var(--radius, 0.5rem) * 0.8); background:color-mix(in oklab, var(--input, oklch(1 0 0 / 15%)) 30%, transparent); color:var(--foreground, oklch(0.985 0 0)); font:400 16px/24px InterVariable, Inter, system-ui, sans-serif; box-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05); outline:none; transition:box-shadow 160ms cubic-bezier(0.4,0,0.2,1); } .ds-input::placeholder { color:var(--muted-foreground, oklch(0.708 0 0)); } .ds-input:focus-visible { border-color:var(--ring, oklch(0.556 0 0)); box-shadow:0 0 0 3px color-mix(in oklab, var(--ring, oklch(0.556 0 0)) 50%, transparent); } @media (min-width: 768px) { .ds-input { font-size:14px; line-height:20px; } }"
     },
     {
       "name": "Status Chip",
@@ -116,10 +117,10 @@
   ],
   "narrative": {
     "northStar": "The Engineering Workbook",
-    "overview": "The board is a workbook, not an app skin. It is part spreadsheet (rows, columns, cells you scan), part printed tabular paper (plain sheet, ruled lines, nothing decorative) and part CAD drawing (hairline precision, exact small type, a title block that says what the sheet is). Engineers already trust these three objects to carry a record. The board borrows their authority instead of inventing a brand world.\n\nIt is dense on purpose. The type ladder sits at 10–14px, the neutrals are zero-chroma graphite, and colour appears only when it means something: the status of a card or an agent, or the identity capsule of an agent. Dark is the default sheet (`<html class=\"dark\">`) and light is a full peer. Every value routes through `ui/src/index.css`.\n\nThe current colour and type values are **provisional**. DESIGN-UI.md records that brand colour, type and iconography are being redesigned and will land only as token values. The neutral graphite, the primary and Inter are placeholders. The status vocabulary, the token-only structure and the workbook stance are what future work must keep.",
+    "overview": "The board is a workbook, not an app skin. It is part spreadsheet (rows, columns, cells you scan), part printed tabular paper (plain sheet, ruled lines, nothing decorative) and part CAD drawing (hairline precision, exact small type, a title block that says what the sheet is). Engineers already trust these three objects to carry a record. The board borrows their authority instead of inventing a brand world.\n\nIt is dense on purpose. The working type ladder for rows, chips and controls sits at 10–14px, the neutrals are zero-chroma graphite, and colour appears only when it means something: the status of a card or an agent, or the identity capsule of an agent. Dark is the default sheet (`<html class=\"dark\">`) and light is a full peer. Every value routes through `ui/src/index.css`.\n\nThe current colour and type values are **provisional**. DESIGN-UI.md records that brand colour, type and iconography are being redesigned and will land only as token values. The neutral graphite, the primary and Inter are placeholders. The status vocabulary, the token-only structure and the workbook stance are what future work must keep.",
     "keyCharacteristics": [
       "Achromatic graphite neutrals (OKLCH chroma 0) in both themes; colour means status.",
-      "Dense, small, exact type: Inter Variable, a named ladder at 10 / 11 / 12 / 13 / 14px.",
+      "Dense, small, exact type: Inter Variable, a named ladder at 10 / 11 / 12 / 13 / 14px for working UI; headings step up on the Tailwind scale.",
       "Flat like paper. Hairline rules and tonal cell steps carry structure, not shadows.",
       "Machine values (IDs, costs, timestamps, logs) set in the monospace stack.",
       "Dark-default sheet with a full light theme; status hues hold up in both.",
@@ -128,7 +129,7 @@
     "rules": [
       { "name": "The Colour Means State Rule", "body": "On a board surface, a hue other than graphite must name a status, an agent, a match type or a destructive action. Decorative colour is not allowed.", "section": "colors" },
       { "name": "The One Vocabulary Rule", "body": "A status renders through the same `--status-*` seed in a chip, a row, an icon, a chart and a log line. Never introduce a parallel status palette.", "section": "colors" },
-      { "name": "The Title Block Rule", "body": "Hierarchy is set by weight, position and ruling, not by size. No new step above 14px enters the app chrome without a DESIGN-UI.md change.", "section": "typography" },
+      { "name": "The Title Block Rule", "body": "Hierarchy comes from weight, position and ruling first. When size must step up, use the Tailwind scale (`text-lg` to `text-3xl`), never a bracket value or a new raw size.", "section": "typography" },
       { "name": "The Machine Type Rule", "body": "If a machine generated the value, it is set in mono through the shared formatting helpers. It is never formatted ad hoc per screen.", "section": "typography" },
       { "name": "The Grid Before Whitespace Rule", "body": "Density in service of scanning beats whitespace in service of aesthetics. Space separates groups of information; it is never added to look calm.", "section": "layout" },
       { "name": "The Paper Rule", "body": "Anything on the sheet is flat. If an element needs to stand out, give it a rule, a tonal cell or a status seed. Do not lift it.", "section": "elevation" }
@@ -146,7 +147,7 @@
       "**Don't** add hue to the neutrals or introduce decorative colour. A hue must name a state, an agent, a match type or a destructive action.",
       "**Don't** lift in-plane elements with shadows, or extend the `--shadow-extract-*` debt.",
       "**Don't** use hex, raw px, Tailwind bracket values or palette classes (`bg-red-500`) in `ui/src/components/**` or `ui/src/pages/**`.",
-      "**Don't** add a type size above 14px to app chrome, or a display face.",
+      "**Don't** introduce a display face, or a font size outside the token ladder and the Tailwind scale.",
       "**Don't** treat the current neutrals, primary or Inter as the final brand. They are provisional until the redesign lands as token values.",
       "**Don't** use the agent gradients for anything but the agent capsule."
     ]
