@@ -1,7 +1,5 @@
 # Issue Scheduling: Events, Quick Add and Pin Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add a quick-add composer, a projected time block with an explicit **Pin** action, and a separate calendar-event entity to Paperclip's existing issue scheduling, and fix the defects found in the current scheduling path.
 
 **Architecture:** Scheduling already exists as a one-to-one side table (`issue_scheduling`). This plan keeps that table working, adds a `calendar_events` table for pinned blocks, and dual-writes both for one release so the previous release keeps working. Phase A hardens the existing path. Phase B adds the event entity. Phase C adds the UI. Phase D (the external API for the timesheet tool) is gated and not planned here.

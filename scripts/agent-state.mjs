@@ -4,7 +4,7 @@
  *
  * Pure state rules for the agent issue-to-PR loop: which issues are eligible,
  * label transitions, the daily PR cap and the CI-fix round count.
- * Design: docs/superpowers/specs/2026-10-12-agent-issue-loop-design.md sections 4 and 5.
+ * Design: technical-spec/specs/2026-10-12-agent-issue-loop-design.md sections 4 and 5.
  *
  * CLI (JSON on stdin, JSON on stdout):
  *   node scripts/agent-state.mjs eligible   {"labels": ["agent-ready"]}

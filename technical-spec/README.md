@@ -17,7 +17,7 @@ The fork's source-of-truth trio stays at the repo root: `roadmap.md`, `backlog.m
 
 ## Rules
 
-- New plans go in `plans/`, new design specs in `specs/`, including output from the superpowers skills.
+- New plans go in `plans/`, new design specs in `specs/`.
 - Do not add a top-level `doc/` or `docs/` folder.
 - Keep only design and spec material here. User guides, API reference, release runbooks, run logs,
   screenshots and one-off audit reports belong in the issue/PR that produced them.
