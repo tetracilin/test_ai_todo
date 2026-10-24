@@ -93,6 +93,7 @@ import {
   requireServerAdapter,
 } from "../adapters/index.js";
 import { ADAPTER_DISABLED_AUTHENTICATED_MODE, adapterDeploymentRefusal } from "../adapters/deployment-policy.js";
+import { httpTimeoutConfigError } from "../adapters/http/config-validation.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
@@ -1883,13 +1884,8 @@ export function agentRoutes(
       return;
     }
     if (adapterType === "http") {
-      // A stored legacy 0 still runs with the 30 s default; only new writes are refused.
-      for (const field of ["timeoutSec", "timeoutMs"] as const) {
-        const value = adapterConfig[field];
-        if (value !== undefined && !(typeof value === "number" && Number.isFinite(value) && value > 0)) {
-          throw unprocessable(`Invalid http adapterConfig: ${field} timeout must be greater than 0`);
-        }
-      }
+      const timeoutError = httpTimeoutConfigError(adapterConfig);
+      if (timeoutError) throw unprocessable(timeoutError);
       return;
     }
     if (adapterType !== "opencode_local") return;

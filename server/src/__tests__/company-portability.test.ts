@@ -5456,6 +5456,100 @@ describe("company portability", () => {
     expect(agentSvc.create).not.toHaveBeenCalled();
   });
 
+  it("refuses an authenticated-mode http import before creating the company", async () => {
+    const portability = companyPortabilityService(emptyQueryDb());
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    agentSvc.list.mockResolvedValue([]);
+    setAdapterDeploymentMode("authenticated");
+    try {
+      await expect(portability.importBundle({
+        source: {
+          type: "inline",
+          rootPath: exported.rootPath,
+          files: exported.files,
+        },
+        include: {
+          company: true,
+          agents: true,
+          projects: false,
+          issues: false,
+        },
+        target: {
+          mode: "new_company",
+          newCompanyName: "Imported Paperclip",
+        },
+        agents: ["claudecoder"],
+        collisionStrategy: "rename",
+        adapterOverrides: {
+          claudecoder: {
+            adapterType: "http",
+            adapterConfig: { url: "https://example.test/hook" },
+          },
+        },
+      }, "user-1")).rejects.toThrow('Adapter "http" is disabled in authenticated deployment mode');
+    } finally {
+      setAdapterDeploymentMode("local_trusted");
+    }
+
+    expect(companySvc.create).not.toHaveBeenCalled();
+    expect(companySvc.update).not.toHaveBeenCalled();
+    expect(agentSvc.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["timeoutSec", { timeoutSec: 0 }],
+    ["timeoutMs", { timeoutMs: 0 }],
+  ])("refuses an http import with %s of 0 before any write", async (_field, timeout) => {
+    const portability = companyPortabilityService(emptyQueryDb());
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    agentSvc.list.mockResolvedValue([]);
+
+    await expect(portability.importBundle({
+      source: {
+        type: "inline",
+        rootPath: exported.rootPath,
+        files: exported.files,
+      },
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+      target: {
+        mode: "new_company",
+        newCompanyName: "Imported Paperclip",
+      },
+      agents: ["claudecoder"],
+      collisionStrategy: "rename",
+      adapterOverrides: {
+        claudecoder: {
+          adapterType: "http",
+          adapterConfig: { url: "https://example.test/hook", ...timeout },
+        },
+      },
+    }, "user-1")).rejects.toThrow("timeout must be greater than 0");
+
+    expect(companySvc.create).not.toHaveBeenCalled();
+    expect(agentSvc.create).not.toHaveBeenCalled();
+  });
+
   it("reports unsafe project workspace commands on agent-safe import preview", async () => {
     const portability = companyPortabilityService(emptyQueryDb());
 
