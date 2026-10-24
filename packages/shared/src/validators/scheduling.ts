@@ -62,6 +62,14 @@ export const upsertIssueSchedulingSchema = z
     message: "At least one scheduling field is required",
   });
 
+export const createScheduledIssueSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  estimateMinutes: z.number().int().min(1).max(24 * 60).nullable().optional(),
+  scheduledAt: schedulingDateSchema.nullable().optional(),
+  projectId: z.string().uuid().nullable().optional(),
+  clientRequestId: z.string().uuid().optional(),
+});
+
 export const createSchedulingRoutineSchema = z.object({
   projectId: z.string().uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
@@ -103,6 +111,7 @@ export const generateSchedulingRoutineIssuesSchema = z.object({
   maxDays: z.number().int().min(1).max(60).optional(),
 });
 
+export type CreateScheduledIssue = z.infer<typeof createScheduledIssueSchema>;
 export type UpsertIssueScheduling = z.infer<typeof upsertIssueSchedulingSchema>;
 export type CreateSchedulingRoutine = z.infer<typeof createSchedulingRoutineSchema>;
 export type UpdateSchedulingRoutine = z.infer<typeof updateSchedulingRoutineSchema>;
