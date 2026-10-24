@@ -86,6 +86,23 @@ reason the other two went unnoticed for five days.
   - Why: PRs #62 and #63 were exactly this shape — opened 2026-09-02, merged 2026-09-07 97 seconds apart. #63 was five days stale with red checks; #62 had just been rebased and its checks were still RUNNING when it was merged, completing red six seconds later — and broke `develop` at `pnpm install --frozen-lockfile` for every job and both nightly stacks. Reverted in PR #91. The remaining seven sit in the PR list looking mergeable and carry the same hazard.
   - How to land one safely, one at a time: rebase it onto current `develop` → wait for `t3-ci` to actually re-run and go green → merge that one → confirm `develop` is still green → only then start the next. Never merge two in the same sitting; their lockfiles are computed independently and the second one's will not account for the first.
   - Context: `technical-spec/fork/operating-with-claude-code.md` records this as a repo-specific trap. The durable fix is branch protection on `develop` with "require branches to be up to date" — see the branch-protection item above — which makes this class mechanically unmergeable rather than relying on the reviewer remembering.
+## From /plan-eng-review of the run-queue design (2026-10-14)
+
+Design record: `technical-spec/specs/2026-10-14-kanban-run-queue-design.md`.
+
+- [ ] **In-product RSS sampler for run memory** (P3, human: ~2d / CC: ~1h)
+  - What: sample the peak resident memory of each run's process tree and store it per run.
+  - Why: calibrate per-issue `slot_weight` values without manual steps. The first slice deferred it and uses a standalone script for the observation run.
+  - Pros: automatic calibration data. Cons: platform-specific code (Windows and Linux), no sampling dependency in the repo today.
+  - Context: `runChildProcess` is at `packages/adapter-utils/src/server-utils.ts:3288`. Build it only if the observation run shows more than a 3x memory spread between task types.
+  - Depends on: the run-queue slice shipped.
+
+- [ ] **Review inbox with a reviewer-capacity cap** (P2, human: ~1w / CC: ~3h)
+  - What: one place where the approver sees `in_review` work and approves it or sends it back, plus a cap on how much can sit in review.
+  - Why: the approver has no UI to act on `in_review` output. The run-queue slice orders and caps runs but does not add this surface.
+  - Pros: closes pain #2 from the original request. Cons: needs the approver role named first.
+  - Context: `in_review` already exists in `ISSUE_STATUSES`. Open question 4 in the design record asks whether the cap includes reviewer capacity.
+  - Depends on: the run-queue slice shipped, so out-of-order output does not flood reviewers; approver named.
 
 ## From /plan-eng-review of the upstream adapters spec (2026-10-23)
 
