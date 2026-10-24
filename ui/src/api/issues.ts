@@ -61,6 +61,48 @@ export type ArtifactEditorSession = {
   editorOrigin: string;
 };
 
+/**
+ * PC-011 AC2 provenance of ONE filing act. Never chosen by the client: every
+ * HTTP filing records "manual" server-side (`HTTP_EVIDENCE_SOURCE` in
+ * server/src/routes/issues.ts); "bot"/"system" come from in-process callers.
+ */
+export type IssueEvidenceSource = "manual" | "bot" | "system";
+
+/** One `issue_evidence_links` row joined to the external object it points at. */
+export type IssueEvidenceLink = {
+  id: string;
+  companyId: string;
+  issueId: string;
+  externalObjectId: string;
+  source: IssueEvidenceSource;
+  createdAt: string;
+  providerKey: string;
+  objectType: string;
+  externalId: string;
+  displayTitle: string | null;
+  sanitizedCanonicalUrl: string | null;
+  liveness: string;
+  statusCategory: string;
+  statusTone: string;
+  isTerminal: boolean;
+};
+
+/**
+ * The descriptor form of the evidence-link body. Provider keys "git" and "nas"
+ * are provider-verified server-side; "minio" is refused on this route and must
+ * go through `uploadEvidenceFile`, the only path that mints a stored evidence
+ * object.
+ */
+export type LinkIssueEvidenceDescriptor = {
+  providerKey: string;
+  objectType: string;
+  externalId: string;
+  displayTitle?: string;
+  url?: string;
+};
+
+export type LinkIssueEvidenceBody = LinkIssueEvidenceDescriptor | { externalObjectId: string };
+
 export type IssueListFilters = {
   attention?: "blocked";
   status?: string;
@@ -366,6 +408,26 @@ export const issuesApi = {
     return api.postForm<IssueAttachment>(`/companies/${companyId}/issues/${issueId}/attachments`, form);
   },
   deleteAttachment: (id: string) => api.delete<{ ok: true }>(`/attachments/${id}`),
+  listEvidenceLinks: (id: string) => api.get<IssueEvidenceLink[]>(`/issues/${id}/evidence-links`),
+  linkEvidence: (id: string, data: LinkIssueEvidenceBody) =>
+    api.post<IssueEvidenceLink>(`/issues/${id}/evidence-links`, data),
+  unlinkEvidence: (id: string, linkId: string) =>
+    api.delete<{ ok: true }>(`/issues/${id}/evidence-links/${linkId}`),
+  moveEvidenceLink: (id: string, linkId: string, toIssueId: string) =>
+    api.post<IssueEvidenceLink>(`/issues/${id}/evidence-links/${linkId}/move`, { toIssueId }),
+  /**
+   * The only path that mints a `minio` evidence object. Replies 501 when the
+   * instance has no external storage configured — callers must surface that
+   * as "not configured here", not as a generic failure.
+   */
+  uploadEvidenceFile: (companyId: string, issueId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<IssueEvidenceLink>(
+      `/companies/${companyId}/issues/${issueId}/evidence-links/upload`,
+      form,
+    );
+  },
   listArtifactStorageSources: (companyId: string) =>
     api.get<{ sources: ExternalStorageSource[] }>(`/companies/${companyId}/artifacts/storage-sources`),
   listExternalArtifactObjects: (companyId: string, prefix?: string) => {
