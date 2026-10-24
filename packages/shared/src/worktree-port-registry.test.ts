@@ -46,14 +46,27 @@ describe("worktree port registry lock", () => {
         ...owner,
         processIdentity: "unavailable-process-identity",
       })}\n`);
-      const oldTimestamp = new Date(Date.now() - 10_000);
-      fs.utimesSync(lockPath, oldTimestamp, oldTimestamp);
       firstEntered.resolve();
       await releaseFirst.promise;
     });
     await firstEntered.promise;
 
-    expect(Date.now() - fs.statSync(lockPath).mtimeMs).toBeGreaterThan(5_000);
+    // The owner's heartbeat worker thread refreshes the lock mtime once right
+    // after it starts and then every second, so it can land between any backdate
+    // and the stat that checks it. Retry the backdate until the lock reads as
+    // stale, then keep it stale while the first holder has it, so the second
+    // acquirer reaches the ownership probe instead of seeing a fresh lock.
+    const backdateLock = () => {
+      const oldTimestamp = new Date(Date.now() - 10_000);
+      fs.utimesSync(lockPath, oldTimestamp, oldTimestamp);
+    };
+    let lockIsStale = false;
+    for (let attempt = 0; attempt < 20 && !lockIsStale; attempt += 1) {
+      backdateLock();
+      lockIsStale = Date.now() - fs.statSync(lockPath).mtimeMs > 5_000;
+    }
+    expect(lockIsStale).toBe(true);
+    const keepStale = setInterval(backdateLock, 5);
 
     const second = withWorktreePortRegistryLock(homeDir, async () => {
       secondEntered = true;
@@ -61,6 +74,7 @@ describe("worktree port registry lock", () => {
     await delay(100);
 
     expect(secondEntered).toBe(false);
+    clearInterval(keepStale);
     releaseFirst.resolve();
     await Promise.all([first, second]);
     expect(secondEntered).toBe(true);
