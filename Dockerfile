@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1.20
+# node:lts-trixie-slim now resolves to Node 26, which no longer ships Corepack.
+# Install it explicitly so `corepack enable` can provide the pnpm version pinned
+# by package.json's packageManager field.
 FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates gosu curl gh git wget ripgrep python3 \
   && rm -rf /var/lib/apt/lists/* \
+  && npm install --global corepack@latest \
   && corepack enable
 
 # Modify the existing node user/group to have the specified UID/GID to match host user
