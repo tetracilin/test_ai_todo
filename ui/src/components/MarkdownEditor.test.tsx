@@ -273,8 +273,13 @@ describe("MarkdownEditor", () => {
       );
     });
 
-    await flush();
-    expect(container.textContent).toContain("Loaded plan body");
+    // The editor ref attaches on a zero-delay timer and the mock applies the
+    // external value from that callback. A single flush() can resolve before
+    // React commits the update under load, so poll for the text instead of
+    // asserting on one fixed tick.
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Loaded plan body");
+    });
 
     await act(async () => {
       root.unmount();
