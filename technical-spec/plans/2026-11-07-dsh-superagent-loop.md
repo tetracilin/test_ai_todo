@@ -141,21 +141,20 @@ and a question. The owner decides.
 
 | Item | State |
 |---|---|
-| Issue #186 → PR #201 | Contract suite restored, 5/5 pass; `build-image` blocked by §9 |
-| Issue #202 → PR #203 | `build-image` fixed (Corepack after Node 26); all checks green; **needs a human merge** |
+| Issue #186 → PR #201 | Contract suite restored; **all five checks green** after rebasing onto `3e50ed78` |
+| Issue #202 → PR #203 | `build-image` fixed; **merged** into `develop` as `3e50ed78` on 2026-11-07 |
 | Issue #143 | Verified already fixed on `develop`; recommended close |
-| Issue #138 → PR #206 | First autonomous run: `vi.waitFor` instead of one `flush()`; 38/38 file, 20/20 target under load; report committed; `unit` running |
-| Label board | #186, #202, #138 on `agent-pr`; #143, #133, #132 cleared; #204 and #134 remain `agent-ready` (#134 is skipped while open PR #144 references it) |
+| Issue #138 → PR #206 | First autonomous run: `vi.waitFor` instead of one `flush()`; **all five checks green** after rebase |
+| Label board | Owner labelled the whole open backlog `agent-ready`; each run picks the oldest eligible issue and skips `agent-pr`, `decision`, `ci`, `qa` and issues with an open PR |
 | First live run (20:50) | Stalled on a sandbox escalation for a worktree outside the repo; see "Sandbox and network" in §1 |
 | Second run (21:02) | Worked end to end and opened PR #206. Its Discord post failed on sandbox TLS; the operator session posted the summary and the schedule now uses Node `fetch` (§5) |
 
 ## 9. Known blocker
 
-`build-image` has been red on PRs that run it since 2026-11-01: `node:lts-trixie-slim`
-now resolves to Node 26, which no longer ships Corepack, so `corepack enable` exits
-127. PR #203 fixes it and is green. Documentation-only PRs skip `build-image` and
-still satisfy the required check; change PRs stay blocked until a human merges #203.
-After that, #201 and #206 need a rebase to pick up the fix.
+Resolved. `build-image` was red on PRs that ran it since 2026-11-01 because
+`node:lts-trixie-slim` now resolves to Node 26, which no longer ships Corepack.
+PR #203 fixed it and merged into `develop` as `3e50ed78` on 2026-11-07. #201 and #206
+were rebased onto that commit and now pass `build-image`.
 
 ## 10. Open decisions for the owner (with Claude Code)
 
