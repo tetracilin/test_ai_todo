@@ -71,15 +71,17 @@ agent-ready ─▶ agent-working ─▶ agent-pr ─▶ (human merges)
 4. Claims the issue (`agent-ready` → `agent-working`) before any work starts.
 5. Creates the worktree `tmp/agent-worktrees/issue-<n>` and the branch
    `fix/issue-<n>-<slug>` from `origin/develop`.
-6. Reads `AGENTS.md`, `CLAUDE.md`, and `.github/PULL_REQUEST_TEMPLATE.md`.
-7. Implements the smallest correct fix and runs the smallest relevant check. For
+6. Runs `pnpm install --frozen-lockfile` in the worktree. A fresh worktree has no
+   `node_modules`, and `ensure-build-deps` fails without its local TypeScript.
+7. Reads `AGENTS.md`, `CLAUDE.md`, and `.github/PULL_REQUEST_TEMPLATE.md`.
+8. Implements the smallest correct fix and runs the smallest relevant check. For
    `server/` tests: `pnpm --filter @paperclipai/plugin-sdk ensure-build-deps`, then
    `npx vitest run <file>`.
-8. Writes the hand-off report (see §4).
-9. Commits with the trailer `Co-Authored-By: DeepSeek Harness <noreply@deepseek.com>`,
-   pushes the branch, opens a PR to `develop` with the repository template.
-10. Comments on the issue, moves it to `agent-pr`, adds `agent-pr` to the PR.
-11. Posts one Discord message.
+9. Writes the hand-off report (see §4).
+10. Commits with the trailer `Co-Authored-By: DeepSeek Harness <noreply@deepseek.com>`,
+    pushes the branch, opens a PR to `develop` with the repository template.
+11. Comments on the issue, moves it to `agent-pr`, adds `agent-pr` to the PR.
+12. Posts one Discord message.
 
 ## 4. Hand-off documents
 
@@ -97,6 +99,18 @@ verification.
 One message per run, posted to the webhook in the file above. Format: issue number,
 PR URL, one-line summary, verification result, report path. Failed runs post one
 message naming the stopping rule.
+
+The scheduled session cannot post with `Invoke-RestMethod` or `curl`: the sandbox
+blocks the Windows certificate store, so .NET and curl TLS fail with
+`SEC_E_NO_CREDENTIALS` / curl exit 35. The run writes the JSON body to
+`tmp/discord-message.json` in its worktree and posts with Node's `fetch`, which uses
+its own CA bundle:
+
+```sh
+node -e "const fs=require('fs');const u=fs.readFileSync(process.env.USERPROFILE+'\\.dsh\\state\\dsh-superagent\\discord-webhook.url','utf8').trim();const body=fs.readFileSync(process.argv[1],'utf8');fetch(u,{method:'POST',headers:{'content-type':'application/json'},body}).then(r=>console.log('status='+r.status)).catch(e=>console.log('err='+e.message))" "tmp/discord-message.json"
+```
+
+`status=204` means delivered.
 
 ## 6. Guardrails
 
@@ -117,7 +131,11 @@ and a question. The owner decides.
 - **Pause the loop:** disable the DSH schedule (schedule id above), or pause the
   schedule in the DSH UI. No issue is claimed while it is paused.
 - **Stop one issue:** remove `agent-ready`, or add `decision`.
-- **Resume:** re-enable the schedule; add `agent-ready` to the issues to work.
+- **Resume:** re-enable the schedule. Before re-adding `agent-ready`, clear the labels
+  that block eligibility: `agent-working`, `agent-blocked`, `decision`, `qa`. The
+  issue is still skipped while any of them remains.
+- **Retry after a failed run:** read the issue's last comment (it names the rule), fix
+  the cause, remove `agent-blocked`, then add `agent-ready`.
 
 ## 8. Current state (2026-11-07)
 
@@ -126,15 +144,18 @@ and a question. The owner decides.
 | Issue #186 → PR #201 | Contract suite restored, 5/5 pass; `build-image` blocked by §9 |
 | Issue #202 → PR #203 | `build-image` fixed (Corepack after Node 26); all checks green; **needs a human merge** |
 | Issue #143 | Verified already fixed on `develop`; recommended close |
-| Label board | #186 and #202 moved to `agent-pr`; #143 and #133 cleared of `agent-ready`; #132 (`qa`) excluded; #134, #138, #204 remain `agent-ready` |
-| First live run (20:50) | Stalled on a sandbox escalation for a worktree outside the repo; see "Sandbox and network" in §1. Fixed by the 21:02 schedule |
+| Issue #138 → PR #206 | First autonomous run: `vi.waitFor` instead of one `flush()`; 38/38 file, 20/20 target under load; report committed; `unit` running |
+| Label board | #186, #202, #138 on `agent-pr`; #143, #133, #132 cleared; #204 and #134 remain `agent-ready` (#134 is skipped while open PR #144 references it) |
+| First live run (20:50) | Stalled on a sandbox escalation for a worktree outside the repo; see "Sandbox and network" in §1 |
+| Second run (21:02) | Worked end to end and opened PR #206. Its Discord post failed on sandbox TLS; the operator session posted the summary and the schedule now uses Node `fetch` (§5) |
 
 ## 9. Known blocker
 
-`build-image` has been red on every PR since 2026-11-01: `node:lts-trixie-slim` now
-resolves to Node 26, which no longer ships Corepack, so `corepack enable` exits 127.
-PR #203 fixes it and is green. Until a human merges #203 and #201 rebases, no agent
-PR can pass the required `build-image` check.
+`build-image` has been red on PRs that run it since 2026-11-01: `node:lts-trixie-slim`
+now resolves to Node 26, which no longer ships Corepack, so `corepack enable` exits
+127. PR #203 fixes it and is green. Documentation-only PRs skip `build-image` and
+still satisfy the required check; change PRs stay blocked until a human merges #203.
+After that, #201 and #206 need a rebase to pick up the fix.
 
 ## 10. Open decisions for the owner (with Claude Code)
 
