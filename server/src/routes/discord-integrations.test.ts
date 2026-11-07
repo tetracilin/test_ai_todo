@@ -209,6 +209,114 @@ describe("POST /integrations/discord/commands/task-create", () => {
   });
 });
 
+describe("POST /integrations/discord/dm/inbound", () => {
+  const dm = { discordUserId: "discord-user-1", messageId: "message-1", channelId: "dm-channel-1", content: "trợ giúp", attachments: [] };
+  const primaryLink = { ...linkedUser, primary: true };
+  const company = { attachmentMaxBytes: 1024 };
+
+  function dmPost(app: express.Express) {
+    return request(app).post("/api/integrations/discord/dm/inbound").set("Authorization", `Bearer ${bridgeToken}`);
+  }
+
+  it("requires the bridge token", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    const response = await request(app).post("/api/integrations/discord/dm/inbound").send(dm).expect(401);
+
+    expect(response.body.code).toBe("bridge_auth_required");
+  });
+
+  it("answers an unlinked sender with silence", async () => {
+    const db = fakeDb({ selectRows: [[]] });
+    const app = await buildApp(db);
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a linked viewer with the same silence", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], []] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+  });
+
+  it("does not guess between two company links", async () => {
+    const other = { ...primaryLink, companyId: "44444444-4444-4444-8444-444444444444" };
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink, other]] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+  });
+
+  it("uses the single primary link when another link is not primary", async () => {
+    const other = { ...primaryLink, companyId: "44444444-4444-4444-8444-444444444444", primary: false };
+    const app = await buildApp(fakeDb({ selectRows: [[other, primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body.linked).toBe(true);
+    expect(response.body.companyId).toBe(COMPANY_ID);
+  });
+
+  it.each(["trợ giúp", "tro giup", "help"])("answers the help verb %s with the phrase table", async (content) => {
+    const { renderWp0HelpMessage } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({ ...dm, content }).expect(200);
+
+    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, reply: renderWp0HelpMessage(), attachments: [] });
+  });
+
+  it("echoes unrecognized text inside the unknown-phrase reply", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({ ...dm, content: "  xyz abc  " }).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("unknown_phrase", { input: "xyz abc" }));
+  });
+
+  it("rejects disallowed or oversized attachments from metadata alone", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({
+      ...dm,
+      content: "",
+      attachments: [
+        { id: "a-1", filename: "photo.png", contentType: "image/png", size: 512 },
+        { id: "a-2", filename: "setup.exe", contentType: "application/x-msdownload", size: 512 },
+        { id: "a-3", filename: "big.png", contentType: "image/png", size: 2048 },
+        { id: "a-4", filename: "unknown.bin", contentType: null, size: 10 },
+      ],
+    }).expect(200);
+
+    expect(response.body.attachments).toEqual([
+      { id: "a-1", accepted: true },
+      { id: "a-2", accepted: false, reason: "content_type_not_allowed" },
+      { id: "a-3", accepted: false, reason: "too_large" },
+      { id: "a-4", accepted: false, reason: "content_type_not_allowed" },
+    ]);
+    expect(response.body.reply).toBe(renderWp0Message("media_rejected", { item: "tệp setup.exe" }));
+  });
+
+  it("rate limits one Discord user's DMs", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await dmPost(app).send({ ...dm, discordUserId: "chatty-user" }).expect(200);
+    }
+    const response = await dmPost(app).send({ ...dm, discordUserId: "chatty-user" }).expect(429);
+
+    expect(response.body.code).toBe("dm_rate_limited");
+  });
+});
+
 describe("Discord integration abuse and tenant boundaries", () => {
   it("rate limits link-code minting per board user", async () => {
     const app = await buildApp(fakeDb({ selectRows: [] }));

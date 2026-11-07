@@ -1,7 +1,8 @@
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { config } from "./config.js";
 import { routeCommand } from "./commands/router.js";
 import { DiscordIntegrationClient } from "./lib/discordIntegrationClient.js";
+import { handleDirectMessage } from "./lib/dmHandler.js";
 import { startDeliveryWorker } from "./lib/notifier.js";
 import { startHealthServer } from "./health.js";
 
@@ -10,9 +11,15 @@ const paperclip = new DiscordIntegrationClient({
   apiKey: config.paperclip.apiKey,
 });
 
-// Guilds is enough for application commands. This bridge intentionally does
-// not read arbitrary user messages or request privileged message/member intents.
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// Guilds serves application commands. DirectMessages + MessageContent serve the
+// WP-0 DM surface (F-DM-2); MessageContent is privileged and must be enabled in
+// the Developer Portal, or DMs arrive with empty content. Guild messages are
+// dropped unread by handleDirectMessage. Partials.Channel is required for
+// discord.js to emit messageCreate for DM channels it has not cached.
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Channel],
+});
 
 // Loopback readiness endpoint for container health checks. It reports ready
 // only after the Discord gateway connection has been established.
@@ -28,6 +35,10 @@ client.once(Events.ClientReady, (readyClient) => {
 client.on(Events.InteractionCreate, (interaction) => {
   if (!interaction.isChatInputCommand() || interaction.user.bot) return;
   void routeCommand({ paperclip }, interaction);
+});
+
+client.on(Events.MessageCreate, (message) => {
+  void handleDirectMessage({ paperclip }, message);
 });
 
 client.login(config.discord.botToken).catch(() => {

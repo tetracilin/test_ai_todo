@@ -105,6 +105,9 @@ function createApp(db: any, deploymentMode: "authenticated" | "local_trusted" = 
   app.get("/api/integrations/discord/deliveries/pending", (req, res) => {
     res.json(req.actor);
   });
+  app.post("/api/integrations/discord/dm/inbound", (req, res) => {
+    res.json(req.actor);
+  });
   app.get("/companies/:companyId/protected", (req, res) => {
     assertCompanyAccess(req, req.params.companyId);
     res.json({ ok: true });
@@ -194,6 +197,18 @@ describe("agent auth middleware", () => {
     expect(bridgeResponse.body).toMatchObject({ type: "none", source: "none" });
     expect(unrelatedResponse.status).toBe(401);
     expect(unrelatedResponse.body.error).toContain("Agent token did not verify");
+  });
+
+  it("passes a valid bridge token through the DM inbound route", async () => {
+    process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = "discord-bridge-test-token";
+    const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
+
+    const response = await request(createApp(db))
+      .post("/api/integrations/discord/dm/inbound")
+      .set("Authorization", "Bearer discord-bridge-test-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ type: "none", source: "none" });
   });
 
   it("does not bypass agent authentication for an invalid bridge token", async () => {

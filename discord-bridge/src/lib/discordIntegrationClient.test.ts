@@ -49,6 +49,14 @@ describe("DiscordIntegrationClient", () => {
     await expect(client().createTask(request)).rejects.toEqual(new DiscordIntegrationApiError(403, "project_access_denied"));
   });
 
+  it("posts a DM to the bridge-scoped inbound endpoint", async () => {
+    const dm = { discordUserId: "discord-user-1", messageId: "m-1", channelId: "dm-1", content: "trợ giúp", attachments: [] };
+    nextResponse = { status: 200, body: { linked: false } };
+
+    await expect(client().sendDirectMessage(dm)).resolves.toEqual({ linked: false });
+    expect(requests).toEqual([{ method: "POST", url: "/api/integrations/discord/dm/inbound", authorization: "Bearer test-key", body: dm }]);
+  });
+
   it("uses bridge-only delivery endpoints without exposing generic issue writes", async () => {
     nextResponse = { status: 200, body: [] };
     await client().getPendingDiscordDeliveries();

@@ -299,6 +299,17 @@ describe("WP0_MESSAGE_TEMPLATES", () => {
     expect(byOwner.engineer).toEqual(["unknown_phrase", "media_fetch_failed"]);
   });
 
+  // F-DM-2: an allowlist rejection is not a failed attempt, so it must not
+  // promise a retry from either side — resending the same file fails again.
+  it("rejects disallowed media without promising a retry", () => {
+    const rendered = renderWp0Message("media_rejected", { item: "tệp setup.exe" });
+    expect(rendered).toContain("tệp setup.exe");
+    expect(WP0_MESSAGE_TEMPLATES.media_rejected.retryOwner).toBeNull();
+    for (const owner of WP0_RETRY_OWNERS) {
+      expect(rendered).not.toContain(WP0_RETRY_NOTICES[owner]);
+    }
+  });
+
   // Op AC10: "the bot's 4-line Vietnamese first message to a newly linked engineer".
   it("keeps the welcome message to four lines", () => {
     const rendered = renderWp0Message("welcome", { name: "anh Hùng" });

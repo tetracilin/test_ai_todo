@@ -20,6 +20,24 @@ export interface DiscordTaskCreateResult {
   duplicate: boolean;
 }
 
+export interface DiscordDirectMessageRequest {
+  discordUserId: string;
+  messageId: string;
+  channelId: string;
+  content: string;
+  /** Metadata only; the server gates type and size before any byte is fetched. */
+  attachments: Array<{ id: string; filename: string; contentType: string | null; size: number }>;
+}
+
+export type DiscordDirectMessageResult =
+  | { linked: false }
+  | {
+    linked: true;
+    companyId: string;
+    reply: string;
+    attachments: Array<{ id: string; accepted: boolean; reason?: string }>;
+  };
+
 export interface DiscordNotificationEvent {
   id: string;
   idempotencyKey: string;
@@ -73,6 +91,10 @@ export class DiscordIntegrationClient {
 
   async createTask(request: DiscordTaskCreateRequest): Promise<DiscordTaskCreateResult> {
     return this.request("/api/integrations/discord/commands/task-create", { method: "POST", body: JSON.stringify(request) });
+  }
+
+  async sendDirectMessage(request: DiscordDirectMessageRequest): Promise<DiscordDirectMessageResult> {
+    return this.request("/api/integrations/discord/dm/inbound", { method: "POST", body: JSON.stringify(request) });
   }
 
   async getPendingDiscordDeliveries(): Promise<DiscordDelivery[]> {
