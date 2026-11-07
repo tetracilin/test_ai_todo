@@ -9,21 +9,43 @@ to Discord. It never merges.
 ## 1. What runs
 
 - **Scheduler:** a DSH recurring task, schedule id
-  `schedule-47f1ad53-1b5e-4ca6-9bc5-d2e57120a3f6`, hourly, first run 2026-11-07 20:50
+  `schedule-31dd5a71-fb98-43f0-858f-15ef62a12b03`, hourly from 2026-11-07 21:02
   Asia/Saigon.
 - **Session:** one dedicated DSH session per loop (`new_once` target), created by the
   scheduler with this repository as its working directory.
 - **Identity:** the `tetracilin` GitHub account, through the authenticated `gh` CLI.
   The owner approved this identity.
 - **Isolation:** every issue is worked in its own git worktree under
-  `C:\Users\Tetracilin\Paperclip AI TODO\t3-agent\issue-<n>`, branched from
-  `origin/develop`. The base checkout is never edited by a run.
+  `test_ai_todo\tmp\agent-worktrees\issue-<n>`, branched from `origin/develop`.
+  `tmp/` is gitignored, so the worktree never appears in `git status`. The base
+  checkout is never edited by a run.
+
+### Sandbox and network
+
+The scheduled session runs with the workspace-write sandbox and no approver. Two rules
+from the first live run (2026-11-07, 20:50) are therefore part of the design:
+
+- **Write only inside the repository.** A worktree outside the workspace triggers a
+  sandbox-escalation approval that nobody answers, and the run stalls. The worktree root
+  above is inside the repository for that reason.
+- **Git network commands need the gh credential helper and the OpenSSL backend.** The
+  sandbox blocks the Windows schannel credential store, so a plain `git fetch` fails with
+  `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`. Every network git
+  command uses:
+
+  ```sh
+  git -c http.sslBackend=openssl -c credential.helper="!gh auth git-credential" <command>
+  ```
 
 ## 2. Trigger and eligibility
 
 An issue enters the loop only when a human adds the **`agent-ready`** label.
 A run picks the oldest eligible issue and skips any issue that has
-`agent-working`, `agent-pr`, `agent-blocked`, `decision`, or `ci`.
+`agent-working`, `agent-pr`, `agent-blocked`, `decision`, `ci`, or `qa`. It also skips
+an issue that already has an open PR referencing it (`Fixes #<n>`).
+
+`qa` is excluded because those issues ask for manual UI verification, and the loop
+cannot produce reliable evidence for that. The issue stays open for a human.
 
 State machine (labels):
 
@@ -43,10 +65,12 @@ agent-ready ─▶ agent-working ─▶ agent-pr ─▶ (human merges)
 
 1. Reads the Discord webhook from `%USERPROFILE%\.dsh\state\dsh-superagent\discord-webhook.url`
    (outside git; never printed or committed).
-2. `git fetch origin --prune` in the base checkout.
+2. `git -c http.sslBackend=openssl -c credential.helper="!gh auth git-credential" fetch origin --prune`
+   in the base checkout.
 3. Lists `agent-ready` issues. **No eligible issue → no output, no Discord message.**
-4. Claims the issue (`agent-ready` → `agent-working`).
-5. Creates the worktree and branch `fix/issue-<n>-<slug>` from `origin/develop`.
+4. Claims the issue (`agent-ready` → `agent-working`) before any work starts.
+5. Creates the worktree `tmp/agent-worktrees/issue-<n>` and the branch
+   `fix/issue-<n>-<slug>` from `origin/develop`.
 6. Reads `AGENTS.md`, `CLAUDE.md`, and `.github/PULL_REQUEST_TEMPLATE.md`.
 7. Implements the smallest correct fix and runs the smallest relevant check. For
    `server/` tests: `pnpm --filter @paperclipai/plugin-sdk ensure-build-deps`, then
@@ -102,7 +126,8 @@ and a question. The owner decides.
 | Issue #186 → PR #201 | Contract suite restored, 5/5 pass; `build-image` blocked by §9 |
 | Issue #202 → PR #203 | `build-image` fixed (Corepack after Node 26); all checks green; **needs a human merge** |
 | Issue #143 | Verified already fixed on `develop`; recommended close |
-| Issue #138 | Seeded as the first `agent-ready` issue for the loop |
+| Label board | #186 and #202 moved to `agent-pr`; #143 and #133 cleared of `agent-ready`; #132 (`qa`) excluded; #134, #138, #204 remain `agent-ready` |
+| First live run (20:50) | Stalled on a sandbox escalation for a worktree outside the repo; see "Sandbox and network" in §1. Fixed by the 21:02 schedule |
 
 ## 9. Known blocker
 
@@ -118,3 +143,4 @@ PR can pass the required `build-image` check.
 2. Move from per-run Discord messages to a rolling status page, if wanted.
 3. Keep the label gate, or let the loop pick `bug` issues without `agent-ready`.
 4. Add a daily cap (currently one issue per hourly run at most).
+
