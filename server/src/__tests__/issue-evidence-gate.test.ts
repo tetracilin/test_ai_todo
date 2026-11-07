@@ -25,6 +25,7 @@ import { HttpError, unprocessable } from "../errors.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 import { issueRecoveryActionService } from "../services/issue-recovery-actions.js";
+import type { ActivityPublication } from "../services/activity-log.js";
 import { issueService } from "../services/issues.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -366,6 +367,23 @@ describeEmbeddedPostgres("issue evidence gate (PC-001)", () => {
       .from(activityLog)
       .where(and(eq(activityLog.entityId, issueId), eq(activityLog.action, "issue.evidence_gate.closed")));
     expect(logRow).toMatchObject({ details: { evidenceCount: 0 } });
+  });
+
+  it("queues the evidence-gate close publication for after the transaction commits", async () => {
+    const { companyId, prefix } = await seedCompany({ evidenceGateEnabled: true });
+    const issueId = await seedIssue(companyId, prefix);
+    await seedEvidenceLink(companyId, issueId);
+
+    // The route layer hands update() its post-commit activity queue. Publishing
+    // from inside the transaction would leak the close to SSE subscribers and
+    // plugin handlers before the `done` row is durable, so the event must land
+    // on the queue instead, exactly like the inbox-archived event does.
+    const publications: ActivityPublication[] = [];
+    await svc.update(issueId, { status: "done" }, db, publications);
+
+    expect(publications.map((publication) => publication.payload.action)).toContain(
+      "issue.evidence_gate.closed",
+    );
   });
 
   // -- Route-level defense-in-depth: proves the gate is actually reached

@@ -8022,6 +8022,10 @@ export function issueService(db: Db) {
           // AC3/AC5 (PC-001): record the evidence count on every successful
           // transition into done, regardless of whether the gate flag is on,
           // so a future WP-close export can query it per engineer/WP.
+          // Queue the publication on the transaction's post-commit list: the
+          // activity row is written inside the transaction, but SSE subscribers
+          // and plugin handlers must not hear about the close until it commits
+          // and can no longer roll back.
           await logActivity(tx as unknown as Db, {
             companyId: updated.companyId,
             actorType: actorAgentId ? "agent" : actorUserId ? "user" : "system",
@@ -8035,7 +8039,7 @@ export function issueService(db: Db) {
               identifier: updated.identifier ?? null,
               evidenceCount: evidenceCountForTransition,
             },
-          });
+          }, activityPublications);
         }
         if (existing.status !== updated.status) {
           if (
