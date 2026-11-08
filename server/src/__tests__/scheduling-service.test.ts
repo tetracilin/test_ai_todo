@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  calendarEvents,
   companies,
   companyMemberships,
   createDb,
@@ -118,6 +119,146 @@ describeEmbeddedPostgres("scheduling service", () => {
     const cleared = await svc.clearIssueScheduling(companyId, issue.id);
     expect(cleared).toBe(true);
     expect(await svc.getIssueScheduling(companyId, issue.id)).toBeNull();
+  });
+
+  it("returns the previous scheduling row from upsertIssueSchedulingWithPrevious", async () => {
+    const { companyId, issueSvc, svc } = await seedFixture();
+    const issue = await issueSvc.create(companyId, { title: "Prev", status: "todo", priority: "medium" });
+
+    const first = await svc.upsertIssueSchedulingWithPrevious(companyId, issue.id, {
+      scheduledAt: new Date("2026-10-14T03:00:00.000Z"),
+      scheduledDurationMinutes: 30,
+    });
+    expect(first.previous).toBeNull();
+    expect(first.scheduling.scheduledDurationMinutes).toBe(30);
+
+    const second = await svc.upsertIssueSchedulingWithPrevious(companyId, issue.id, {
+      scheduledDurationMinutes: 45,
+    });
+    expect(second.previous?.scheduledDurationMinutes).toBe(30);
+    expect(second.previous?.scheduledAt).toBe("2026-10-14T03:00:00.000Z");
+    expect(second.scheduling.scheduledDurationMinutes).toBe(45);
+  });
+
+  it("creates an issue with an estimate and no time, atomically", async () => {
+    const { companyId, svc } = await seedFixture();
+    const result = await svc.createScheduledIssue(
+      companyId,
+      { title: "Quick task", estimateMinutes: 45 },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(result.deduplicated).toBe(false);
+    expect(result.title).toBe("Quick task");
+    expect(result.scheduling.scheduledAt).toBeNull();
+    expect(result.scheduling.scheduledDurationMinutes).toBe(45);
+    const rows = await db.select().from(issueScheduling).where(eq(issueScheduling.issueId, result.issueId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("returns the same issue for a repeated clientRequestId", async () => {
+    const { companyId, svc } = await seedFixture();
+    const clientRequestId = randomUUID();
+    const first = await svc.createScheduledIssue(
+      companyId,
+      { title: "Once", estimateMinutes: 30, clientRequestId },
+      { agentId: null, userId: "user-1" },
+    );
+    const second = await svc.createScheduledIssue(
+      companyId,
+      { title: "Once", estimateMinutes: 30, clientRequestId },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(second.issueId).toBe(first.issueId);
+    expect(second.deduplicated).toBe(true);
+    const rows = await db.select().from(issueScheduling).where(eq(issueScheduling.companyId, companyId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects a projectId from another company and creates nothing", async () => {
+    const { companyId, svc } = await seedFixture();
+    const other = await seedFixture();
+    const foreignProjectId = randomUUID();
+    await db.insert(projects).values({ id: foreignProjectId, companyId: other.companyId, name: "Foreign", status: "planned" });
+    await expect(
+      svc.createScheduledIssue(
+        companyId,
+        { title: "Cross tenant", projectId: foreignProjectId },
+        { agentId: null, userId: "user-1" },
+      ),
+    ).rejects.toThrow(/project/i);
+    const rows = await db.select().from(issues).where(eq(issues.companyId, companyId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("rolls back the issue when the after-write hook fails", async () => {
+    const { companyId, svc } = await seedFixture();
+    await expect(
+      svc.createScheduledIssue(
+        companyId,
+        { title: "Rolled back", estimateMinutes: 30 },
+        { agentId: null, userId: "user-1" },
+        async () => {
+          throw new Error("activity failed");
+        },
+      ),
+    ).rejects.toThrow("activity failed");
+    const rows = await db.select().from(issues).where(eq(issues.companyId, companyId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps the calendar event in step with every scheduling writer", async () => {
+    const { companyId, agentId, issueSvc, svc } = await seedFixture();
+    const eventFor = (issueId: string) =>
+      db.select().from(calendarEvents).where(eq(calendarEvents.issueId, issueId)).then((rows) => rows[0] ?? null);
+
+    // upsert with a time creates the event; a duration-only change resizes it
+    const issue = await issueSvc.create(companyId, { title: "Synced", status: "todo", priority: "medium" });
+    await svc.upsertIssueScheduling(companyId, issue.id, {
+      scheduledAt: new Date("2026-10-14T03:00:00.000Z"),
+      scheduledDurationMinutes: 30,
+    });
+    expect((await eventFor(issue.id))?.endsAt.toISOString()).toBe("2026-10-14T03:30:00.000Z");
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledDurationMinutes: 60 });
+    expect((await eventFor(issue.id))?.endsAt.toISOString()).toBe("2026-10-14T04:00:00.000Z");
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: new Date("2026-10-14T09:00:00.000Z") });
+    expect((await eventFor(issue.id))?.startsAt.toISOString()).toBe("2026-10-14T09:00:00.000Z");
+
+    // setting the time to null removes the event
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: null });
+    expect(await eventFor(issue.id)).toBeNull();
+
+    // clearing the scheduling row removes the event
+    await svc.upsertIssueScheduling(companyId, issue.id, { scheduledAt: new Date("2026-10-14T03:00:00.000Z") });
+    expect(await eventFor(issue.id)).not.toBeNull();
+    await svc.clearIssueScheduling(companyId, issue.id);
+    expect(await eventFor(issue.id)).toBeNull();
+
+    // quick add with a time creates the event; without a time it creates none
+    const timed = await svc.createScheduledIssue(
+      companyId,
+      { title: "Timed", estimateMinutes: 45, scheduledAt: new Date("2026-10-14T05:00:00.000Z") },
+      { agentId: null, userId: "user-1" },
+    );
+    expect((await eventFor(timed.issueId))?.endsAt.toISOString()).toBe("2026-10-14T05:45:00.000Z");
+    const untimed = await svc.createScheduledIssue(
+      companyId,
+      { title: "Untimed", estimateMinutes: 45 },
+      { agentId: null, userId: "user-1" },
+    );
+    expect(await eventFor(untimed.issueId)).toBeNull();
+
+    // routine generation creates the event
+    const routine = await svc.createRoutine(
+      companyId,
+      { title: "Daily", assigneeAgentId: agentId, recurrenceRule: { kind: "daily" }, scheduledTime: "09:00", estimateMinutes: 20 },
+      { agentId: null, userId: null },
+    );
+    const generated = await svc.generateDueIssuesForRoutine(companyId, routine.id, {
+      asOf: new Date("2026-10-14T12:00:00.000Z"),
+      maxDays: 1,
+    });
+    expect(generated.createdIssueIds).toHaveLength(1);
+    expect(await eventFor(generated.createdIssueIds[0]!)).not.toBeNull();
   });
 
   it("rejects scheduling lookups for an issue in a different company", async () => {

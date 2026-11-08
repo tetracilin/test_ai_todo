@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  createScheduledIssueSchema,
+  pinIssueEventSchema,
   createSchedulingRoutineSchema,
   generateSchedulingRoutineIssuesSchema,
   updateSchedulingRoutineSchema,
@@ -39,5 +41,33 @@ describe("scheduling routine validators", () => {
     ]) {
       expect(input.schema.safeParse(input.value).success).toBe(false);
     }
+  });
+});
+
+describe("createScheduledIssueSchema", () => {
+  it("accepts a title with an estimate and trims the title", () => {
+    const parsed = createScheduledIssueSchema.parse({ title: "  Write report  ", estimateMinutes: 30 });
+    expect(parsed.title).toBe("Write report");
+    expect(parsed.estimateMinutes).toBe(30);
+  });
+
+  it("rejects an empty or whitespace-only title", () => {
+    expect(createScheduledIssueSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "   " }).success).toBe(false);
+  });
+
+  it("rejects an estimate outside 1 to 1440 minutes and a non-uuid clientRequestId", () => {
+    expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 0 }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "x", estimateMinutes: 1441 }).success).toBe(false);
+    expect(createScheduledIssueSchema.safeParse({ title: "x", clientRequestId: "abc" }).success).toBe(false);
+  });
+});
+
+describe("pinIssueEventSchema", () => {
+  it("rejects an endsAt more than 24 hours after startsAt", () => {
+    const base = { startsAt: "2026-10-14T03:00:00.000Z" };
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2026-10-15T03:00:00.000Z" }).success).toBe(true);
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2026-10-15T03:00:01.000Z" }).success).toBe(false);
+    expect(pinIssueEventSchema.safeParse({ ...base, endsAt: "2027-10-14T03:00:00.000Z" }).success).toBe(false);
   });
 });
