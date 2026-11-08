@@ -61,7 +61,7 @@ import {
   buildWorkspaceRealizationRequest,
   readWorkspaceRealizationRequest,
 } from "../services/workspace-realization.ts";
-import { deriveViteHmrPort, type Environment, type EnvironmentLease } from "@paperclipai/shared";
+import { deriveViteHmrPort, isAllowedRuntimeExposurePort, type Environment, type EnvironmentLease } from "@paperclipai/shared";
 import { resolvePaperclipConfigPath } from "../paths.ts";
 import type { WorkspaceOperation } from "@paperclipai/shared";
 import type { WorkspaceOperationRecorder } from "../services/workspace-operations.ts";
@@ -331,12 +331,22 @@ async function listenOnPort(port: number) {
 }
 
 async function findFreePort() {
-  const server = await listenOnPort(0);
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : null;
-  await closeNetServer(server);
-  if (!port) throw new Error("Failed to find a free test port");
-  return port;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const server = await listenOnPort(0);
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : null;
+    await closeNetServer(server);
+    if (!port) throw new Error("Failed to find a free test port");
+    // The startup reconciliation sweep treats a live port inside the managed
+    // runtime-exposure ranges (42000-42999 and the derived 52000-52999 HMR
+    // companions) as a drifted pair reservation, even for an ordinary running
+    // service (PAP-17419). A fixture that happened to draw such a port from the
+    // OS ephemeral range would be misread as drift and flip the test, so retry
+    // until the port is outside those ranges.
+    if (isAllowedRuntimeExposurePort(port)) continue;
+    return port;
+  }
+  throw new Error("Failed to find a free test port outside the managed runtime exposure ranges");
 }
 
 async function reserveContiguousPorts(count: number) {
@@ -7467,14 +7477,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     process.env.PAPERCLIP_HOME = paperclipHome;
     process.env.PAPERCLIP_INSTANCE_ID = `runtime-pnpm-reconcile-${randomUUID()}`;
 
-    const portProbe = net.createServer();
-    await new Promise<void>((resolve) => portProbe.listen(0, "127.0.0.1", resolve));
-    const address = portProbe.address();
-    const port = typeof address === "object" && address ? address.port : null;
-    await new Promise<void>((resolve, reject) => {
-      portProbe.close((error) => error ? reject(error) : resolve());
-    });
-    if (!port) throw new Error("Failed to reserve pnpm reconciliation test port");
+    const port = await findFreePort();
 
     const companyId = randomUUID();
     const projectId = randomUUID();
@@ -7668,17 +7671,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     process.env.PAPERCLIP_HOME = paperclipHome;
     process.env.PAPERCLIP_INSTANCE_ID = `runtime-unhealthy-adopt-${randomUUID()}`;
 
-    const portProbe = net.createServer();
-    await new Promise<void>((resolve) => portProbe.listen(0, "127.0.0.1", resolve));
-    const address = portProbe.address();
-    const stalePort = typeof address === "object" && address ? address.port : null;
-    await new Promise<void>((resolve, reject) => {
-      portProbe.close((err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-    expect(stalePort).toBeTypeOf("number");
+    const stalePort = await findFreePort();
 
     const companyId = randomUUID();
     const agentId = randomUUID();

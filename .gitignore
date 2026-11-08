@@ -70,7 +70,6 @@ tests/storybook-visual/baseline-review/
 tests/storybook-visual/test-results/
 tests/storybook-visual/playwright-report/
 .superset/
-.superpowers/
 .claude/worktrees/
 .herenow
 

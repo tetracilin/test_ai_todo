@@ -76,6 +76,8 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
+import { ADAPTER_DISABLED_AUTHENTICATED_MODE, adapterDeploymentRefusal } from "../adapters/deployment-policy.js";
+import { httpTimeoutConfigError } from "../adapters/http/config-validation.js";
 import { normalizeIssueAttachmentMaxBytes } from "../attachment-types.js";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
@@ -3808,6 +3810,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     if (!findServerAdapter(adapterType)) {
       throw unprocessable(`Unknown adapter type: ${adapterType}`);
     }
+    const deploymentRefusal = adapterDeploymentRefusal(adapterType);
+    if (deploymentRefusal) {
+      throw unprocessable(deploymentRefusal, { code: ADAPTER_DISABLED_AUTHENTICATED_MODE });
+    }
     return adapterType;
   }
 
@@ -3815,6 +3821,11 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     adapterType: string,
     adapterConfig: Record<string, unknown>,
   ) {
+    if (adapterType === "http") {
+      const timeoutError = httpTimeoutConfigError(adapterConfig);
+      if (timeoutError) throw unprocessable(timeoutError);
+      return;
+    }
     if (adapterType !== "opencode_local") return;
     try {
       requireOpenCodeModelId(adapterConfig.model);
@@ -5545,6 +5556,27 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       const body = portableFileToBuffer(fileEntry, filePath);
       if (sha256HexOfBytes(body) !== declaredSha) {
         throw unprocessable(`Bundle blob ${filePath} does not match its declared sha256; the package is corrupted or was tampered with.`);
+      }
+    }
+
+    // Check every imported agent's effective adapter before the first write, so
+    // a refused adapter cannot leave a created company or earlier agents behind.
+    // prepareImportedAgentAdapter repeats these checks per agent during the write.
+    if (include.agents) {
+      for (const planAgent of plan.preview.plan.agentPlans) {
+        if (planAgent.action === "skip") continue;
+        const manifestAgent = plan.selectedAgents.find((agent) => agent.slug === planAgent.slug);
+        if (!manifestAgent) continue;
+        const adapterOverride = input.adapterOverrides?.[planAgent.slug];
+        const adapterType = assertKnownImportAdapterType(adapterOverride?.adapterType ?? manifestAgent.adapterType);
+        if (mode === "agent_safe" && IMPORT_FORBIDDEN_ADAPTER_TYPES.has(adapterType)) {
+          throw forbidden(`Adapter type "${adapterType}" is not allowed in safe imports`);
+        }
+        const adapterConfig = (adapterOverride?.adapterConfig ?? manifestAgent.adapterConfig ?? {}) as Record<string, unknown>;
+        if (adapterType === "http") {
+          const timeoutError = httpTimeoutConfigError(adapterConfig);
+          if (timeoutError) throw unprocessable(timeoutError);
+        }
       }
     }
 

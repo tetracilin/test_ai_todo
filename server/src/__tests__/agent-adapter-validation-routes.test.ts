@@ -145,7 +145,7 @@ const externalAdapter: ServerAdapterModule = {
 
 const missingAdapterType = "missing_adapter_validation_test";
 
-async function createApp() {
+async function createApp(options: { deploymentMode?: "local_trusted" | "authenticated" } = {}) {
   const [{ agentRoutes }, { errorHandler }] = await Promise.all([
     vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
@@ -174,7 +174,7 @@ async function createApp() {
       })),
     })),
   };
-  app.use("/api", agentRoutes(db as any));
+  app.use("/api", agentRoutes(db as any, { deploymentMode: options.deploymentMode }));
   app.use(errorHandler);
   return app;
 }
@@ -600,5 +600,71 @@ describe("agent routes adapter validation", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(422);
     expect(String(res.body.error ?? "")).toContain("Available adapters: hermes_gateway");
     expect(mockAgentService.create).not.toHaveBeenCalled();
+  });
+
+  describe("http adapter stopgaps", () => {
+    beforeEach(() => {
+      // An operator could list http as selectable; the deployment-mode guard must still hold.
+      process.env.PAPERCLIP_SELECTABLE_ADAPTER_TYPES = "hermes_gateway,http";
+    });
+
+    it("refuses to create an http agent in authenticated mode even when it is selectable", async () => {
+      const app = await createApp({ deploymentMode: "authenticated" });
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl)
+          .post("/api/companies/company-1/agents")
+          .send({ name: "Webhook", adapterType: "http", adapterConfig: { url: "https://example.test/hook" } }),
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(String(res.body.error ?? "")).toContain("disabled in authenticated deployment mode");
+      expect(res.body.details?.code).toBe("adapter_disabled_authenticated_mode");
+      expect(mockAgentService.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses to switch an agent onto http in authenticated mode", async () => {
+      const app = await createApp({ deploymentMode: "authenticated" });
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl)
+          .patch("/api/agents/11111111-1111-4111-8111-111111111111")
+          .send({ adapterType: "http", adapterConfig: { url: "https://example.test/hook" } }),
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.details?.code).toBe("adapter_disabled_authenticated_mode");
+      expect(mockAgentService.update).not.toHaveBeenCalled();
+    });
+
+    it("still creates an http agent in local_trusted mode", async () => {
+      const app = await createApp({ deploymentMode: "local_trusted" });
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl)
+          .post("/api/companies/company-1/agents")
+          .send({ name: "Webhook", adapterType: "http", adapterConfig: { url: "https://example.test/hook" } }),
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockAgentService.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["timeoutSec", { timeoutSec: 0 }],
+      ["timeoutMs", { timeoutMs: 0 }],
+    ])("rejects a new http config with %s of 0", async (_field, timeout) => {
+      const app = await createApp({ deploymentMode: "local_trusted" });
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl)
+          .post("/api/companies/company-1/agents")
+          .send({
+            name: "Webhook",
+            adapterType: "http",
+            adapterConfig: { url: "https://example.test/hook", ...timeout },
+          }),
+      );
+
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(String(res.body.error ?? "")).toContain("timeout must be greater than 0");
+      expect(mockAgentService.create).not.toHaveBeenCalled();
+    });
   });
 });

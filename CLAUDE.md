@@ -23,9 +23,8 @@ Also read, in order, before non-trivial changes: `technical-spec/product/GOAL.md
 All design and technical documentation lives under `technical-spec/` (index:
 `technical-spec/README.md`). There is no `doc/` or `docs/` folder; do not create one.
 
-- Plans, including `superpowers:writing-plans` output → `technical-spec/plans/YYYY-MM-DD-<slug>.md`
-- Design specs, including `superpowers:brainstorming` output → `technical-spec/specs/YYYY-MM-DD-<topic>-design.md`
-- This overrides those skills' default `docs/superpowers/...` locations.
+- Plans → `technical-spec/plans/YYYY-MM-DD-<slug>.md`
+- Design specs → `technical-spec/specs/YYYY-MM-DD-<topic>-design.md`
 
 ## Commands
 
@@ -275,8 +274,8 @@ Deploy scripts	deploy/scripts/{healthcheck,image-retention,version-drift}.sh
 Compose	deploy/compose.yaml
 Run logs	GitHub → Actions; Discord channel 1534836487772704800 for summaries
 Runner	kmv8, user ghrunner, label kmv8, systemd service
-Operator guide (how to drive PRs and deploys safely)	docs/operating-with-claude-code.md
-What runs on kmv8, and what depends on it	docs/deploy/kmv8-stack-inventory.md
+Operator guide (how to drive PRs and deploys safely)	technical-spec/fork/operating-with-claude-code.md
+What runs on kmv8, and what depends on it	technical-spec/fork/kmv8-stack-inventory.md
 
 ## Skill routing
 

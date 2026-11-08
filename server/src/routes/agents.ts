@@ -92,6 +92,8 @@ import {
   refreshAdapterModels,
   requireServerAdapter,
 } from "../adapters/index.js";
+import { ADAPTER_DISABLED_AUTHENTICATED_MODE, adapterDeploymentRefusal } from "../adapters/deployment-policy.js";
+import { httpTimeoutConfigError } from "../adapters/http/config-validation.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
@@ -1464,6 +1466,10 @@ export function agentRoutes(
    */
   function assertSelectableAdapterType(type: string | null | undefined): string {
     const adapterType = assertKnownAdapterType(type);
+    const deploymentRefusal = adapterDeploymentRefusal(adapterType, options.deploymentMode ?? "local_trusted");
+    if (deploymentRefusal) {
+      throw unprocessable(deploymentRefusal, { code: ADAPTER_DISABLED_AUTHENTICATED_MODE });
+    }
     const disabled = new Set(getDisabledAdapterTypes());
     const selectable = new Set(listSelectableServerAdapters().map((adapter) => adapter.type));
     if (!disabled.has(adapterType) && selectable.has(adapterType)) return adapterType;
@@ -1875,6 +1881,11 @@ export function agentRoutes(
           "Invalid hermes_gateway adapterConfig: apiBaseUrl and secret-backed apiKey are required",
         );
       }
+      return;
+    }
+    if (adapterType === "http") {
+      const timeoutError = httpTimeoutConfigError(adapterConfig);
+      if (timeoutError) throw unprocessable(timeoutError);
       return;
     }
     if (adapterType !== "opencode_local") return;

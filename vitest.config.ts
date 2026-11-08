@@ -5,6 +5,7 @@ export default defineConfig({
     projects: [
       "packages/shared",
       "packages/skills-catalog",
+      "packages/teams-catalog",
       "packages/db",
       "packages/adapter-utils",
       "packages/adapters/claude-local",
@@ -13,6 +14,7 @@ export default defineConfig({
       "packages/adapters/cursor-local",
 
       "packages/adapters/grok-local",
+      "packages/adapters/hermes",
       "packages/adapters/kimi-local",
       "packages/adapters/openclaw-gateway",
       "packages/adapters/opencode-local",
