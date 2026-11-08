@@ -130,4 +130,38 @@ describe("handleDirectMessage", () => {
 
     expect(await handleDirectMessage(fakeContext(linkedReply), message)).toBe("failed");
   });
+
+  it("forwards a Discord forward's snapshot and the original message's ids", async () => {
+    const ctx = fakeContext(linkedReply);
+    const snapshot = {
+      content: "Thay tủ điện tầng 3",
+      attachments: new Map([["a-1", { id: "a-1", name: "so-do.png", contentType: "image/png", size: 20 }]]),
+    };
+    const message = fakeMessage({
+      content: "",
+      reference: { type: 1, messageId: "origin-1", channelId: "origin-channel", guildId: undefined },
+      messageSnapshots: new Map([["origin-1", snapshot]]),
+    });
+    message.messageSnapshots.first = () => snapshot;
+
+    await handleDirectMessage(ctx, message);
+
+    expect(ctx.paperclip.sendDirectMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: "",
+      forwarded: {
+        messageId: "origin-1",
+        channelId: "origin-channel",
+        content: "Thay tủ điện tầng 3",
+        attachments: [{ id: "a-1", filename: "so-do.png", contentType: "image/png", size: 20 }],
+      },
+    }));
+  });
+
+  it("treats an ordinary reply as a plain DM, not a forward", async () => {
+    const ctx = fakeContext(linkedReply);
+
+    await handleDirectMessage(ctx, fakeMessage({ reference: { type: 0, messageId: "m-0", channelId: "dm-channel-1" } }));
+
+    expect(ctx.paperclip.sendDirectMessage.mock.calls[0]![0]).not.toHaveProperty("forwarded");
+  });
 });

@@ -446,6 +446,12 @@ export type IssueTreeHoldReleasePolicyStrategy = (typeof ISSUE_TREE_HOLD_RELEASE
  */
 export const WORK_PACKAGE_LABEL_NAME = "WP" as const;
 
+/**
+ * Company-scoped label a chat-intake card (PC-004 AC1, F-004-1) carries when
+ * its project could not be resolved, so a PM can find and place it.
+ */
+export const INTAKE_TRIAGE_LABEL_NAME = "triage" as const;
+
 export const ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY = "continuation-summary" as const;
 export const PIPELINE_CASE_BODY_DOCUMENT_KEY = "pipeline-case-body" as const;
 export const PIPELINE_AUTOMATION_DEFAULT_TITLE_TEMPLATE = "{{pipeline_name}} / {{stage_name}}: {{case_title}}" as const;

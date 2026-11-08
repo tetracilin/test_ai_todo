@@ -167,6 +167,10 @@ export const WP0_MESSAGE_IDS = [
   "storage_unavailable",
   "media_fetch_failed",
   "media_rejected",
+  "intake_created",
+  "intake_created_triage",
+  "intake_duplicate",
+  "intake_needs_text",
   "capture_unstructured_triage",
   "no_open_cards",
   "capture_confirmed",
@@ -254,6 +258,35 @@ export const WP0_MESSAGE_TEMPLATES: Record<Wp0MessageId, Wp0MessageTemplate> = {
     vars: ["item"],
     retryOwner: null,
     usage: "Inbound attachment failed the content-type or size allowlist; nothing was fetched or stored.",
+  },
+  // PC-004 AC1 (F-004-1): a forwarded job order became a card with a project.
+  intake_created: {
+    template: "Mình đã tạo thẻ {{card}}: {{title}}. Thẻ đã giao cho bạn, xem tại {{url}}",
+    vars: ["card", "title", "url"],
+    retryOwner: null,
+    usage: "Job-order intake created a card and resolved its project.",
+  },
+  // PC-004 AC1: project resolution failed, so the card carries the triage label for the PM.
+  intake_created_triage: {
+    template:
+      "Mình đã tạo thẻ {{card}}: {{title}}. Mình chưa xác định được dự án nên thẻ đang chờ PM xếp vào dự án, bạn vẫn làm được bình thường. Xem tại {{url}}",
+    vars: ["card", "title", "url"],
+    retryOwner: null,
+    usage: "Job-order intake created a card without a project; it carries the triage label.",
+  },
+  // PC-004 AC4: re-forwarding the same job order answers with the existing card.
+  intake_duplicate: {
+    template: "Việc này đã có thẻ {{card}} rồi nên mình không tạo thêm. Xem tại {{url}}",
+    vars: ["card", "url"],
+    retryOwner: null,
+    usage: "The same job order was forwarded again; the idempotency key matched an existing card.",
+  },
+  intake_needs_text: {
+    template:
+      'Tin này chưa có nội dung chữ nên mình chưa tạo thẻ. Bạn nhắn "{{phrase.capture}}:" rồi xuống dòng ghi nội dung việc, mình tạo thẻ ngay.',
+    vars: [],
+    retryOwner: null,
+    usage: "A job order arrived with no text to title the card from.",
   },
   // Op AC2: LLM structuring failed twice; the raw message is filed on a triage card, never dropped.
   capture_unstructured_triage: {
@@ -360,6 +393,22 @@ export function wp0PhraseIndex(): ReadonlyMap<string, Wp0VerbId> {
  */
 export function resolveWp0Verb(input: string): Wp0VerbId | null {
   return PHRASE_INDEX.get(normalizeWp0Phrase(input)) ?? null;
+}
+
+/**
+ * PC-004 intake typed instead of forwarded: a capture phrase, then `:` or a
+ * line break, then the job order ("việc mới: thay tủ điện tầng 3"). Returns
+ * the job-order text, or `null` when the message does not open with a capture
+ * phrase and a delimiter. The delimiter is required so that ordinary text
+ * which happens to start with a short alias ("ghi chú ...") is never taken for
+ * a new job order.
+ */
+export function splitWp0IntakeText(input: string): string | null {
+  const match = /[:\n]/u.exec(input);
+  if (!match) return null;
+  if (resolveWp0Verb(input.slice(0, match.index)) !== "capture") return null;
+  const rest = input.slice(match.index + 1).trim();
+  return rest || null;
 }
 
 /**
