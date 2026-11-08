@@ -25,6 +25,7 @@ import {
 } from "../attachment-types.js";
 import { badRequest, forbidden, HttpError } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
+import { discordDmInbox } from "../services/discord-dm-inbox.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
@@ -90,6 +91,17 @@ const dmInboundSchema = z.object({
     contentType: z.string().trim().max(255).nullable(),
     size: z.number().int().min(0),
   }).strict()).max(10).default([]),
+  // F-DM-3: Discord's own timestamp, and whether this is a replay of history
+  // the bridge missed. Optional so a bridge from before F-DM-3 still works.
+  messageCreatedAt: z.string().datetime({ offset: true }).optional(),
+  replay: z.boolean().optional(),
+}).strict();
+const dmDowntimeSchema = z.object({
+  startedAt: z.string().datetime({ offset: true }),
+  endedAt: z.string().datetime({ offset: true }),
+  cause: z.enum(["paperclip_unreachable", "gateway_disconnected", "bridge_restarted"]),
+  affectedUsers: z.number().int().min(0).max(10_000),
+  replayedMessages: z.number().int().min(0).max(1_000_000),
 }).strict();
 const DISCORD_DELIVERY_MAX_ATTEMPTS = 8;
 const LINK_CODE_RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
@@ -143,6 +155,7 @@ function issueUrl(issue: { id: string; identifier: string | null }) {
 export function discordIntegrationRoutes(db: Db) {
   const router = Router();
   const issueSvc = issueService(db);
+  const dmInbox = discordDmInbox(db);
   const allowRequest = createSlidingWindowRateLimiter();
 
 
@@ -407,14 +420,17 @@ export function discordIntegrationRoutes(db: Db) {
     }
   });
 
-  // F-DM-2 DM surface. Read-only: it resolves the sender, gates attachment
-  // metadata, and returns the reply text for the bridge to post. Anyone can DM a
-  // bot, so every "not ours" outcome is the same silent `{ linked: false }` — a
-  // stranger learns nothing about which accounts exist.
+  // F-DM-2 DM surface. It resolves the sender, gates attachment metadata, and
+  // returns the reply text for the bridge to post. Anyone can DM a bot, so every
+  // "not ours" outcome is the same silent `{ linked: false }` — a stranger learns
+  // nothing about which accounts exist. F-DM-3 adds the ledger claim: a message
+  // id is answered once, and a failed attempt releases it for the replay.
   router.post("/integrations/discord/dm/inbound", async (req, res) => {
     assertBridge(req);
     const input = dmInboundSchema.parse(req.body);
-    if (!allowRequest(`dm:${input.discordUserId}`, DM_INBOUND_USER_RATE_LIMIT)) throw asHttp("dm_rate_limited", 429);
+    // A replay is paced by the bridge's sweep, not by the engineer typing, and
+    // throttling it would leave missed messages behind.
+    if (!input.replay && !allowRequest(`dm:${input.discordUserId}`, DM_INBOUND_USER_RATE_LIMIT)) throw asHttp("dm_rate_limited", 429);
 
     // A DM carries no guild, so the company comes from the link itself. Linking
     // marks every row primary, so "primary" alone cannot disambiguate an account
@@ -426,31 +442,71 @@ export function discordIntegrationRoutes(db: Db) {
     if (!link) return res.json({ linked: false });
     if (!await activeContributorMembership(link.companyId, link.userId)) return res.json({ linked: false });
 
-    const company = await db.select({ attachmentMaxBytes: companies.attachmentMaxBytes }).from(companies).where(eq(companies.id, link.companyId)).then((rows) => rows[0] ?? null);
-    const maxBytes = normalizeIssueAttachmentMaxBytes(company?.attachmentMaxBytes);
-    const attachments = input.attachments.map((attachment) => {
-      const contentType = normalizeUploadAttachmentContentType({ contentType: attachment.contentType, originalFilename: attachment.filename, isAllowedContentType });
-      if (!attachment.contentType || !isAllowedContentType(contentType)) return { id: attachment.id, accepted: false, reason: "content_type_not_allowed" as const };
-      if (attachment.size > maxBytes) return { id: attachment.id, accepted: false, reason: "too_large" as const };
-      return { id: attachment.id, accepted: true };
+    const claim = await dmInbox.claim({
+      companyId: link.companyId,
+      discordUserId: input.discordUserId,
+      discordMessageId: input.messageId,
+      channelId: input.channelId,
+      messageCreatedAt: input.messageCreatedAt ? new Date(input.messageCreatedAt) : new Date(),
     });
+    if (!claim.claimed) return res.json({ linked: true, companyId: link.companyId, duplicate: true });
 
-    const rejected = input.attachments.find((_attachment, index) => !attachments[index]!.accepted);
-    const text = input.content.trim();
-    let reply: string;
-    if (rejected) {
-      reply = renderWp0Message("media_rejected", { item: `tệp ${rejected.filename}` });
-    } else if (!text) {
-      reply = renderWp0HelpMessage();
-    } else {
-      const classification = classifyWp0Inbound(text, { pendingCaptureCardId: null });
-      // Until capture (F-CAP-1) and brief (F-BRIEF-1) ship, every recognized verb
-      // answers with the help table; those units replace this branch per verb.
-      reply = classification.kind === "unknown"
-        ? renderWp0Message("unknown_phrase", { input: text.slice(0, DM_ECHO_MAX_CHARS) })
-        : renderWp0HelpMessage();
+    try {
+      const company = await db.select({ attachmentMaxBytes: companies.attachmentMaxBytes }).from(companies).where(eq(companies.id, link.companyId)).then((rows) => rows[0] ?? null);
+      const maxBytes = normalizeIssueAttachmentMaxBytes(company?.attachmentMaxBytes);
+      const attachments = input.attachments.map((attachment) => {
+        const contentType = normalizeUploadAttachmentContentType({ contentType: attachment.contentType, originalFilename: attachment.filename, isAllowedContentType });
+        if (!attachment.contentType || !isAllowedContentType(contentType)) return { id: attachment.id, accepted: false, reason: "content_type_not_allowed" as const };
+        if (attachment.size > maxBytes) return { id: attachment.id, accepted: false, reason: "too_large" as const };
+        return { id: attachment.id, accepted: true };
+      });
+
+      const rejected = input.attachments.find((_attachment, index) => !attachments[index]!.accepted);
+      const text = input.content.trim();
+      let reply: string;
+      if (rejected) {
+        reply = renderWp0Message("media_rejected", { item: `tệp ${rejected.filename}` });
+      } else if (!text) {
+        reply = renderWp0HelpMessage();
+      } else {
+        const classification = classifyWp0Inbound(text, { pendingCaptureCardId: null });
+        // Until capture (F-CAP-1) and brief (F-BRIEF-1) ship, every recognized verb
+        // answers with the help table; those units replace this branch per verb.
+        reply = classification.kind === "unknown"
+          ? renderWp0Message("unknown_phrase", { input: text.slice(0, DM_ECHO_MAX_CHARS) })
+          : renderWp0HelpMessage();
+      }
+      await dmInbox.succeed(input.messageId);
+      res.json({ linked: true, companyId: link.companyId, duplicate: false, reply, attachments });
+    } catch (error) {
+      await dmInbox.fail(input.messageId, "processing_failed").catch(() => undefined);
+      throw error;
     }
-    res.json({ linked: true, companyId: link.companyId, reply, attachments });
+  });
+
+  // F-DM-3 replay. The bridge reads each linked engineer's DM history after the
+  // cursor and resubmits it; the claim drops what was already answered. The
+  // status messages are rendered from the phrase table here, with `{{since}}`
+  // and `{{count}}` left for the bridge, which must be able to send the
+  // downtime notice while this server is the thing that is down.
+  router.get("/integrations/discord/dm/replay-cursors", async (req, res) => {
+    assertBridge(req);
+    res.json({
+      cursors: await dmInbox.replayCursors(),
+      statusMessages: {
+        downtime: renderWp0Message("agent_downtime", { since: "{{since}}" }),
+        recovered: renderWp0Message("agent_recovered", { count: "{{count}}" }),
+      },
+    });
+  });
+
+  router.post("/integrations/discord/dm/downtime", async (req, res) => {
+    assertBridge(req);
+    const input = dmDowntimeSchema.parse(req.body);
+    const startedAt = new Date(input.startedAt);
+    const endedAt = new Date(input.endedAt);
+    if (endedAt < startedAt) throw badRequest("downtime_window_invalid");
+    res.json(await dmInbox.recordDowntime({ ...input, startedAt, endedAt }));
   });
 
   router.get("/integrations/discord/deliveries/pending", async (req, res) => {

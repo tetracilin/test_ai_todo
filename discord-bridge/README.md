@@ -32,6 +32,18 @@ The server decides everything:
 
 The bridge posts that reply with mentions disabled.
 
+## Replay after downtime (F-DM-3)
+
+Discord's DM history is the durable copy of every DM, so the bridge keeps no local state and needs no volume. The server keeps a ledger keyed on the Discord message id (`discord_dm_inbound_messages`, no message content). It answers each id once. A failed attempt releases the id, so the next replay processes it instead of dropping it as a duplicate. An id that fails five times is left alone, so one bad message cannot stall the replay.
+
+A sweep runs at startup, after the gateway reconnects with a fresh session (a resumed session replays events itself), and every five minutes while Paperclip is unreachable. A sweep does three things:
+
+1. It reads `GET /api/integrations/discord/dm/replay-cursors`: one cursor per linked engineer, plus the two status messages rendered from the WP-0 phrase table.
+2. It re-reads each engineer's DMs after the cursor, oldest first, and resubmits them with `replay: true`. Replays are not rate limited, and messages already answered come back as `duplicate` and get no reply.
+3. It tells each engineer who had messages replayed (`agent_recovered`, with the count), and reports the window to `POST /api/integrations/discord/dm/downtime`. The server logs that window as a `discord.dm_downtime` activity in each pilot company, so the band call can discount it.
+
+While Paperclip is down for more than 15 minutes, each engineer who sent a DM gets one `agent_downtime` notice. The bridge caches that text from the last successful sweep, because it cannot ask the server that is down. Replay reaches back at most 24 hours, and never before the account was linked.
+
 After ready, same process starts durable outbox delivery worker. It polls leased records from `GET /api/integrations/discord/deliveries/pending`, sends allowlisted notification fields with mentions disabled, then acknowledges outcome. Discord 429 yields retry scheduling; terminal 403/404 stops delivery. Source-channel task-create notification is suppressed to avoid echo.
 
 ## Required server contracts
@@ -48,6 +60,8 @@ Bridge-scoped:
 - `POST /api/integrations/discord/link-codes/consume`
 - `POST /api/integrations/discord/commands/task-create`
 - `POST /api/integrations/discord/dm/inbound`
+- `GET /api/integrations/discord/dm/replay-cursors`
+- `POST /api/integrations/discord/dm/downtime`
 - `GET /api/integrations/discord/deliveries/pending`
 - `POST /api/integrations/discord/events/:eventId/deliveries/:deliveryId`
 

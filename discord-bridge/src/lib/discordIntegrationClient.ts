@@ -27,16 +27,37 @@ export interface DiscordDirectMessageRequest {
   content: string;
   /** Metadata only; the server gates type and size before any byte is fetched. */
   attachments: Array<{ id: string; filename: string; contentType: string | null; size: number }>;
+  /** Discord's creation time (ISO 8601); orders the replay ledger. */
+  messageCreatedAt: string;
+  /** True when the message is re-read from DM history rather than delivered live. */
+  replay?: boolean;
 }
 
 export type DiscordDirectMessageResult =
   | { linked: false }
+  /** The server already answered this message id; the bridge must not answer again. */
+  | { linked: true; companyId: string; duplicate: true }
   | {
     linked: true;
     companyId: string;
+    duplicate: false;
     reply: string;
     attachments: Array<{ id: string; accepted: boolean; reason?: string }>;
   };
+
+export interface DiscordDmReplayPlan {
+  cursors: Array<{ discordUserId: string; afterMessageId: string }>;
+  /** Rendered from the WP-0 phrase table; the bridge fills `{{since}}` / `{{count}}`. */
+  statusMessages: { downtime: string; recovered: string };
+}
+
+export interface DiscordDmDowntime {
+  startedAt: string;
+  endedAt: string;
+  cause: "paperclip_unreachable" | "gateway_disconnected" | "bridge_restarted";
+  affectedUsers: number;
+  replayedMessages: number;
+}
 
 export interface DiscordNotificationEvent {
   id: string;
@@ -95,6 +116,14 @@ export class DiscordIntegrationClient {
 
   async sendDirectMessage(request: DiscordDirectMessageRequest): Promise<DiscordDirectMessageResult> {
     return this.request("/api/integrations/discord/dm/inbound", { method: "POST", body: JSON.stringify(request) });
+  }
+
+  async getDmReplayPlan(): Promise<DiscordDmReplayPlan> {
+    return this.request("/api/integrations/discord/dm/replay-cursors");
+  }
+
+  async reportDmDowntime(downtime: DiscordDmDowntime): Promise<void> {
+    await this.request("/api/integrations/discord/dm/downtime", { method: "POST", body: JSON.stringify(downtime) });
   }
 
   async getPendingDiscordDeliveries(): Promise<DiscordDelivery[]> {

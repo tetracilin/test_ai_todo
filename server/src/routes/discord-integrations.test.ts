@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createIssue = vi.hoisted(() => vi.fn());
 vi.mock("../services/issues.js", () => ({ issueService: () => ({ create: createIssue }) }));
+const dmInbox = vi.hoisted(() => ({
+  claim: vi.fn(),
+  succeed: vi.fn(),
+  fail: vi.fn(),
+  replayCursors: vi.fn(),
+  recordDowntime: vi.fn(),
+}));
+vi.mock("../services/discord-dm-inbox.js", () => ({ discordDmInbox: () => dmInbox }));
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -90,6 +98,9 @@ beforeEach(() => {
   process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = bridgeToken;
   process.env.PAPERCLIP_DASHBOARD_URL = "https://paperclip.example";
   createIssue.mockResolvedValue(createdIssue);
+  dmInbox.claim.mockResolvedValue({ claimed: true });
+  dmInbox.succeed.mockResolvedValue(undefined);
+  dmInbox.fail.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -269,7 +280,7 @@ describe("POST /integrations/discord/dm/inbound", () => {
 
     const response = await dmPost(app).send({ ...dm, content }).expect(200);
 
-    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, reply: renderWp0HelpMessage(), attachments: [] });
+    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, duplicate: false, reply: renderWp0HelpMessage(), attachments: [] });
   });
 
   it("echoes unrecognized text inside the unknown-phrase reply", async () => {
@@ -314,6 +325,118 @@ describe("POST /integrations/discord/dm/inbound", () => {
     const response = await dmPost(app).send({ ...dm, discordUserId: "chatty-user" }).expect(429);
 
     expect(response.body.code).toBe("dm_rate_limited");
+  });
+
+  it("never throttles a replay, which the bridge paces itself", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await dmPost(app).send({ ...dm, discordUserId: "replayed-user", replay: true }).expect(200);
+    }
+  });
+
+  // F-DM-3: the ledger claim keyed on the Discord message id.
+  it("claims the message before answering and settles it after", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    await dmPost(app).send({ ...dm, messageCreatedAt: "2026-11-08T03:00:00.000Z" }).expect(200);
+
+    expect(dmInbox.claim).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      discordUserId: "discord-user-1",
+      discordMessageId: "message-1",
+      channelId: "dm-channel-1",
+      messageCreatedAt: new Date("2026-11-08T03:00:00.000Z"),
+    });
+    expect(dmInbox.succeed).toHaveBeenCalledWith("message-1");
+    expect(dmInbox.fail).not.toHaveBeenCalled();
+  });
+
+  it("answers an already-handled message id as a silent duplicate", async () => {
+    dmInbox.claim.mockResolvedValue({ claimed: false });
+    const db = fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }]] });
+    const app = await buildApp(db);
+
+    const response = await dmPost(app).send({ ...dm, replay: true }).expect(200);
+
+    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, duplicate: true });
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+
+  it("never records a stranger's message in the ledger", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[]] }));
+
+    await dmPost(app).send(dm).expect(200);
+
+    expect(dmInbox.claim).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when processing fails, so the replay can retry it", async () => {
+    const db = fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }]] });
+    const select = db.select.getMockImplementation()!;
+    let calls = 0;
+    // Link and membership resolve; the company read inside the claim fails.
+    db.select.mockImplementation(() => {
+      calls += 1;
+      if (calls === 3) throw new Error("database unavailable");
+      return select();
+    });
+    const app = await buildApp(db);
+
+    await dmPost(app).send(dm).expect(500);
+
+    expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
+    expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+});
+
+describe("Discord DM replay endpoints", () => {
+  function bridge(app: express.Express, method: "get" | "post", path: string) {
+    return request(app)[method](`/api/integrations/discord/dm/${path}`).set("Authorization", `Bearer ${bridgeToken}`);
+  }
+
+  it("requires the bridge token for cursors and downtime", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await request(app).get("/api/integrations/discord/dm/replay-cursors").expect(401);
+    await request(app).post("/api/integrations/discord/dm/downtime").send({}).expect(401);
+    expect(dmInbox.replayCursors).not.toHaveBeenCalled();
+  });
+
+  it("returns cursors plus status messages rendered from the phrase table", async () => {
+    dmInbox.replayCursors.mockResolvedValue([{ discordUserId: "discord-user-1", afterMessageId: "123" }]);
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    const response = await bridge(app, "get", "replay-cursors").expect(200);
+
+    expect(response.body.cursors).toEqual([{ discordUserId: "discord-user-1", afterMessageId: "123" }]);
+    // The bridge fills these two placeholders; every other word comes from F-VERB-0.
+    expect(response.body.statusMessages.downtime).toContain("{{since}}");
+    expect(response.body.statusMessages.downtime).toContain("mình sẽ thử lại trong 5 phút");
+    expect(response.body.statusMessages.recovered).toContain("{{count}}");
+    expect(response.body.statusMessages.recovered).not.toContain("{{phrase.");
+  });
+
+  it("records a downtime window", async () => {
+    dmInbox.recordDowntime.mockResolvedValue({ companies: 1 });
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+    const window = { startedAt: "2026-11-08T03:00:00.000Z", endedAt: "2026-11-08T03:20:00.000Z", cause: "paperclip_unreachable", affectedUsers: 2, replayedMessages: 5 };
+
+    await bridge(app, "post", "downtime").send(window).expect(200);
+
+    expect(dmInbox.recordDowntime).toHaveBeenCalledWith({
+      ...window,
+      startedAt: new Date(window.startedAt),
+      endedAt: new Date(window.endedAt),
+    });
+  });
+
+  it("rejects a downtime window that ends before it starts", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await bridge(app, "post", "downtime").send({ startedAt: "2026-11-08T03:20:00.000Z", endedAt: "2026-11-08T03:00:00.000Z", cause: "gateway_disconnected", affectedUsers: 0, replayedMessages: 0 }).expect(400);
+    expect(dmInbox.recordDowntime).not.toHaveBeenCalled();
   });
 });
 
