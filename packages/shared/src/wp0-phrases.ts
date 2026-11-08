@@ -166,6 +166,7 @@ export const WP0_MESSAGE_IDS = [
   "gate_rejection",
   "storage_unavailable",
   "media_fetch_failed",
+  "media_rejected",
   "capture_unstructured_triage",
   "no_open_cards",
   "capture_confirmed",
@@ -244,6 +245,15 @@ export const WP0_MESSAGE_TEMPLATES: Record<Wp0MessageId, Wp0MessageTemplate> = {
     vars: ["item"],
     retryOwner: "engineer",
     usage: "Media download from the chat platform failed. Clear the capture fingerprint before sending.",
+  },
+  // F-DM-2: the attachment failed the type/size allowlist before any byte was fetched.
+  // Not a retry — resending the same file fails the same way — so no retry owner.
+  media_rejected: {
+    template:
+      "Mình chưa nhận {{item}} vì loại tệp hoặc dung lượng không được hỗ trợ, nên chưa lưu gì vào thẻ cả. Bạn đổi sang ảnh, PDF hoặc tệp nhỏ hơn rồi gửi lại nhé.",
+    vars: ["item"],
+    retryOwner: null,
+    usage: "Inbound attachment failed the content-type or size allowlist; nothing was fetched or stored.",
   },
   // Op AC2: LLM structuring failed twice; the raw message is filed on a triage card, never dropped.
   capture_unstructured_triage: {

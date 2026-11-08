@@ -68,7 +68,7 @@ Re-derive the split rather than trusting this paragraph:
 | Scope-change timestamp query | **SHIPPED** — PR #81 | `queryScopeChangeTimestamps` in `issue-dossier.ts`. Function + tests only, no route; superseded as a timeline consumer by the WP-close export bundle below. |
 | WP-close export bundle (F-006-1, partial F-006-3) | **SHIPPED** — PR #84 | `server/src/services/wp-close-export.ts` — a parent issue carrying a company-scoped label named `WP` (`WORK_PACKAGE_LABEL_NAME`, K6 rule: no `work_packages` table) refuses to close while a child is neither `done` nor `cancelled` (same commit-point choke as the PC-001 gate, inside `issueService.update()`), and on success renders/persists a markdown bundle (dossier, evidence index, scope-change timeline, wedge ratio) as the WP's own `wp-close-export` document, best-effort and post-commit. One checked-in example fixture (`server/src/__tests__/fixtures/wp-close-export-example.md`) satisfies F-006-3's fixture half; **F-006-2 (commit to `Tecotec-JSc/T3-wiki` + CTO chat notification) is still unbuilt.** |
 | Dossier renders in card UI (F-002-5) | **SHIPPED** — PR #100 | `ui/src/components/IssueDossierPanel.tsx`, rendered in the card's Activity tab next to `IssueContinuationHandoff`, reading the existing `GET /issues/:id/documents/dossier` route. The dossier's key, its PC-002 AC1 headings, and a read-only parser moved to `packages/shared/src/dossier-view.ts` so the writer and the renderer cannot declare the grammar separately; `server/src/__tests__/issue-dossier-view.test.ts` runs both parsers over the checked-in fixture and fails on any disagreement. Evidence log and Scope changes render as structured lists, the other three sections stay markdown (no closed server grammar exists for them), and a section the reader cannot fully parse falls back to raw markdown rather than dropping a line. |
-| Discord bridge | slash-command + outbox transport only (unchanged) | `discord-bridge/src/` — `commands/`, `lib/notifier.ts`, `lib/taskCreate.ts`. No message handler, no DM path, no media path. F-DM-2 is still unbuilt. |
+| Discord bridge | **F-DM-2 SHIPPED** — PR #208, DM surface on top of the slash-command + outbox transport; **F-DM-3 SHIPPED** (this PR) — persistence + replay, see the F-DM-3 note under B.3 | `discord-bridge/src/lib/dmHandler.ts` handles DMs only (guild messages dropped unread) and forwards text plus attachment **metadata** to the new bridge-scoped `POST /api/integrations/discord/dm/inbound` (`server/src/routes/discord-integrations.ts`). The server resolves the sender (exactly one active link and an active non-viewer membership, otherwise a silent `{ linked: false }`), gates attachments on type and size with `attachment-types.ts`, and returns a Vietnamese reply from the F-VERB-0 table (new `media_rejected` template). Every recognized verb answers with the help table until F-CAP-1/F-BRIEF-1 replace that branch. **No attachment bytes are fetched yet**: the download path moves to F-CAP-1, the first unit with a card to file into, so `lib/media.ts` from the F-DM-2 `Files:` line is deliberately not built. Inbound persistence and `messageId` idempotency are F-DM-3. Owner gate G-2 is the Developer Portal Message Content toggle. |
 | Teable client | **F-010-1 SHIPPED** — PR #102; **F-010-2 SHIPPED**; **F-005-1 SHIPPED** (this PR); F-010-3 unstarted | `server/src/services/teable-client.ts` — typed client for list/get/create/update records, list fields, list tables. Result is a discriminated union carrying `retryAfterSeconds` (never throws for a remote failure), reads retry in-client and **writes deliberately never do** (Teable's create takes no idempotency key, so a retried POST duplicates a row; `updateRecord`, added for F-005-1, is single-attempt for the same reason). Token is a company secret (`TEABLE_API_TOKEN`, reads prefer `TEABLE_READ_TOKEN`) with **no server-env fallback**, so it cannot cross tenants. **Production Teable is self-hosted on the app host**, so the default base URL is `http://teable:3000` and the private-network guard is a configured normal case, not an exception. **Built from published documentation only — no live instance was contacted** (owner constraint); `__tests__/fixtures/teable-api-exchanges.json` is hand-built and must be re-recorded against the staging instance, which is the regression gate on every documented assumption. F-010-2 (`server/src/services/teable-append.ts`, `POST /issues/:id/teable-rows`) adds the append-only agent write: one allowlisted table (per-company secret `TEABLE_WRITE_TABLE_ID`), the created row linked on the card + one dossier Evidence-log line, and a bot-account attribution marker (`TEABLE_BOT_ACCOUNT_NAME`, checked via the exported `isPaperclipBotAuthored` predicate) so F-005-1's conflict flagging skips the bot's own rows. F-005-1 (`server/src/services/teable-mirror.ts`) is the consumer: a heartbeat-scheduler sweep (same convention as `evidence-storage-reaper.ts`) that mirrors card create/status/assignee onto one `external_objects(provider=teable, objectType="issue_mirror")` row per issue via `createRecords`/`updateRecord`, flags a Teable-side edit as a conflict (reusing `isPaperclipBotAuthored`, scoped to `lastModifiedBy`) instead of overwriting it, and reuses `activity_log` itself as the retry-backoff state. Fixture/embedded-Postgres-verified, not live-verified, same as F-010-1/F-010-2. |
 | `technical-spec/fork/WP0-OPERATIONS.md` | **SHIPPED** — PR #75 | Satisfies F-OPS-1. |
 | Vietnamese phrase table (F-VERB-0) | **SHIPPED** — PR #75 | `packages/shared/src/wp0-phrases.ts` + test. The branch-name auto-link matcher for F-007-3 (`matchesIssueBranch`) is shipped as a pure function only — nothing wires it to a live "watch for pushes" trigger yet. |
@@ -101,8 +101,10 @@ remaining candidates stand:
   flowchart mandatory for every SW card?") — the brief-linkage mechanism AC1 needs is
   undefined. Get OQ-4 answered before starting this one, or it will need a throwaway design
   decision re-litigated later.
-- **Lane C — Discord DM/capture verbs (F-DM-2 onward).** Blocked on gate **G-2** (external
-  Discord privileged-intent approval), not something an agent can unblock.
+- **Lane C — Discord DM/capture verbs.** F-DM-2 and F-DM-3 have shipped. G-2 turned out not
+  to need Discord's approval: a bot in fewer than 100 servers turns on the Message Content
+  intent with a Developer Portal toggle. **F-004-1** (intake) is next. F-CAP-1 takes over
+  the attachment download that F-DM-2 left out, and the content fingerprint F-DM-3 left out.
 - **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
   direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
   most dev environments will not have configured — confirm access before picking it up.
@@ -612,8 +614,8 @@ work package binds a second transport to the same pipeline (TODOS.md).
 | **F-004-1** | **Job-order intake → card + seeded dossier** | F-DM-2, F-002-1 | human: 2d / CC: 2h |
 | **F-004-2** | **Clarifying-question turn → dossier** | F-004-1 | human: 2d / CC: 1.5h |
 | **F-004-3** | **Confidential-content refusal (NAS instructions)** | F-004-1 | human: 1d / CC: 45m |
-| F-DM-2 | Discord DM surface (intent, handler, auth gate, media) | G-2, F-VERB-0 | human: 1w / CC: 4h |
-| F-DM-3 | Inbound persistence + replay across agent downtime | F-DM-2 | human: 2d / CC: 2h |
+| F-DM-2 | Discord DM surface (intent, handler, auth gate, media) | G-2, F-VERB-0 | human: 1w / CC: 4h — ✅ shipped; media is metadata-gated only, byte fetch moved to F-CAP-1 |
+| F-DM-3 | Inbound persistence + replay across agent downtime | F-DM-2 | human: 2d / CC: 2h — ✅ shipped; Discord DM history is the durable store, content fingerprint for resent photos left to F-CAP-1 |
 | F-CAP-1 | Capture pipeline — one bounded LLM call | F-DM-2, F-007-1, F-002-1 | human: 1w / CC: 4h |
 | F-CAP-2 | Capture fallback → unstructured triage capture | F-CAP-1 | human: 1d / CC: 1h |
 | F-CAP-3 | Server-side write-target validation | F-CAP-1, F-003-1 | human: 1d / CC: 1h |
@@ -695,6 +697,26 @@ fingerprint** so an engineer's resend is never dropped as a duplicate. Pilot-day
 logged so the band call can discount it.
 - Tests: agent down → message persisted → agent up → capture completes exactly once; the
   fingerprint-clear path proven by a resend-after-failure test.
+- **As shipped:**
+  - **Where messages persist.** Discord's DM history is the durable copy, not a bridge-local
+    store. The bridge container has no volume, and adding one is a `deploy/compose.yaml`
+    change. The server ledger `discord_dm_inbound_messages` keys on the Discord message id and
+    stores no content.
+  - **Replay.** The bridge re-reads each linked engineer's DMs after a server cursor (oldest
+    unsettled message, else 30 min behind the newest success, bounded by 24 h and the link
+    date). It sweeps at startup, after a fresh gateway session, and every 5 min while
+    Paperclip is unreachable (`discord-bridge/src/lib/dmReplay.ts`).
+  - **The fingerprint.** In this unit the fingerprint is the message-id claim. A failed
+    attempt releases it, so the replay or a resend is processed, and after 5 failures it stops
+    holding the cursor back. The content fingerprint that would catch "same photo, new
+    message" belongs to F-CAP-1, which must consume it only on a successful capture.
+  - **Status messages.** They are the existing F-VERB-0 `agent_downtime` (once per affected
+    engineer, after 15 min) and `agent_recovered` (with the replayed count). The server
+    renders them and the bridge caches them, so the downtime notice works while the server is
+    down. While the gateway itself is down, no notice can be sent; `agent_recovered` follows
+    the replay.
+  - **Downtime log.** Each window is logged as a `discord.dm_downtime` activity in every
+    company with a linked engineer.
 
 **F-CAP-1 — Capture pipeline.** Deterministic bridge-side pipeline with **exactly one
 bounded, schema-constrained LLM call** producing `{card, evidence_type, caption}`. Full

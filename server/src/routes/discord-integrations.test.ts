@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createIssue = vi.hoisted(() => vi.fn());
 vi.mock("../services/issues.js", () => ({ issueService: () => ({ create: createIssue }) }));
+const dmInbox = vi.hoisted(() => ({
+  claim: vi.fn(),
+  succeed: vi.fn(),
+  fail: vi.fn(),
+  replayCursors: vi.fn(),
+  recordDowntime: vi.fn(),
+}));
+vi.mock("../services/discord-dm-inbox.js", () => ({ discordDmInbox: () => dmInbox }));
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -90,6 +98,9 @@ beforeEach(() => {
   process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = bridgeToken;
   process.env.PAPERCLIP_DASHBOARD_URL = "https://paperclip.example";
   createIssue.mockResolvedValue(createdIssue);
+  dmInbox.claim.mockResolvedValue({ claimed: true });
+  dmInbox.succeed.mockResolvedValue(undefined);
+  dmInbox.fail.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -206,6 +217,226 @@ describe("POST /integrations/discord/commands/task-create", () => {
     const response = await bridgePost(app).send({ ...taskRequest, discordInteractionId: "rate-limited-interaction" }).expect(429);
 
     expect(response.body.code).toBe("task_create_rate_limited");
+  });
+});
+
+describe("POST /integrations/discord/dm/inbound", () => {
+  const dm = { discordUserId: "discord-user-1", messageId: "message-1", channelId: "dm-channel-1", content: "trợ giúp", attachments: [] };
+  const primaryLink = { ...linkedUser, primary: true };
+  const company = { attachmentMaxBytes: 1024 };
+
+  function dmPost(app: express.Express) {
+    return request(app).post("/api/integrations/discord/dm/inbound").set("Authorization", `Bearer ${bridgeToken}`);
+  }
+
+  it("requires the bridge token", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    const response = await request(app).post("/api/integrations/discord/dm/inbound").send(dm).expect(401);
+
+    expect(response.body.code).toBe("bridge_auth_required");
+  });
+
+  it("answers an unlinked sender with silence", async () => {
+    const db = fakeDb({ selectRows: [[]] });
+    const app = await buildApp(db);
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a linked viewer with the same silence", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], []] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+  });
+
+  it("does not guess between two company links", async () => {
+    const other = { ...primaryLink, companyId: "44444444-4444-4444-8444-444444444444" };
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink, other]] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body).toEqual({ linked: false });
+  });
+
+  it("uses the single primary link when another link is not primary", async () => {
+    const other = { ...primaryLink, companyId: "44444444-4444-4444-8444-444444444444", primary: false };
+    const app = await buildApp(fakeDb({ selectRows: [[other, primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body.linked).toBe(true);
+    expect(response.body.companyId).toBe(COMPANY_ID);
+  });
+
+  it.each(["trợ giúp", "tro giup", "help"])("answers the help verb %s with the phrase table", async (content) => {
+    const { renderWp0HelpMessage } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({ ...dm, content }).expect(200);
+
+    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, duplicate: false, reply: renderWp0HelpMessage(), attachments: [] });
+  });
+
+  it("echoes unrecognized text inside the unknown-phrase reply", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({ ...dm, content: "  xyz abc  " }).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("unknown_phrase", { input: "xyz abc" }));
+  });
+
+  it("rejects disallowed or oversized attachments from metadata alone", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    const response = await dmPost(app).send({
+      ...dm,
+      content: "",
+      attachments: [
+        { id: "a-1", filename: "photo.png", contentType: "image/png", size: 512 },
+        { id: "a-2", filename: "setup.exe", contentType: "application/x-msdownload", size: 512 },
+        { id: "a-3", filename: "big.png", contentType: "image/png", size: 2048 },
+        { id: "a-4", filename: "unknown.bin", contentType: null, size: 10 },
+      ],
+    }).expect(200);
+
+    expect(response.body.attachments).toEqual([
+      { id: "a-1", accepted: true },
+      { id: "a-2", accepted: false, reason: "content_type_not_allowed" },
+      { id: "a-3", accepted: false, reason: "too_large" },
+      { id: "a-4", accepted: false, reason: "content_type_not_allowed" },
+    ]);
+    expect(response.body.reply).toBe(renderWp0Message("media_rejected", { item: "tệp setup.exe" }));
+  });
+
+  it("rate limits one Discord user's DMs", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await dmPost(app).send({ ...dm, discordUserId: "chatty-user" }).expect(200);
+    }
+    const response = await dmPost(app).send({ ...dm, discordUserId: "chatty-user" }).expect(429);
+
+    expect(response.body.code).toBe("dm_rate_limited");
+  });
+
+  it("never throttles a replay, which the bridge paces itself", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await dmPost(app).send({ ...dm, discordUserId: "replayed-user", replay: true }).expect(200);
+    }
+  });
+
+  // F-DM-3: the ledger claim keyed on the Discord message id.
+  it("claims the message before answering and settles it after", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] }));
+
+    await dmPost(app).send({ ...dm, messageCreatedAt: "2026-11-08T03:00:00.000Z" }).expect(200);
+
+    expect(dmInbox.claim).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      discordUserId: "discord-user-1",
+      discordMessageId: "message-1",
+      channelId: "dm-channel-1",
+      messageCreatedAt: new Date("2026-11-08T03:00:00.000Z"),
+    });
+    expect(dmInbox.succeed).toHaveBeenCalledWith("message-1");
+    expect(dmInbox.fail).not.toHaveBeenCalled();
+  });
+
+  it("answers an already-handled message id as a silent duplicate", async () => {
+    dmInbox.claim.mockResolvedValue({ claimed: false });
+    const db = fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }]] });
+    const app = await buildApp(db);
+
+    const response = await dmPost(app).send({ ...dm, replay: true }).expect(200);
+
+    expect(response.body).toEqual({ linked: true, companyId: COMPANY_ID, duplicate: true });
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+
+  it("never records a stranger's message in the ledger", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [[]] }));
+
+    await dmPost(app).send(dm).expect(200);
+
+    expect(dmInbox.claim).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when processing fails, so the replay can retry it", async () => {
+    const db = fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }]] });
+    const select = db.select.getMockImplementation()!;
+    let calls = 0;
+    // Link and membership resolve; the company read inside the claim fails.
+    db.select.mockImplementation(() => {
+      calls += 1;
+      if (calls === 3) throw new Error("database unavailable");
+      return select();
+    });
+    const app = await buildApp(db);
+
+    await dmPost(app).send(dm).expect(500);
+
+    expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
+    expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+});
+
+describe("Discord DM replay endpoints", () => {
+  function bridge(app: express.Express, method: "get" | "post", path: string) {
+    return request(app)[method](`/api/integrations/discord/dm/${path}`).set("Authorization", `Bearer ${bridgeToken}`);
+  }
+
+  it("requires the bridge token for cursors and downtime", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await request(app).get("/api/integrations/discord/dm/replay-cursors").expect(401);
+    await request(app).post("/api/integrations/discord/dm/downtime").send({}).expect(401);
+    expect(dmInbox.replayCursors).not.toHaveBeenCalled();
+  });
+
+  it("returns cursors plus status messages rendered from the phrase table", async () => {
+    dmInbox.replayCursors.mockResolvedValue([{ discordUserId: "discord-user-1", afterMessageId: "123" }]);
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    const response = await bridge(app, "get", "replay-cursors").expect(200);
+
+    expect(response.body.cursors).toEqual([{ discordUserId: "discord-user-1", afterMessageId: "123" }]);
+    // The bridge fills these two placeholders; every other word comes from F-VERB-0.
+    expect(response.body.statusMessages.downtime).toContain("{{since}}");
+    expect(response.body.statusMessages.downtime).toContain("mình sẽ thử lại trong 5 phút");
+    expect(response.body.statusMessages.recovered).toContain("{{count}}");
+    expect(response.body.statusMessages.recovered).not.toContain("{{phrase.");
+  });
+
+  it("records a downtime window", async () => {
+    dmInbox.recordDowntime.mockResolvedValue({ companies: 1 });
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+    const window = { startedAt: "2026-11-08T03:00:00.000Z", endedAt: "2026-11-08T03:20:00.000Z", cause: "paperclip_unreachable", affectedUsers: 2, replayedMessages: 5 };
+
+    await bridge(app, "post", "downtime").send(window).expect(200);
+
+    expect(dmInbox.recordDowntime).toHaveBeenCalledWith({
+      ...window,
+      startedAt: new Date(window.startedAt),
+      endedAt: new Date(window.endedAt),
+    });
+  });
+
+  it("rejects a downtime window that ends before it starts", async () => {
+    const app = await buildApp(fakeDb({ selectRows: [] }));
+
+    await bridge(app, "post", "downtime").send({ startedAt: "2026-11-08T03:20:00.000Z", endedAt: "2026-11-08T03:00:00.000Z", cause: "gateway_disconnected", affectedUsers: 0, replayedMessages: 0 }).expect(400);
+    expect(dmInbox.recordDowntime).not.toHaveBeenCalled();
   });
 });
 

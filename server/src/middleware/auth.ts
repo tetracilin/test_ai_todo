@@ -72,7 +72,7 @@ function invalidAgentTokenMessage(token: string) {
   return "Agent token did not verify; obtain fresh credentials and retry";
 }
 
-const DISCORD_BRIDGE_PATH = /^\/api\/integrations\/discord\/(?:link-codes\/consume|link|unlink|commands\/task-create|deliveries\/pending|events\/[^/]+\/deliveries\/[^/]+)$/;
+const DISCORD_BRIDGE_PATH = /^\/api\/integrations\/discord\/(?:link-codes\/consume|link|unlink|commands\/task-create|dm\/(?:inbound|replay-cursors|downtime)|deliveries\/pending|events\/[^/]+\/deliveries\/[^/]+)$/;
 
 /**
  * The Discord bridge owns a token scoped only to integration transport

@@ -49,6 +49,28 @@ describe("DiscordIntegrationClient", () => {
     await expect(client().createTask(request)).rejects.toEqual(new DiscordIntegrationApiError(403, "project_access_denied"));
   });
 
+  it("posts a DM to the bridge-scoped inbound endpoint", async () => {
+    const dm = { discordUserId: "discord-user-1", messageId: "m-1", channelId: "dm-1", content: "trợ giúp", attachments: [], messageCreatedAt: "2026-11-08T03:00:00.000Z" };
+    nextResponse = { status: 200, body: { linked: false } };
+
+    await expect(client().sendDirectMessage(dm)).resolves.toEqual({ linked: false });
+    expect(requests).toEqual([{ method: "POST", url: "/api/integrations/discord/dm/inbound", authorization: "Bearer test-key", body: dm }]);
+  });
+
+  it("reads the replay plan and reports downtime on bridge-scoped DM endpoints", async () => {
+    nextResponse = { status: 200, body: { cursors: [], statusMessages: { downtime: "d", recovered: "r" } } };
+    await expect(client().getDmReplayPlan()).resolves.toEqual({ cursors: [], statusMessages: { downtime: "d", recovered: "r" } });
+
+    const downtime = { startedAt: "2026-11-08T03:00:00.000Z", endedAt: "2026-11-08T03:20:00.000Z", cause: "paperclip_unreachable" as const, affectedUsers: 1, replayedMessages: 2 };
+    nextResponse = { status: 200, body: { companies: 1 } };
+    await client().reportDmDowntime(downtime);
+
+    expect(requests).toEqual([
+      { method: "GET", url: "/api/integrations/discord/dm/replay-cursors", authorization: "Bearer test-key", body: null },
+      { method: "POST", url: "/api/integrations/discord/dm/downtime", authorization: "Bearer test-key", body: downtime },
+    ]);
+  });
+
   it("uses bridge-only delivery endpoints without exposing generic issue writes", async () => {
     nextResponse = { status: 200, body: [] };
     await client().getPendingDiscordDeliveries();

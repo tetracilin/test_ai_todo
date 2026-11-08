@@ -125,6 +125,31 @@ export const discordInboundRequests = pgTable(
   }),
 );
 
+// F-DM-3 processing ledger for inbound DMs, keyed on the Discord message id.
+// Content is not stored: Discord's DM history is the durable copy the bridge
+// replays from. A `failed` row (or a `processing` row whose claim went stale)
+// can be claimed again, so a failed attempt never consumes the message.
+export const discordDmInboundMessages = pgTable(
+  "discord_dm_inbound_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    discordUserId: text("discord_user_id").notNull(),
+    discordMessageId: text("discord_message_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    status: text("status").notNull().default("processing"),
+    attempts: integer("attempts").notNull().default(1),
+    errorCode: text("error_code"),
+    messageCreatedAt: timestamp("message_created_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    messageUq: uniqueIndex("discord_dm_inbound_messages_message_uq").on(table.discordMessageId),
+    userCreatedIdx: index("discord_dm_inbound_messages_user_created_idx").on(table.discordUserId, table.messageCreatedAt),
+  }),
+);
+
 export const integrationEventOutbox = pgTable(
   "integration_event_outbox",
   {

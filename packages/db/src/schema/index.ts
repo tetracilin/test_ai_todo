@@ -77,6 +77,7 @@ export { issueComments } from "./issue_comments.js";
 export { issueCreateIdempotencyKeys } from "./issue_create_idempotency_keys.js";
 export {
   discordDeliveryAttempts,
+  discordDmInboundMessages,
   discordGuildIntegrations,
   discordInboundRequests,
   discordLinkCodes,
