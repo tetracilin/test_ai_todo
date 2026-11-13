@@ -300,34 +300,6 @@ describe("WP0_MESSAGE_TEMPLATES", () => {
     expect(byOwner.engineer).toEqual(["unknown_phrase", "media_fetch_failed"]);
   });
 
-  // F-004-1: a typed job order needs the capture phrase AND a delimiter.
-  it.each([
-    ["việc mới: thay tủ điện tầng 3", "thay tủ điện tầng 3"],
-    ["Ghi nhận\nKhảo sát trạm bơm\nHạn thứ 6", "Khảo sát trạm bơm\nHạn thứ 6"],
-    ["tao the: lap camera kho B", "lap camera kho B"],
-  ])("splits the job order out of %j", (input, expected) => {
-    expect(splitWp0IntakeText(input)).toBe(expected);
-  });
-
-  it.each([
-    "ghi chú cho anh Hùng",
-    "ghi nhận",
-    "việc mới:   ",
-    "tóm tắt: thẻ T3-142",
-    "lịch họp: 9h sáng",
-  ])("does not take %j for a new job order", (input) => {
-    expect(splitWp0IntakeText(input)).toBeNull();
-  });
-
-  it("answers every intake outcome with the card, never with a retry promise", () => {
-    for (const id of ["intake_created", "intake_created_triage", "intake_duplicate"] as const) {
-      expect(WP0_MESSAGE_TEMPLATES[id].vars).toContain("card");
-      expect(WP0_MESSAGE_TEMPLATES[id].vars).toContain("url");
-      expect(WP0_MESSAGE_TEMPLATES[id].retryOwner).toBeNull();
-    }
-    expect(renderWp0Message("intake_needs_text")).toContain(`"${WP0_VERB_PHRASES.capture.canonical}:"`);
-  });
-
   // F-DM-2: an allowlist rejection is not a failed attempt, so it must not
   // promise a retry from either side — resending the same file fails again.
   it("rejects disallowed media without promising a retry", () => {

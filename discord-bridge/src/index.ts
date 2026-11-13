@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { config } from "./config.js";
 import { routeCommand } from "./commands/router.js";
 import { DiscordIntegrationClient } from "./lib/discordIntegrationClient.js";
-import { DmRecovery } from "./lib/dmReplay.js";
+import { handleDirectMessage } from "./lib/dmHandler.js";
 import { startDeliveryWorker } from "./lib/notifier.js";
 import { startHealthServer } from "./health.js";
 
@@ -51,7 +51,7 @@ client.on(Events.InteractionCreate, (interaction) => {
 });
 
 client.on(Events.MessageCreate, (message) => {
-  void dmRecovery.handleLive(message);
+  void handleDirectMessage({ paperclip }, message);
 });
 
 client.login(config.discord.botToken).catch(() => {
