@@ -363,6 +363,22 @@ export function resolveWp0Verb(input: string): Wp0VerbId | null {
 }
 
 /**
+ * PC-004 intake typed instead of forwarded: a capture phrase, then `:` or a
+ * line break, then the job order ("việc mới: thay tủ điện tầng 3"). Returns
+ * the job-order text, or `null` when the message does not open with a capture
+ * phrase and a delimiter. The delimiter is required so that ordinary text
+ * which happens to start with a short alias ("ghi chú ...") is never taken for
+ * a new job order.
+ */
+export function splitWp0IntakeText(input: string): string | null {
+  const match = /[:\n]/u.exec(input);
+  if (!match) return null;
+  if (resolveWp0Verb(input.slice(0, match.index)) !== "capture") return null;
+  const rest = input.slice(match.index + 1).trim();
+  return rest || null;
+}
+
+/**
  * A bare card reference as an engineer types it on a phone: `T3-142`, `t3-142`,
  * `#T3-142`, or just `142` when they drop the company prefix. The prefix is
  * `companies.issue_prefix` (short, alphanumeric, e.g. `T3` / `PAP`), so this

@@ -26,10 +26,23 @@ const client = new Client({
 let ready = false;
 const healthServer = startHealthServer(config.bridge.healthPort, () => ready);
 
+// F-DM-3: DMs missed while this process, the gateway, or Paperclip was down are
+// re-read from Discord's DM history and replayed once.
+const dmRecovery = new DmRecovery({ client, paperclip });
+
 client.once(Events.ClientReady, (readyClient) => {
   ready = true;
   console.log("discord_bridge_ready", { applicationId: readyClient.application?.id });
   startDeliveryWorker(client, paperclip, config.bridge.pollIntervalSeconds);
+  void dmRecovery.sweep("bridge_restarted");
+});
+
+client.on(Events.ShardDisconnect, () => dmRecovery.gatewayDisconnected());
+client.on(Events.ShardReconnecting, () => dmRecovery.gatewayDisconnected());
+client.on(Events.ShardResume, () => dmRecovery.gatewayResumed());
+// A fresh session after the first ready means events were lost, not resumed.
+client.on(Events.ShardReady, () => {
+  if (ready) void dmRecovery.sweep("gateway_disconnected");
 });
 
 client.on(Events.InteractionCreate, (interaction) => {
@@ -50,6 +63,7 @@ client.login(config.discord.botToken).catch(() => {
 
 function shutdown() {
   ready = false;
+  dmRecovery.stop();
   healthServer.close();
   client.destroy();
   process.exit(0);

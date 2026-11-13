@@ -25,6 +25,8 @@ import {
 } from "../attachment-types.js";
 import { badRequest, forbidden, HttpError } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
+import { discordDmInbox } from "../services/discord-dm-inbox.js";
+import { discordIntakeService } from "../services/discord-intake.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
@@ -143,6 +145,8 @@ function issueUrl(issue: { id: string; identifier: string | null }) {
 export function discordIntegrationRoutes(db: Db) {
   const router = Router();
   const issueSvc = issueService(db);
+  const dmInbox = discordDmInbox(db);
+  const intakeSvc = discordIntakeService(db);
   const allowRequest = createSlidingWindowRateLimiter();
 
 

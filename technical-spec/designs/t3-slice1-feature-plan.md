@@ -611,7 +611,7 @@ work package binds a second transport to the same pipeline (TODOS.md).
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
 | F-VERB-0 | Canonical Vietnamese phrase table | — | human: 4h / CC: 30m |
-| **F-004-1** | **Job-order intake → card + seeded dossier** | F-DM-2, F-002-1 | human: 2d / CC: 2h |
+| **F-004-1** | **Job-order intake → card + seeded dossier** | F-DM-2, F-002-1 | human: 2d / CC: 2h — ✅ shipped; deterministic title/project, no LLM call |
 | **F-004-2** | **Clarifying-question turn → dossier** | F-004-1 | human: 2d / CC: 1.5h |
 | **F-004-3** | **Confidential-content refusal (NAS instructions)** | F-004-1 | human: 1d / CC: 45m |
 | F-DM-2 | Discord DM surface (intent, handler, auth gate, media) | G-2, F-VERB-0 | human: 1w / CC: 4h — ✅ shipped; media is metadata-gated only, byte fetch moved to F-CAP-1 |
@@ -631,6 +631,26 @@ resolution fails). Idempotency reuses the existing `issue_create_idempotency_key
 do **not** build a second fingerprint store. The agent replies with the card link.
 - Tests: re-forwarding the same message produces no second card; unresolvable project routes
   to triage rather than failing; the seeded dossier carries all five sections.
+- **As shipped** (`server/src/services/discord-intake.ts`):
+  - **Triggers.** A job order is a Discord **Forward**, which the bridge sends as the message
+    snapshot, or typed text after the capture phrase and `:` or a line break. The
+    `no_open_cards` template already told engineers to do the second.
+  - **Title and description.** The title is the first line and the description is the full
+    text, verbatim. No LLM call is involved, so the same message always lands the same way.
+    F-CAP-1 keeps the one bounded call.
+  - **Project.** It is the engineer's only joined open project, else the single project whose
+    name the text mentions (case- and diacritic-insensitive). Otherwise the card gets no
+    project and the company label `triage` (`INTAKE_TRIAGE_LABEL_NAME`).
+  - **Idempotency.** The key is per engineer: the forwarded original's channel and message
+    id, else a hash of the text. It lives in `issue_create_idempotency_keys` and is kept
+    7 days.
+  - **Dossier.** It is seeded with the correlation line first. A retry that finds the card
+    without a dossier seeds it.
+  - **Attachments.** Forwarded attachments are gated like any other, but their bytes are not
+    stored until F-CAP-1. Their names are listed on the card.
+  - **Before the pilot.** F-004-3 (confidential refusal) is not built. Until it lands,
+    forwarded confidential text would be stored, and the pilot-start gate already requires
+    F-004-3.
 
 **F-004-2 — Clarifying-question turn.** The agent asks clarifying questions and files the
 answers into dossier Clarifications. This is the one capture-adjacent verb that legitimately
@@ -697,6 +717,26 @@ fingerprint** so an engineer's resend is never dropped as a duplicate. Pilot-day
 logged so the band call can discount it.
 - Tests: agent down → message persisted → agent up → capture completes exactly once; the
   fingerprint-clear path proven by a resend-after-failure test.
+- **As shipped:**
+  - **Where messages persist.** Discord's DM history is the durable copy, not a bridge-local
+    store. The bridge container has no volume, and adding one is a `deploy/compose.yaml`
+    change. The server ledger `discord_dm_inbound_messages` keys on the Discord message id and
+    stores no content.
+  - **Replay.** The bridge re-reads each linked engineer's DMs after a server cursor (oldest
+    unsettled message, else 30 min behind the newest success, bounded by 24 h and the link
+    date). It sweeps at startup, after a fresh gateway session, and every 5 min while
+    Paperclip is unreachable (`discord-bridge/src/lib/dmReplay.ts`).
+  - **The fingerprint.** In this unit the fingerprint is the message-id claim. A failed
+    attempt releases it, so the replay or a resend is processed, and after 5 failures it stops
+    holding the cursor back. The content fingerprint that would catch "same photo, new
+    message" belongs to F-CAP-1, which must consume it only on a successful capture.
+  - **Status messages.** They are the existing F-VERB-0 `agent_downtime` (once per affected
+    engineer, after 15 min) and `agent_recovered` (with the replayed count). The server
+    renders them and the bridge caches them, so the downtime notice works while the server is
+    down. While the gateway itself is down, no notice can be sent; `agent_recovered` follows
+    the replay.
+  - **Downtime log.** Each window is logged as a `discord.dm_downtime` activity in every
+    company with a linked engineer.
 
 **F-CAP-1 — Capture pipeline.** Deterministic bridge-side pipeline with **exactly one
 bounded, schema-constrained LLM call** producing `{card, evidence_type, caption}`. Full

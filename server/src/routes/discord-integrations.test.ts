@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createIssue = vi.hoisted(() => vi.fn());
 vi.mock("../services/issues.js", () => ({ issueService: () => ({ create: createIssue }) }));
+const dmInbox = vi.hoisted(() => ({
+  claim: vi.fn(),
+  succeed: vi.fn(),
+  fail: vi.fn(),
+  replayCursors: vi.fn(),
+  recordDowntime: vi.fn(),
+}));
+vi.mock("../services/discord-dm-inbox.js", () => ({ discordDmInbox: () => dmInbox }));
+const createFromJobOrder = vi.hoisted(() => vi.fn());
+vi.mock("../services/discord-intake.js", () => ({ discordIntakeService: () => ({ createFromJobOrder }) }));
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -90,6 +100,10 @@ beforeEach(() => {
   process.env.PAPERCLIP_DISCORD_BRIDGE_TOKEN = bridgeToken;
   process.env.PAPERCLIP_DASHBOARD_URL = "https://paperclip.example";
   createIssue.mockResolvedValue(createdIssue);
+  dmInbox.claim.mockResolvedValue({ claimed: true });
+  dmInbox.succeed.mockResolvedValue(undefined);
+  dmInbox.fail.mockResolvedValue(undefined);
+  createFromJobOrder.mockResolvedValue({ issue: { id: ISSUE_ID, identifier: "PAP-7", title: "Thay tủ điện tầng 3" }, duplicate: false, triage: false });
 });
 
 afterEach(() => {

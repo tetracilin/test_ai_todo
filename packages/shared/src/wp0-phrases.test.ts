@@ -15,6 +15,7 @@ import {
   renderWp0Message,
   resolveWp0CardReference,
   resolveWp0Verb,
+  splitWp0IntakeText,
   wp0MessagePlaceholders,
   wp0PhraseIndex,
 } from "./wp0-phrases.js";
