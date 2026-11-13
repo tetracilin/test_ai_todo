@@ -27,6 +27,13 @@ export interface DiscordDirectMessageRequest {
   content: string;
   /** Metadata only; the server gates type and size before any byte is fetched. */
   attachments: Array<{ id: string; filename: string; contentType: string | null; size: number }>;
+  /** A Discord forward's snapshot (F-004-1 job-order intake); ids are null when Discord omits the reference. */
+  forwarded?: {
+    messageId: string | null;
+    channelId: string | null;
+    content: string;
+    attachments: Array<{ id: string; filename: string; contentType: string | null; size: number }>;
+  };
   /** Discord's creation time (ISO 8601); orders the replay ledger. */
   messageCreatedAt: string;
   /** True when the message is re-read from DM history rather than delivered live. */

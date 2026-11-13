@@ -103,8 +103,10 @@ remaining candidates stand:
   decision re-litigated later.
 - **Lane C — Discord DM/capture verbs.** F-DM-2 and F-DM-3 have shipped. G-2 turned out not
   to need Discord's approval: a bot in fewer than 100 servers turns on the Message Content
-  intent with a Developer Portal toggle. **F-004-1** (intake) is next. F-CAP-1 takes over
-  the attachment download that F-DM-2 left out, and the content fingerprint F-DM-3 left out.
+  intent with a Developer Portal toggle. F-004-1 (intake) has shipped too. **F-004-3**
+  (confidential refusal) should come next, because intake now stores what is forwarded, and
+  F-004-2 (clarifying questions) after it. F-CAP-1 takes over the attachment download that
+  F-DM-2 left out, and the content fingerprint F-DM-3 left out.
 - **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
   direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
   most dev environments will not have configured — confirm access before picking it up.
@@ -611,7 +613,7 @@ work package binds a second transport to the same pipeline (TODOS.md).
 | ID | Feature | Depends on | Effort |
 |---|---|---|---|
 | F-VERB-0 | Canonical Vietnamese phrase table | — | human: 4h / CC: 30m |
-| **F-004-1** | **Job-order intake → card + seeded dossier** | F-DM-2, F-002-1 | human: 2d / CC: 2h |
+| **F-004-1** | **Job-order intake → card + seeded dossier** | F-DM-2, F-002-1 | human: 2d / CC: 2h — ✅ shipped; deterministic title/project, no LLM call |
 | **F-004-2** | **Clarifying-question turn → dossier** | F-004-1 | human: 2d / CC: 1.5h |
 | **F-004-3** | **Confidential-content refusal (NAS instructions)** | F-004-1 | human: 1d / CC: 45m |
 | F-DM-2 | Discord DM surface (intent, handler, auth gate, media) | G-2, F-VERB-0 | human: 1w / CC: 4h — ✅ shipped; media is metadata-gated only, byte fetch moved to F-CAP-1 |
@@ -631,6 +633,26 @@ resolution fails). Idempotency reuses the existing `issue_create_idempotency_key
 do **not** build a second fingerprint store. The agent replies with the card link.
 - Tests: re-forwarding the same message produces no second card; unresolvable project routes
   to triage rather than failing; the seeded dossier carries all five sections.
+- **As shipped** (`server/src/services/discord-intake.ts`):
+  - **Triggers.** A job order is a Discord **Forward**, which the bridge sends as the message
+    snapshot, or typed text after the capture phrase and `:` or a line break. The
+    `no_open_cards` template already told engineers to do the second.
+  - **Title and description.** The title is the first line and the description is the full
+    text, verbatim. No LLM call is involved, so the same message always lands the same way.
+    F-CAP-1 keeps the one bounded call.
+  - **Project.** It is the engineer's only joined open project, else the single project whose
+    name the text mentions (case- and diacritic-insensitive). Otherwise the card gets no
+    project and the company label `triage` (`INTAKE_TRIAGE_LABEL_NAME`).
+  - **Idempotency.** The key is per engineer: the forwarded original's channel and message
+    id, else a hash of the text. It lives in `issue_create_idempotency_keys` and is kept
+    7 days.
+  - **Dossier.** It is seeded with the correlation line first. A retry that finds the card
+    without a dossier seeds it.
+  - **Attachments.** Forwarded attachments are gated like any other, but their bytes are not
+    stored until F-CAP-1. Their names are listed on the card.
+  - **Before the pilot.** F-004-3 (confidential refusal) is not built. Until it lands,
+    forwarded confidential text would be stored, and the pilot-start gate already requires
+    F-004-3.
 
 **F-004-2 — Clarifying-question turn.** The agent asks clarifying questions and files the
 answers into dossier Clarifications. This is the one capture-adjacent verb that legitimately

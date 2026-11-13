@@ -12,6 +12,8 @@ const dmInbox = vi.hoisted(() => ({
   recordDowntime: vi.fn(),
 }));
 vi.mock("../services/discord-dm-inbox.js", () => ({ discordDmInbox: () => dmInbox }));
+const createFromJobOrder = vi.hoisted(() => vi.fn());
+vi.mock("../services/discord-intake.js", () => ({ discordIntakeService: () => ({ createFromJobOrder }) }));
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -101,6 +103,7 @@ beforeEach(() => {
   dmInbox.claim.mockResolvedValue({ claimed: true });
   dmInbox.succeed.mockResolvedValue(undefined);
   dmInbox.fail.mockResolvedValue(undefined);
+  createFromJobOrder.mockResolvedValue({ issue: { id: ISSUE_ID, identifier: "PAP-7", title: "Thay tủ điện tầng 3" }, duplicate: false, triage: false });
 });
 
 afterEach(() => {
@@ -388,6 +391,106 @@ describe("POST /integrations/discord/dm/inbound", () => {
 
     expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
     expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+});
+
+// F-004-1: job-order intake through the DM route.
+describe("POST /integrations/discord/dm/inbound job-order intake", () => {
+  const dm = { discordUserId: "discord-user-1", messageId: "message-1", channelId: "dm-channel-1", content: "", attachments: [] };
+  const primaryLink = { ...linkedUser, primary: true };
+  const forwarded = { messageId: "origin-1", channelId: "origin-channel-1", content: "Thay tủ điện tầng 3\nHạn thứ 6", attachments: [] };
+  const cardUrl = "https://paperclip.example/issues/PAP-7";
+
+  function dmPost(app: express.Express) {
+    return request(app).post("/api/integrations/discord/dm/inbound").set("Authorization", `Bearer ${bridgeToken}`);
+  }
+  const linkedApp = () => buildApp(fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [{ attachmentMaxBytes: 1024 }]] }));
+
+  it("turns a forwarded job order into a card and replies with its link", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+
+    const response = await dmPost(await linkedApp()).send({ ...dm, forwarded }).expect(200);
+
+    expect(createFromJobOrder).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      userId: "user-1",
+      discordUserId: "discord-user-1",
+      discordMessageId: "message-1",
+      origin: { channelId: "origin-channel-1", messageId: "origin-1" },
+      text: forwarded.content,
+      attachmentNames: [],
+    });
+    expect(response.body.reply).toBe(renderWp0Message("intake_created", { card: "PAP-7", title: "Thay tủ điện tầng 3", url: cardUrl }));
+    expect(dmInbox.succeed).toHaveBeenCalledWith("message-1");
+  });
+
+  it("says the card waits for a PM when the project did not resolve", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    createFromJobOrder.mockResolvedValue({ issue: { id: ISSUE_ID, identifier: "PAP-7", title: "Thay tủ điện tầng 3" }, duplicate: false, triage: true });
+
+    const response = await dmPost(await linkedApp()).send({ ...dm, forwarded }).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("intake_created_triage", { card: "PAP-7", title: "Thay tủ điện tầng 3", url: cardUrl }));
+  });
+
+  it("answers a re-forwarded job order with the existing card", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    createFromJobOrder.mockResolvedValue({ issue: { id: ISSUE_ID, identifier: "PAP-7", title: "Thay tủ điện tầng 3" }, duplicate: true, triage: false });
+
+    const response = await dmPost(await linkedApp()).send({ ...dm, messageId: "message-2", forwarded }).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("intake_duplicate", { card: "PAP-7", url: cardUrl }));
+  });
+
+  it("takes typed text after the capture phrase as a job order", async () => {
+    await dmPost(await linkedApp()).send({ ...dm, content: "việc mới: lắp camera kho B" }).expect(200);
+
+    expect(createFromJobOrder).toHaveBeenCalledWith(expect.objectContaining({ origin: null, text: "lắp camera kho B" }));
+  });
+
+  it("keeps ordinary text out of intake", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+
+    const response = await dmPost(await linkedApp()).send({ ...dm, content: "ghi chú cho anh Hùng" }).expect(200);
+
+    expect(createFromJobOrder).not.toHaveBeenCalled();
+    expect(response.body.reply).toBe(renderWp0Message("unknown_phrase", { input: "ghi chú cho anh Hùng" }));
+  });
+
+  it("asks for text when a forward has none, and creates nothing", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+
+    const response = await dmPost(await linkedApp()).send({ ...dm, forwarded: { ...forwarded, content: "  " } }).expect(200);
+
+    expect(createFromJobOrder).not.toHaveBeenCalled();
+    expect(response.body.reply).toBe(renderWp0Message("intake_needs_text"));
+  });
+
+  it("rejects a forward carrying a disallowed file before any card is made", async () => {
+    const response = await dmPost(await linkedApp()).send({
+      ...dm,
+      forwarded: { ...forwarded, attachments: [{ id: "a-1", filename: "setup.exe", contentType: "application/x-msdownload", size: 10 }] },
+    }).expect(200);
+
+    expect(createFromJobOrder).not.toHaveBeenCalled();
+    expect(response.body.attachments).toEqual([{ id: "a-1", accepted: false, reason: "content_type_not_allowed" }]);
+  });
+
+  it("names accepted forwarded files on the card and keys a forward without ids on its text", async () => {
+    await dmPost(await linkedApp()).send({
+      ...dm,
+      forwarded: { messageId: null, channelId: null, content: "Khảo sát trạm bơm", attachments: [{ id: "a-1", filename: "so-do.png", contentType: "image/png", size: 10 }] },
+    }).expect(200);
+
+    expect(createFromJobOrder).toHaveBeenCalledWith(expect.objectContaining({ origin: null, attachmentNames: ["so-do.png"] }));
+  });
+
+  it("releases the ledger claim when intake fails, so the replay retries it", async () => {
+    createFromJobOrder.mockRejectedValue(new Error("database unavailable"));
+
+    await dmPost(await linkedApp()).send({ ...dm, forwarded }).expect(500);
+
+    expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
   });
 });
 

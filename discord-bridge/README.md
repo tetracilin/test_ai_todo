@@ -32,6 +32,17 @@ The server decides everything:
 
 The bridge posts that reply with mentions disabled.
 
+## Job-order intake (F-004-1)
+
+When an engineer uses Discord's **Forward** on a job order, the forwarding DM has empty content, and the job order is in the message snapshot. The bridge sends the snapshot's text and attachment metadata as `forwarded`, with the original message's ids. The server turns it into a card:
+
+- The title is the first line of the job order, and the description is the full text, verbatim. The card is assigned to the engineer.
+- **Project:** the engineer's only open project, else the one project whose name the text mentions (case and diacritics do not matter). Otherwise the card gets the `triage` label and no project, so a PM can place it. The server never guesses.
+- The dossier is seeded with all five sections. The first line of the Job order section is the chat correlation line.
+- A re-forward of the same original message returns the existing card (`issue_create_idempotency_keys`, kept 7 days).
+
+An engineer can also type a job order: the capture phrase, then `:` or a new line, then the text (`việc mới: thay tủ điện tầng 3`). Attachment bytes are still not stored. Their names are listed on the card until F-CAP-1.
+
 ## Replay after downtime (F-DM-3)
 
 Discord's DM history is the durable copy of every DM, so the bridge keeps no local state and needs no volume. The server keeps a ledger keyed on the Discord message id (`discord_dm_inbound_messages`, no message content). It answers each id once. A failed attempt releases the id, so the next replay processes it instead of dropping it as a duplicate. An id that fails five times is left alone, so one bad message cannot stall the replay.

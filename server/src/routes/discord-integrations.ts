@@ -17,7 +17,7 @@ import {
   issues,
   projects,
 } from "@paperclipai/db";
-import { classifyWp0Inbound, renderWp0HelpMessage, renderWp0Message } from "@paperclipai/shared";
+import { classifyWp0Inbound, renderWp0HelpMessage, renderWp0Message, splitWp0IntakeText } from "@paperclipai/shared";
 import {
   isAllowedContentType,
   normalizeIssueAttachmentMaxBytes,
@@ -26,6 +26,7 @@ import {
 import { badRequest, forbidden, HttpError } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
 import { discordDmInbox } from "../services/discord-dm-inbox.js";
+import { discordIntakeService } from "../services/discord-intake.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
@@ -80,17 +81,27 @@ const acknowledgementSchema = z.object({
 // server decides before any byte is fetched (F-DM-2). Discord caps a message at
 // 10 attachments and 4000 characters (Nitro), so these bounds never reject a
 // real DM.
+const dmAttachmentsSchema = z.array(z.object({
+  id: z.string().trim().min(1).max(128),
+  filename: z.string().trim().min(1).max(260),
+  contentType: z.string().trim().max(255).nullable(),
+  size: z.number().int().min(0),
+}).strict()).max(10).default([]);
 const dmInboundSchema = z.object({
   discordUserId: z.string().trim().min(1).max(128),
   messageId: z.string().trim().min(1).max(128),
   channelId: z.string().trim().min(1).max(128),
   content: z.string().max(4_000),
-  attachments: z.array(z.object({
-    id: z.string().trim().min(1).max(128),
-    filename: z.string().trim().min(1).max(260),
-    contentType: z.string().trim().max(255).nullable(),
-    size: z.number().int().min(0),
-  }).strict()).max(10).default([]),
+  attachments: dmAttachmentsSchema,
+  // F-004-1: the snapshot of a Discord forward, which carries its own text and
+  // attachments; the forwarding DM itself has none. The ids are null when
+  // Discord omits the reference.
+  forwarded: z.object({
+    messageId: z.string().trim().min(1).max(128).nullable(),
+    channelId: z.string().trim().min(1).max(128).nullable(),
+    content: z.string().max(4_000),
+    attachments: dmAttachmentsSchema,
+  }).strict().optional(),
   // F-DM-3: Discord's own timestamp, and whether this is a replay of history
   // the bridge missed. Optional so a bridge from before F-DM-3 still works.
   messageCreatedAt: z.string().datetime({ offset: true }).optional(),
@@ -156,6 +167,7 @@ export function discordIntegrationRoutes(db: Db) {
   const router = Router();
   const issueSvc = issueService(db);
   const dmInbox = discordDmInbox(db);
+  const intakeSvc = discordIntakeService(db);
   const allowRequest = createSlidingWindowRateLimiter();
 
 
@@ -454,18 +466,42 @@ export function discordIntegrationRoutes(db: Db) {
     try {
       const company = await db.select({ attachmentMaxBytes: companies.attachmentMaxBytes }).from(companies).where(eq(companies.id, link.companyId)).then((rows) => rows[0] ?? null);
       const maxBytes = normalizeIssueAttachmentMaxBytes(company?.attachmentMaxBytes);
-      const attachments = input.attachments.map((attachment) => {
+      const allAttachments = [...input.attachments, ...(input.forwarded?.attachments ?? [])];
+      const attachments = allAttachments.map((attachment) => {
         const contentType = normalizeUploadAttachmentContentType({ contentType: attachment.contentType, originalFilename: attachment.filename, isAllowedContentType });
         if (!attachment.contentType || !isAllowedContentType(contentType)) return { id: attachment.id, accepted: false, reason: "content_type_not_allowed" as const };
         if (attachment.size > maxBytes) return { id: attachment.id, accepted: false, reason: "too_large" as const };
         return { id: attachment.id, accepted: true };
       });
 
-      const rejected = input.attachments.find((_attachment, index) => !attachments[index]!.accepted);
+      const rejected = allAttachments.find((_attachment, index) => !attachments[index]!.accepted);
       const text = input.content.trim();
+      // A forward is always a job order; typed text is one only after the
+      // capture phrase and a delimiter ("việc mới: ...").
+      const jobOrderText = input.forwarded ? input.forwarded.content.trim() : splitWp0IntakeText(text);
       let reply: string;
       if (rejected) {
         reply = renderWp0Message("media_rejected", { item: `tệp ${rejected.filename}` });
+      } else if (input.forwarded && !jobOrderText) {
+        reply = renderWp0Message("intake_needs_text");
+      } else if (jobOrderText) {
+        const forwardedOrigin = input.forwarded?.messageId && input.forwarded.channelId
+          ? { channelId: input.forwarded.channelId, messageId: input.forwarded.messageId }
+          : null;
+        const intake = await intakeSvc.createFromJobOrder({
+          companyId: link.companyId,
+          userId: link.userId,
+          discordUserId: input.discordUserId,
+          discordMessageId: input.messageId,
+          origin: forwardedOrigin,
+          text: jobOrderText,
+          attachmentNames: allAttachments.map((attachment) => attachment.filename),
+        });
+        const card = intake.issue.identifier ?? intake.issue.id;
+        const url = issueUrl(intake.issue);
+        reply = intake.duplicate
+          ? renderWp0Message("intake_duplicate", { card, url })
+          : renderWp0Message(intake.triage ? "intake_created_triage" : "intake_created", { card, title: intake.issue.title, url });
       } else if (!text) {
         reply = renderWp0HelpMessage();
       } else {

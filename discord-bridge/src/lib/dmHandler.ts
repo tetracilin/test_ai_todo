@@ -1,4 +1,4 @@
-import type { Message } from "discord.js";
+import { MessageReferenceType, type Attachment, type Message } from "discord.js";
 import { DiscordIntegrationApiError, type DiscordIntegrationClient } from "./discordIntegrationClient.js";
 
 export interface DirectMessageContext {
@@ -30,6 +30,10 @@ export async function handleDirectMessage(
 ): Promise<DirectMessageOutcome> {
   if (message.author.bot || message.guildId !== null) return "ignored";
 
+  // F-004-1: a Discord forward arrives with empty content; the job order is in
+  // the snapshot, and the reference names the original message.
+  const snapshot = message.reference?.type === MessageReferenceType.Forward ? message.messageSnapshots?.first() : undefined;
+
   let result;
   try {
     result = await ctx.paperclip.sendDirectMessage({
@@ -37,12 +41,15 @@ export async function handleDirectMessage(
       messageId: message.id,
       channelId: message.channelId,
       content: message.content,
-      attachments: [...message.attachments.values()].map((attachment) => ({
-        id: attachment.id,
-        filename: attachment.name,
-        contentType: attachment.contentType ?? null,
-        size: attachment.size,
-      })),
+      attachments: attachmentMetadata(message.attachments.values()),
+      ...(snapshot ? {
+        forwarded: {
+          messageId: message.reference?.messageId ?? null,
+          channelId: message.reference?.channelId ?? null,
+          content: snapshot.content ?? "",
+          attachments: attachmentMetadata(snapshot.attachments?.values() ?? []),
+        },
+      } : {}),
       messageCreatedAt: new Date(message.createdTimestamp).toISOString(),
       ...(opts.replay ? { replay: true } : {}),
     });
@@ -63,6 +70,15 @@ export async function handleDirectMessage(
     logFailure(message, error);
     return "failed";
   }
+}
+
+function attachmentMetadata(attachments: Iterable<Attachment>) {
+  return [...attachments].map((attachment) => ({
+    id: attachment.id,
+    filename: attachment.name,
+    contentType: attachment.contentType ?? null,
+    size: attachment.size,
+  }));
 }
 
 function logFailure(message: Message, error: unknown) {
