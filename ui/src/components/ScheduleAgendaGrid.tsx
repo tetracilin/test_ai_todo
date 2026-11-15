@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IssueStatusBadge } from "./StatusBadge";
 import { cn } from "../lib/utils";
 
@@ -49,7 +49,15 @@ export function ScheduleAgendaGrid({
   onResizeItem,
 }: ScheduleAgendaGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const resizeState = useRef<{ issueId: string; initialY: number; initialMinutes: number } | null>(null);
+  const resizeState = useRef<{
+    issueId: string;
+    initialY: number;
+    initialMinutes: number;
+    latestMinutes: number;
+  } | null>(null);
+  const [liveResize, setLiveResize] = useState<{ issueId: string; minutes: number } | null>(null);
+  const onResizeItemRef = useRef(onResizeItem);
+  onResizeItemRef.current = onResizeItem;
 
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
   const gridHeight = (endHour - startHour) * pixelsPerHour;
@@ -93,17 +101,23 @@ export function ScheduleAgendaGrid({
       const deltaMinutes = ((clientY - state.initialY) / pixelsPerHour) * 60;
       let minutes = Math.round(state.initialMinutes + deltaMinutes);
       minutes = Math.max(15, Math.round(minutes / 15) * 15);
-      onResizeItem?.(state.issueId, minutes);
+      state.latestMinutes = minutes;
+      setLiveResize({ issueId: state.issueId, minutes });
     },
-    [pixelsPerHour, onResizeItem],
+    [pixelsPerHour],
   );
 
   const finishResize = useCallback(() => {
+    const state = resizeState.current;
     resizeState.current = null;
     window.removeEventListener("mousemove", handleResizeMove);
     window.removeEventListener("mouseup", finishResize);
     window.removeEventListener("touchmove", handleResizeMove);
     window.removeEventListener("touchend", finishResize);
+    setLiveResize(null);
+    if (state && state.latestMinutes !== state.initialMinutes) {
+      onResizeItemRef.current?.(state.issueId, state.latestMinutes);
+    }
   }, [handleResizeMove]);
 
   useEffect(() => finishResize, [finishResize]);
@@ -113,10 +127,12 @@ export function ScheduleAgendaGrid({
     e.preventDefault();
     e.stopPropagation();
     const clientY = "touches" in e ? e.touches[0]?.clientY ?? 0 : e.clientY;
+    const initialMinutes = item.scheduledDurationMinutes ?? 30;
     resizeState.current = {
       issueId: item.issueId,
       initialY: clientY,
-      initialMinutes: item.scheduledDurationMinutes ?? 30,
+      initialMinutes,
+      latestMinutes: initialMinutes,
     };
     window.addEventListener("mousemove", handleResizeMove);
     window.addEventListener("mouseup", finishResize);
@@ -155,7 +171,8 @@ export function ScheduleAgendaGrid({
           const itemDate = new Date(item.scheduledAt);
           const minutesFromStart = (itemDate.getHours() - startHour) * 60 + itemDate.getMinutes();
           const top = (minutesFromStart / 60) * pixelsPerHour;
-          const duration = item.scheduledDurationMinutes ?? 30;
+          const duration =
+            liveResize?.issueId === item.issueId ? liveResize.minutes : item.scheduledDurationMinutes ?? 30;
           const height = Math.max(22, (duration / 60) * pixelsPerHour - 2);
           const selected = item.issueId === selectedItemId;
 
