@@ -206,6 +206,7 @@ export const queryKeys = {
         : (["issues", "cost-summary", issueId] as const),
     attachments: (issueId: string) => ["issues", "attachments", issueId] as const,
     attachmentPreview: (attachmentId: string) => ["issues", "attachment-preview", attachmentId] as const,
+    evidenceLinks: (issueId: string) => ["issues", "evidence-links", issueId] as const,
     artifacts: (companyId: string, issueId: string) => ["issues", "artifacts", companyId, issueId] as const,
     artifactStorageSources: (companyId: string) => ["issues", "artifact-storage-sources", companyId] as const,
     externalArtifactObjects: (companyId: string, prefix: string) =>
