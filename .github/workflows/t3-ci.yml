@@ -2,7 +2,8 @@
 # GitHub-hosted runners only (never kmv8): PR code is untrusted until merged.
 #
 # Required status checks for branch protection — use these EXACT names:
-#   "unit", "build", "build-image"
+#   "unit", "build", "build-image", "server-tests"
+# (develop also requires "agent-review", a commit status posted by t3-agent-review.yml)
 #
 # NOT "t3-ci / unit". For GitHub Actions the status-check context is the JOB name,
 # not "<workflow> / <job>". Verified against the API:
@@ -117,7 +118,7 @@ jobs:
         # The guard decides whether an agent patch may be pushed
         # (technical-spec/specs/2026-10-12-agent-issue-loop-design.md section 5).
         # List the files: Node 22 does not accept a directory argument to --test.
-        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs
+        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs ./scripts/__tests__/agent-merge-policy.test.mjs ./scripts/__tests__/agent-review-render.test.mjs
       - name: Test plugin-SDK dev symlinker
         # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
         # otherwise release-only and is deleted with the rest of upstream's
@@ -204,3 +205,112 @@ jobs:
             PAPERCLIP_BUILD_VERSION=ci-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Server suites on pull requests that touch server-tested paths
+  # (CICD/PLAN_AI_FACTORY.md decision D3, WP-FACTORY-001). Same shards and
+  # commands as t3-nightly.yml, so a pull request and the nightly run agree.
+  #
+  # The job named `server-tests` is the required status check - use the EXACT
+  # name. It passes when every shard passed, or when no server-tested path
+  # changed. The shard jobs are not required checks themselves.
+  server_changes:
+    name: server-changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.detect.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          # The PR merge commit and its first parent (the base branch tip).
+          fetch-depth: 2
+      - id: detect
+        shell: bash
+        run: |
+          # Fails safe: a push, an empty diff, or any error here means "run".
+          relevant=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qE '^(server/|packages/db/|packages/shared/|packages/adapters/|packages/adapter-utils/|packages/plugins/sdk/|packages/skills-catalog/|packages/teams-catalog/|pnpm-lock\.yaml$|vitest\.config\.ts$|scripts/run-vitest-stable\.mjs$|scripts/general-server-shard\.mjs$)'; then
+              relevant=false
+            fi
+            echo "Changed files:"
+            echo "$changed"
+          fi
+          echo "relevant=$relevant"
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+
+  server_tests_general:
+    name: server-tests-shard (general-server ${{ matrix.shard }})
+    needs: server_changes
+    if: needs.server_changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: general-server shard ${{ matrix.shard }}/3
+        run: pnpm run test:run:general --group general-server --shard-index ${{ matrix.shard }} --shard-count 3
+
+  server_tests_serialized:
+    name: server-tests-shard (serialized ${{ matrix.shard }})
+    needs: server_changes
+    if: needs.server_changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: serialized shard ${{ matrix.shard }}/2
+        run: pnpm run test:run:serialized --shard-index ${{ matrix.shard }} --shard-count 2
+
+  server_tests:
+    name: server-tests
+    needs: [server_changes, server_tests_general, server_tests_serialized]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Gate on the shards
+        env:
+          CHANGES: ${{ needs.server_changes.result }}
+          RELEVANT: ${{ needs.server_changes.outputs.relevant }}
+          GENERAL: ${{ needs.server_tests_general.result }}
+          SERIALIZED: ${{ needs.server_tests_serialized.result }}
+        run: |
+          echo "changes=$CHANGES relevant=$RELEVANT general=$GENERAL serialized=$SERIALIZED"
+          if [ "$CHANGES" != "success" ]; then
+            echo "server-changes did not finish; failing closed"
+            exit 1
+          fi
+          if [ "$RELEVANT" != "true" ]; then
+            echo "no server-tested path changed; nothing to run"
+            exit 0
+          fi
+          [ "$GENERAL" = "success" ] && [ "$SERIALIZED" = "success" ]
+
