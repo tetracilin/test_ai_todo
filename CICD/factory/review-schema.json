@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "risk", "summary", "user_impact", "what_could_go_wrong", "acceptance", "findings"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["PASS", "FAIL", "NEEDS_HUMAN"] },
+    "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+    "summary": { "type": "string" },
+    "user_impact": { "type": "string" },
+    "what_could_go_wrong": { "type": "string" },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "met", "evidence"],
+        "properties": {
+          "criterion": { "type": "string" },
+          "met": { "type": "boolean" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "detail"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocking", "note", "pre-existing"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "title": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}
