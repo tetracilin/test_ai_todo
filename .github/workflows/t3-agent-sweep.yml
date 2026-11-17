@@ -1,0 +1,126 @@
+# t3-agent-sweep - keeps the merge line moving (WP-FACTORY-001).
+#
+# After every merge into develop, on a timer, and on demand:
+#   1. kill switch off  -> auto-merge is disabled on every open pull request;
+#   2. the OLDEST pull request that has auto-merge and is behind develop gets its
+#      branch updated (one per run, so pull requests merge one after another);
+#   3. pull requests with green t3-ci and no review verdict are sent to
+#      t3-agent-review again (covers a capped day, a reviewer outage, a draft
+#      marked ready, and automation switched back on);
+#   4. pull requests that conflict with develop are labelled for rework.
+#
+# GitHub-hosted runner only. Runs no model and checks out no pull request code.
+# The plan is a pure function: scripts/agent-merge-policy.mjs `sweep`.
+
+name: t3-agent-sweep
+
+on:
+  push:
+    branches: [develop]
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-agent-sweep
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  sweep:
+    name: sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: write
+      statuses: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Factory app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          # `app-id` still works in v3 (marked deprecated in favour of `client-id`).
+          # actionlint 1.7.12 does not know `client-id` yet; switch both together later.
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - name: Collect open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "${REPO}" --base develop --state open --limit 100 \
+            --json number,createdAt,isDraft,isCrossRepository,mergeStateStatus,autoMergeRequest,headRefOid,labels,author \
+            > prs.json
+          : > enriched.ndjson
+          jq -c '.[]' prs.json | while IFS= read -r pr; do
+            sha="$(jq -r .headRefOid <<< "${pr}")"
+            checks="$(gh api "repos/${REPO}/commits/${sha}/check-runs" --paginate \
+              --jq '.check_runs[] | {name: .name, conclusion: (.conclusion // "pending")}' | jq -s '.')"
+            # Statuses come newest first; one page is enough for one commit.
+            status="$(gh api "repos/${REPO}/commits/${sha}/statuses?per_page=100" \
+              --jq '[.[] | select(.context == "agent-review")][0] | if . then {state: .state, description: (.description // "")} else null end')"
+            jq -c --argjson checks "${checks}" --argjson status "${status:-null}" \
+              '. + {checks: $checks, agentReview: $status}' <<< "${pr}" >> enriched.ndjson
+          done
+          jq -s '.' enriched.ndjson > enriched.json
+
+      - name: Plan
+        env:
+          AUTOMATION: ${{ vars.T3_AGENT_AUTOMATION || 'off' }}
+        run: |
+          set -euo pipefail
+          jq -n --arg automation "${AUTOMATION}" --slurpfile prs enriched.json \
+            '{automation: $automation, maxDispatch: 3, prs: $prs[0]}' > sweep-input.json
+          node scripts/agent-merge-policy.mjs sweep < sweep-input.json > plan.json
+          cat plan.json
+
+      - name: Apply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          jq -r '.disableAutoMerge[]' plan.json | while IFS= read -r n; do
+            GH_TOKEN="${APP_TOKEN}" gh pr merge "${n}" --repo "${REPO}" --disable-auto || true
+          done
+
+          jq -c '.conflicts[]' plan.json | while IFS= read -r item; do
+            n="$(jq -r .number <<< "${item}")"
+            label="$(jq -r .label <<< "${item}")"
+            gh pr edit "${n}" --repo "${REPO}" --add-label "${label}"
+            gh pr comment "${n}" --repo "${REPO}" \
+              --body "This branch conflicts with \`develop\`. Merge \`origin/develop\` into it and resolve the conflict by reading both sides."
+          done
+
+          n="$(jq -r '.updateBranch // empty' plan.json)"
+          if [ -n "${n}" ]; then
+            # The app token (not GITHUB_TOKEN) makes the update trigger t3-ci.
+            if ! GH_TOKEN="${APP_TOKEN}" gh api -X PUT "repos/${REPO}/pulls/${n}/update-branch" > update.json 2> update.err; then
+              cat update.err
+              gh pr edit "${n}" --repo "${REPO}" --add-label needs-human
+              gh pr comment "${n}" --repo "${REPO}" \
+                --body "The factory could not update this branch from \`develop\`. See the t3-agent-sweep run for the error."
+            fi
+          fi
+
+          jq -r '.dispatchReview[]' plan.json | while IFS= read -r n; do
+            gh workflow run t3-agent-review.yml --repo "${REPO}" --ref develop -f pr_number="${n}"
+          done
