@@ -235,7 +235,7 @@ jobs:
           # stay inside the workspace; the two deny rules are a second layer.
           claude_args: |
             --max-turns 40
-            --permission-mode default
+            --permission-mode dontAsk
             --disallowedTools "Bash,Write,Edit,NotebookEdit,WebFetch,WebSearch,Read(//proc/**),Read(//home/runner/work/_temp/**)"
             --json-schema '${{ steps.schema.outputs.json }}'
 
