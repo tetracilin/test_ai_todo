@@ -82,6 +82,13 @@ export interface IntakeResult {
   triage: boolean;
 }
 
+/** The company's one `triage` label, created on first use. Shared with capture (F-CAP-1/2). */
+export async function ensureTriageLabelId(db: Db, companyId: string): Promise<string> {
+  await db.insert(labels).values({ companyId, name: INTAKE_TRIAGE_LABEL_NAME, color: TRIAGE_LABEL_COLOR }).onConflictDoNothing();
+  const [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.companyId, companyId), eq(labels.name, INTAKE_TRIAGE_LABEL_NAME)));
+  return label!.id;
+}
+
 export function discordIntakeService(db: Db) {
   const issueSvc = issueService(db);
   const dossierSvc = issueDossierService(db);
@@ -98,12 +105,6 @@ export function discordIntakeService(db: Db) {
         isNull(projects.archivedAt),
         notInArray(projects.status, CLOSED_PROJECT_STATUSES),
       ));
-  }
-
-  async function triageLabelId(companyId: string) {
-    await db.insert(labels).values({ companyId, name: INTAKE_TRIAGE_LABEL_NAME, color: TRIAGE_LABEL_COLOR }).onConflictDoNothing();
-    const [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.companyId, companyId), eq(labels.name, INTAKE_TRIAGE_LABEL_NAME)));
-    return label!.id;
   }
 
   return {
@@ -124,7 +125,7 @@ export function discordIntakeService(db: Db) {
         createdByUserId: input.userId,
         originKind: "discord",
         originId: `discord-message:${input.origin?.messageId ?? input.discordMessageId}`,
-        labelIds: projectId ? [] : [await triageLabelId(input.companyId)],
+        labelIds: projectId ? [] : [await ensureTriageLabelId(db, input.companyId)],
         idempotencyKey: intakeIdempotencyKey({ discordUserId: input.discordUserId, origin: input.origin, text }),
         allowDuplicate: true,
         onDeduplicated: () => {

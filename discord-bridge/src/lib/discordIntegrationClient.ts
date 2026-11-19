@@ -25,8 +25,8 @@ export interface DiscordDirectMessageRequest {
   messageId: string;
   channelId: string;
   content: string;
-  /** Metadata only; the server gates type and size before any byte is fetched. */
-  attachments: Array<{ id: string; filename: string; contentType: string | null; size: number }>;
+  /** Metadata plus the CDN URL; the server gates type and size before it fetches any byte (F-CAP-1). */
+  attachments: Array<{ id: string; filename: string; contentType: string | null; size: number; url?: string }>;
   /** A Discord forward's snapshot (F-004-1 job-order intake); ids are null when Discord omits the reference. */
   forwarded?: {
     messageId: string | null;
@@ -38,6 +38,8 @@ export interface DiscordDirectMessageRequest {
   messageCreatedAt: string;
   /** True when the message is re-read from DM history rather than delivered live. */
   replay?: boolean;
+  /** F-CAP-1: the text message paired with this media message; the two are one capture. */
+  caption?: { messageId: string; content: string; messageCreatedAt: string };
 }
 
 export type DiscordDirectMessageResult =
@@ -50,6 +52,8 @@ export type DiscordDirectMessageResult =
     duplicate: false;
     reply: string;
     attachments: Array<{ id: string; accepted: boolean; reason?: string }>;
+    /** F-CAP-1: this text may be the caption of a photo still on its way; hold the reply for the pairing window. */
+    holdReplyForCaption?: boolean;
   };
 
 export interface DiscordDmReplayPlan {

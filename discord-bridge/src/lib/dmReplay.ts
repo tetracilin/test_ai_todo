@@ -1,6 +1,6 @@
 import type { Message } from "discord.js";
 import type { DiscordDmDowntime, DiscordDmReplayPlan, DiscordIntegrationClient } from "./discordIntegrationClient.js";
-import { handleDirectMessage, type DirectMessageOutcome } from "./dmHandler.js";
+import { DmPairing, handleDirectMessage, type DirectMessageOutcome } from "./dmHandler.js";
 
 /** Matches the WP-0 retry promise "mình sẽ thử lại trong 5 phút" in the downtime notice. */
 export const DM_RETRY_INTERVAL_MS = 5 * 60 * 1000;
@@ -22,6 +22,8 @@ export interface DmRecoveryContext {
   client: { users: { createDM(userId: string): Promise<DmChannelLike> } };
   paperclip: Pick<DiscordIntegrationClient, "sendDirectMessage" | "getDmReplayPlan" | "reportDmDowntime">;
   now?: () => number;
+  /** F-CAP-1 photo/caption pairing window for live DMs; the default is `DM_PAIRING_WINDOW_MS`. */
+  pairingWindowMs?: number;
 }
 
 interface Outage {
@@ -47,8 +49,11 @@ export class DmRecovery {
   private sweeping: Promise<void> | null = null;
   private pendingSweep: DowntimeCause | null = null;
   private stopped = false;
+  private readonly pairing: DmPairing;
 
-  constructor(private readonly ctx: DmRecoveryContext) {}
+  constructor(private readonly ctx: DmRecoveryContext) {
+    this.pairing = new DmPairing(ctx, ctx.pairingWindowMs);
+  }
 
   private now() {
     return this.ctx.now?.() ?? Date.now();
@@ -56,7 +61,9 @@ export class DmRecovery {
 
   /** Handles a DM delivered live by the gateway. */
   async handleLive(message: Message): Promise<DirectMessageOutcome> {
-    const outcome = await handleDirectMessage(this.ctx, message);
+    // F-CAP-1: live DMs go through the pairing window, so a photo and its
+    // caption reach Paperclip as one capture. Replayed history does not.
+    const outcome = await this.pairing.handle(message);
     if (outcome === "unavailable") {
       this.markOutage("paperclip_unreachable", message.author.id);
       await this.notifyDowntime();
@@ -78,6 +85,7 @@ export class DmRecovery {
 
   stop() {
     this.stopped = true;
+    this.pairing.stop();
     this.clearRetry();
   }
 

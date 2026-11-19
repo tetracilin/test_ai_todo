@@ -14,6 +14,8 @@ const dmInbox = vi.hoisted(() => ({
 vi.mock("../services/discord-dm-inbox.js", () => ({ discordDmInbox: () => dmInbox }));
 const createFromJobOrder = vi.hoisted(() => vi.fn());
 vi.mock("../services/discord-intake.js", () => ({ discordIntakeService: () => ({ createFromJobOrder }) }));
+const capture = vi.hoisted(() => vi.fn());
+vi.mock("../services/discord-capture.js", () => ({ discordCaptureService: () => ({ capture }) }));
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
@@ -72,7 +74,10 @@ function fakeDb({ selectRows, insertError }: FakeDbOptions) {
   return { select, insert, update };
 }
 
-async function buildApp(db: ReturnType<typeof fakeDb>) {
+/** Stands in for the evidence bucket: its presence is what switches capture on. */
+const evidenceBucket = { id: "s3" } as never;
+
+async function buildApp(db: ReturnType<typeof fakeDb>, routeOptions: { externalStorage?: unknown } = { externalStorage: evidenceBucket }) {
   const [{ discordIntegrationRoutes }, { errorHandler }] = await Promise.all([
     import("./discord-integrations.js"),
     import("../middleware/error-handler.js"),
@@ -83,7 +88,7 @@ async function buildApp(db: ReturnType<typeof fakeDb>) {
     req.actor = { type: "board", userId: "user-1", companyIds: [COMPANY_ID], isInstanceAdmin: true, source: "session" };
     next();
   });
-  app.use("/api", discordIntegrationRoutes(db as never));
+  app.use("/api", discordIntegrationRoutes(db as never, routeOptions as never));
   app.use(errorHandler);
   return app;
 }
@@ -491,6 +496,171 @@ describe("POST /integrations/discord/dm/inbound job-order intake", () => {
     await dmPost(await linkedApp()).send({ ...dm, forwarded }).expect(500);
 
     expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
+  });
+});
+
+describe("POST /integrations/discord/dm/inbound capture (F-CAP-1, F-CAP-2)", () => {
+  const photoAttachment = { id: "a-1", filename: "IMG_2041.jpg", contentType: "image/jpeg", size: 512, url: "https://cdn.discordapp.com/attachments/1/2/IMG_2041.jpg" };
+  const dm = { discordUserId: "discord-user-1", messageId: "message-1", channelId: "dm-channel-1", content: "", attachments: [photoAttachment] };
+  const primaryLink = { ...linkedUser, primary: true };
+  const company = { attachmentMaxBytes: 1024 };
+  const linkedRows = () => fakeDb({ selectRows: [[primaryLink], [{ id: "membership-1" }], [company]] });
+  const card = { id: ISSUE_ID, identifier: "PAP-7", title: "Thay tủ điện tầng 3" };
+
+  function dmPost(app: express.Express) {
+    return request(app).post("/api/integrations/discord/dm/inbound").set("Authorization", `Bearer ${bridgeToken}`);
+  }
+
+  beforeEach(() => {
+    capture.mockResolvedValue({ kind: "filed", card, summary: 'tệp IMG_2041.jpg: "tủ điện tầng 3"', llmCalls: 1 });
+  });
+
+  it("captures a photo with its paired caption and confirms on one line", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send({ ...dm, caption: { messageId: "message-2", content: "tủ điện tầng 3", messageCreatedAt: "2026-11-08T03:00:05.000Z" } }).expect(200);
+
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      userId: "user-1",
+      discordUserId: "discord-user-1",
+      discordMessageId: "message-1",
+      caption: "tủ điện tầng 3",
+      attachments: [photoAttachment],
+      maxBytes: 1024,
+    });
+    expect(response.body.reply).toBe(renderWp0Message("capture_confirmed", { card: "PAP-7", summary: 'tệp IMG_2041.jpg: "tủ điện tầng 3"' }));
+    expect(response.body.holdReplyForCaption).toBeUndefined();
+  });
+
+  it("settles the paired caption's message id, so the replay never answers it on its own", async () => {
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send({ ...dm, caption: { messageId: "message-2", content: "tủ điện tầng 3", messageCreatedAt: "2026-11-08T03:00:05.000Z" } }).expect(200);
+
+    expect(dmInbox.claim).toHaveBeenCalledWith(expect.objectContaining({ discordMessageId: "message-2", messageCreatedAt: new Date("2026-11-08T03:00:05.000Z") }));
+    expect(dmInbox.succeed.mock.calls.map((call) => call[0])).toEqual(["message-2", "message-1"]);
+  });
+
+  it("takes text sent with the photo as the caption, and joins it with a paired message", async () => {
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send({ ...dm, content: "ảnh trước khi đấu", caption: { messageId: "message-2", content: "pha A lỏng" } }).expect(200);
+
+    expect(capture.mock.calls[0]![0].caption).toBe("ảnh trước khi đấu\npha A lỏng");
+  });
+
+  it("does not file a bare verb as the caption", async () => {
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send({ ...dm, content: "nộp bằng chứng" }).expect(200);
+
+    expect(capture.mock.calls[0]![0].caption).toBeNull();
+  });
+
+  it.each([
+    ["no_open_cards", "no_open_cards"],
+    ["unstructured", "capture_unstructured_triage"],
+    ["provider_unavailable", "capture_unstructured_triage"],
+    ["no_match", "capture_unstructured_triage"],
+  ] as const)("answers a %s fallback by naming the triage card", async (reason, template) => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    capture.mockResolvedValue({ kind: "triage", reason, card: { id: ISSUE_ID, identifier: "PAP-9", title: "Unsorted chat captures" }, llmCalls: 0 });
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message(template, { card: "PAP-9" }));
+    expect(dmInbox.succeed).toHaveBeenCalledWith("message-1");
+  });
+
+  it("tells the engineer to resend when the download failed, and settles the message", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    capture.mockResolvedValue({ kind: "media_fetch_failed", filename: "IMG_2041.jpg" });
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("media_fetch_failed", { item: "tệp IMG_2041.jpg" }));
+    expect(dmInbox.succeed).toHaveBeenCalledWith("message-1");
+  });
+
+  it("rejects a file whose bytes do not match its type", async () => {
+    const { renderWp0Message } = await import("@paperclipai/shared");
+    capture.mockResolvedValue({ kind: "media_rejected", filename: "IMG_2041.jpg" });
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send(dm).expect(200);
+
+    expect(response.body.reply).toBe(renderWp0Message("media_rejected", { item: "tệp IMG_2041.jpg" }));
+  });
+
+  it("never fetches anything when one attachment fails the metadata gate", async () => {
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send({ ...dm, attachments: [photoAttachment, { id: "a-2", filename: "setup.exe", contentType: "application/x-msdownload", size: 512, url: "https://cdn.discordapp.com/attachments/1/2/setup.exe" }] }).expect(200);
+
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when the evidence store is down, so the replay tries again", async () => {
+    const { HttpError } = await import("../errors.js");
+    capture.mockRejectedValue(new HttpError(503, "evidence_storage_unavailable"));
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send(dm).expect(503);
+
+    expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
+    expect(dmInbox.succeed).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 and releases the claim when the instance has no evidence bucket", async () => {
+    const app = await buildApp(linkedRows(), { externalStorage: null });
+
+    const response = await dmPost(app).send(dm).expect(503);
+
+    expect(response.body.code).toBe("evidence_storage_not_configured");
+    expect(capture).not.toHaveBeenCalled();
+    expect(dmInbox.fail).toHaveBeenCalledWith("message-1", "processing_failed");
+  });
+
+  it("keeps the F-DM-2 answer for a bridge that sends no attachment URL", async () => {
+    const { renderWp0HelpMessage } = await import("@paperclipai/shared");
+    const { url: _url, ...withoutUrl } = photoAttachment;
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send({ ...dm, attachments: [withoutUrl] }).expect(200);
+
+    expect(capture).not.toHaveBeenCalled();
+    expect(response.body.reply).toBe(renderWp0HelpMessage());
+  });
+
+  it("still treats a forward with files as a job order, not a capture", async () => {
+    const app = await buildApp(linkedRows());
+
+    await dmPost(app).send({ ...dm, attachments: [], forwarded: { messageId: "origin-1", channelId: "origin-channel", content: "Thay tủ điện tầng 3", attachments: [photoAttachment] } }).expect(200);
+
+    expect(capture).not.toHaveBeenCalled();
+    expect(createFromJobOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the bridge to hold the reply to unrecognized text, which may be a caption", async () => {
+    const app = await buildApp(linkedRows());
+
+    const response = await dmPost(app).send({ ...dm, attachments: [], content: "tủ điện tầng 3 đã đấu xong" }).expect(200);
+
+    expect(response.body.holdReplyForCaption).toBe(true);
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("does not hold a recognized verb, or anything on a replay", async () => {
+    const verb = await dmPost(await buildApp(linkedRows())).send({ ...dm, attachments: [], content: "trợ giúp" }).expect(200);
+    const replayed = await dmPost(await buildApp(linkedRows())).send({ ...dm, attachments: [], content: "tủ điện tầng 3", replay: true }).expect(200);
+
+    expect(verb.body.holdReplyForCaption).toBeUndefined();
+    expect(replayed.body.holdReplyForCaption).toBeUndefined();
   });
 });
 
