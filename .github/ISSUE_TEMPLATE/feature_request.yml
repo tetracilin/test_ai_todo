@@ -1,53 +1,33 @@
 name: Feature request
-description: Propose a new capability or improvement
+description: Ask for something new or a change to how something works
 labels: [enhancement]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Feature work on this fork is coordinated against the fork roadmap `roadmap.md`. Please skim it before filing — see [CONTRIBUTING.md](https://github.com/tetracilin/test_ai_todo/blob/main/CONTRIBUTING.md) for the full guidance.
-  - type: dropdown
-    id: subsystem
-    attributes:
-      label: Subsystem affected
-      description: Which part of the codebase would this primarily live in?
-      options:
-        - server/ — REST API & orchestration services
-        - ui/ — React + Vite board UI
-        - packages/db — Drizzle schema, migrations
-        - packages/shared — types, constants, validators, API paths
-        - packages/adapters — agent adapter implementations
-        - packages/plugins — plugin system
-        - Cross-cutting (multiple of the above)
-        - Unsure
-    validations:
-      required: true
   - type: textarea
     id: problem
     attributes:
-      label: Problem or motivation
-      description: What are you trying to do that is currently difficult or impossible?
+      label: What problem do you want solved? Who has it?
     validations:
       required: true
   - type: textarea
-    id: solution
+    id: done
     attributes:
-      label: Proposed solution
-      description: Describe the feature you'd like. How should it work?
+      label: How will you know it works? Describe what you would click and see
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: How big do you think it is?
+      options:
+        - Small - one screen or one rule
+        - Medium - a few screens
+        - Large - a new area
+        - Not sure
     validations:
       required: true
   - type: textarea
-    id: alternatives
+    id: extra
     attributes:
-      label: Alternatives considered
-      description: Other approaches you thought about and why you ruled them out.
-  - type: textarea
-    id: roadmap
-    attributes:
-      label: Roadmap alignment
-      description: Does this relate to anything in `roadmap.md`? Link the relevant section if so.
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: Mockups, examples from other tools, related issues, etc.
+      label: Anything else
+    validations:
+      required: false
