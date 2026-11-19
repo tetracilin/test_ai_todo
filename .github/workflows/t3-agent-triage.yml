@@ -188,6 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p triage-input
+          # shellcheck disable=SC2016  # $a is a jq variable, not a shell one
           gh issue view "${ISSUE}" --repo "${REPO}" --json title,body,labels,author,comments \
             --jq '.author.login as $a | {title, body, labels: [.labels[].name],
                    reporter_comments: ([.comments[] | select(.author.login == $a) | .body[0:4000]] | .[-10:])}' \
