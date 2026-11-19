@@ -80,7 +80,9 @@ jobs:
     needs: [verify-tag]
     runs-on: [self-hosted, kmv8]
     environment:
-      name: production            # <-- required-reviewer gate lives here
+      # Dial 4 (WP-FACTORY-002): production-auto has no reviewer; it accepts only
+      # tags, and only the owner and t3-factory-bot may create v* tags.
+      name: ${{ vars.T3_FACTORY_DIAL == '4' && vars.T3_AGENT_AUTOMATION == 'on' && 'production-auto' || 'production' }}
       url: http://100.103.41.112:33100
     timeout-minutes: 30
     steps:

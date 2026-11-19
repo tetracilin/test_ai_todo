@@ -1,0 +1,293 @@
+# t3-agent-release - automatic release to production at dial 4 (WP-FACTORY-002, Interface 7).
+#
+# Two paths:
+#   1. `scenarios-passed` (repository dispatch from tetracilin/t3-scenarios) or a manual
+#      run: job `gate` collects the facts read-only and asks
+#      scripts/agent-release-policy.mjs `decide` whether to release. On `release`,
+#      job `publish` opens the pull request release/<tag> -> main and switches
+#      auto-merge on (merge commit).
+#   2. push to main: job `tag` creates the tag <tag> on the merge commit of a merged
+#      release pull request. Creating the tag with the app token starts t3-release,
+#      which deploys through the environment `production-auto` at dial 4.
+#
+# Every decision is the pure function in scripts/agent-release-policy.mjs, covered by
+# scripts/__tests__/agent-release-policy.test.mjs. The shell here only moves data.
+# GitHub-hosted runners only. Runs no model and checks out no pull request code.
+#
+# Manual runs (workflow_dispatch) carry no scenario result, so they report zero
+# critical scenarios and can never release. They exist for drills: with the dial
+# below 4 the gate log shows `hold` and `dial <n>`. `dry_run` (default true) also
+# keeps `publish` from running and suppresses every notification.
+
+name: t3-agent-release
+
+on:
+  repository_dispatch:
+    types: [scenarios-passed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit on develop to evaluate (the staging version)"
+        required: true
+        type: string
+      dry_run:
+        description: "Only print the decision; never open a release pull request"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-agent-release
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  gate:
+    name: gate
+    if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: read
+    outputs:
+      action: ${{ steps.decide.outputs.action }}
+      tag: ${{ steps.decide.outputs.tag }}
+      sha: ${{ steps.decide.outputs.sha }}
+      notify: ${{ steps.decide.outputs.notify }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Collect the facts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SHA: ${{ inputs.sha }}
+          AUTOMATION: ${{ vars.T3_AGENT_AUTOMATION || 'off' }}
+          DIAL: ${{ vars.T3_FACTORY_DIAL || '0' }}
+          WINDOW: ${{ vars.T3_FACTORY_RELEASE_WINDOW_UTC || '23-03' }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/develop:refs/remotes/origin/develop
+
+          if [ "${GITHUB_EVENT_NAME}" = "repository_dispatch" ]; then
+            jq -c '.client_payload // {}' "${GITHUB_EVENT_PATH}" > scenarios.json
+            raw_sha="$(jq -r '.sha // empty' scenarios.json)"
+          else
+            raw_sha="${INPUT_SHA}"
+          fi
+
+          # Only a full commit id that exists here is used; anything else gives an
+          # empty sha and the policy holds with "version mismatch".
+          sha=""
+          case "${raw_sha}" in
+            ''|*[!0-9a-fA-F]*) ;;
+            *) sha="$(git rev-parse --verify --quiet "${raw_sha}^{commit}" || true)" ;;
+          esac
+
+          if [ "${GITHUB_EVENT_NAME}" != "repository_dispatch" ]; then
+            # A manual run has no scenario result: zero critical scenarios.
+            jq -n --arg sha "${sha}" '{sha: $sha, critical: 0, passed: 0, failed: 0}' > scenarios.json
+          fi
+
+          on_develop=false
+          if [ -n "${sha}" ] && git merge-base --is-ancestor "${sha}" origin/develop; then
+            on_develop=true
+          fi
+
+          nightly_ok=false
+          if [ -n "${sha}" ]; then
+            n="$(gh api -X GET "repos/${REPO}/actions/workflows/t3-nightly.yml/runs" \
+              -f head_sha="${sha}" -f status=success -f per_page=1 --jq '.total_count')"
+            if [ "${n}" -gt 0 ]; then nightly_ok=true; fi
+          fi
+
+          open_critical="$(gh api -X GET "repos/${REPO}/issues" -f state=open -f labels=severity:critical -f per_page=100 \
+            --jq '[.[] | select(.pull_request == null)] | length')"
+          open_release_pr="$(gh api -X GET "repos/${REPO}/issues" -f state=open -f labels=release -f per_page=100 \
+            --jq '[.[] | select(.pull_request != null)] | length > 0')"
+          main_only="$(gh api "repos/${REPO}/compare/develop...main" --jq '.ahead_by')"
+          last_release="$(gh api -X GET "repos/${REPO}/actions/workflows/t3-release.yml/runs" \
+            -f status=success -f per_page=1 --jq '.workflow_runs[0] | (.run_started_at // .created_at) // empty')"
+
+          # Annotated tags appear twice (tag object and peeled "^{}"); keep the names once.
+          git ls-remote --tags origin > tags.txt
+          sed -e 's#^.*refs/tags/##' -e 's#\^{}$##' tags.txt | sort -u | jq -R . | jq -s . > tags.json
+          if [ -n "${sha}" ]; then
+            awk -v s="${sha}" '$1 == s { print $2 }' tags.txt \
+              | sed -e 's#^refs/tags/##' -e 's#\^{}$##' | sort -u | jq -R . | jq -s . > tags-at-sha.json
+          else
+            echo '[]' > tags-at-sha.json
+          fi
+
+          jq -n \
+            --arg automation "${AUTOMATION}" \
+            --arg dial "${DIAL}" \
+            --arg sha "${sha}" \
+            --argjson onDevelop "${on_develop}" \
+            --argjson nightlyOk "${nightly_ok}" \
+            --slurpfile scenarios scenarios.json \
+            --argjson openCritical "${open_critical}" \
+            --argjson openReleasePr "${open_release_pr}" \
+            --argjson mainOnlyCommits "${main_only}" \
+            --arg lastReleaseAt "${last_release}" \
+            --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg window "${WINDOW}" \
+            --slurpfile tags tags.json \
+            --slurpfile tagsAtSha tags-at-sha.json \
+            '{automation: $automation, dial: $dial, sha: $sha, onDevelop: $onDevelop, nightlyOk: $nightlyOk,
+              scenarios: $scenarios[0], openCritical: $openCritical, openReleasePr: $openReleasePr,
+              mainOnlyCommits: $mainOnlyCommits,
+              lastReleaseAt: (if $lastReleaseAt == "" then null else $lastReleaseAt end),
+              now: $now, window: $window, tags: $tags[0], tagsAtSha: $tagsAtSha[0]}' > release-input.json
+          cat release-input.json
+
+      - name: Decide
+        id: decide
+        run: |
+          set -euo pipefail
+          node scripts/agent-release-policy.mjs decide < release-input.json > decision.json
+          cat decision.json
+          echo "Decision: $(jq -r .action decision.json) - $(jq -r .reason decision.json)"
+          {
+            echo "action=$(jq -r .action decision.json)"
+            echo "tag=$(jq -r '.tag // empty' decision.json)"
+            echo "sha=$(jq -r .sha release-input.json)"
+            echo "notify=$(jq -r '.notify // empty' decision.json)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Notify a hold (scheduled path, once a day)
+        if: github.event_name == 'repository_dispatch' && steps.decide.outputs.action == 'hold'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          notify="$(jq -r '.notify // empty' decision.json)"
+          [ -n "${notify}" ] && [ -n "${WEBHOOK:-}" ] || exit 0
+          today="$(date -u +%F)"
+          earlier="$(gh api -X GET "repos/${REPO}/actions/workflows/t3-agent-release.yml/runs" \
+            -f event=repository_dispatch -f created=">=${today}" -f per_page=100 \
+            --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID})] | length")"
+          if [ "${earlier}" -gt 0 ]; then
+            echo "A release decision was already sent today; not notifying again."
+            exit 0
+          fi
+          jq -n --arg content "${notify}" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+            || echo "Discord post failed (not fatal)"
+
+  publish:
+    name: publish
+    needs: gate
+    if: needs.gate.outputs.action == 'release' && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Factory app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          # `app-id` still works in v3 (marked deprecated in favour of `client-id`).
+          # actionlint 1.7.12 does not know `client-id` yet; switch both together later.
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - name: Open the release pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          NOTIFY: ${{ needs.gate.outputs.notify }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          branch="release/${TAG}"
+          gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" > /dev/null
+          number="$(gh api -X POST "repos/${REPO}/pulls" \
+            -f title="Release ${TAG}" \
+            -f head="${branch}" \
+            -f base=main \
+            -f body="Automatic release. Every critical hidden scenario passed on this version." \
+            --jq '.number')"
+          gh api -X POST "repos/${REPO}/issues/${number}/labels" -f 'labels[]=release' > /dev/null
+          echo "Opened pull request #${number} ${branch} -> main"
+
+          # Releases into main use a merge commit (CLAUDE.md). A pull request that is
+          # already mergeable refuses auto-merge ("clean status"); merging it is the same outcome.
+          gh pr merge "${number}" --repo "${REPO}" --auto --merge \
+            || gh pr merge "${number}" --repo "${REPO}" --merge
+
+          if [ -n "${NOTIFY}" ] && [ -n "${WEBHOOK:-}" ]; then
+            jq -n --arg content "${NOTIFY}" '{content: $content, allowed_mentions: {parse: []}}' \
+              | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+              || echo "Discord post failed (not fatal)"
+          fi
+
+  tag:
+    name: tag
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Find the merged release pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/commits/${GITHUB_SHA}/pulls" \
+            --jq "[.[] | select(.merged_at != null and .base.ref == \"main\" and .merge_commit_sha == \"${GITHUB_SHA}\")][0] // {}" \
+            > pr.json
+          jq '{number, head: .head.ref, labels: [.labels[]?.name]}' pr.json
+          head="$(jq -r '.head.ref // empty' pr.json)"
+          has_label="$(jq -r '[.labels[]?.name] | index("release") != null' pr.json)"
+          tag="${head#release/}"
+          if [ "${has_label}" != "true" ] || [ "${tag}" = "${head}" ] \
+             || ! printf '%s' "${tag}" | grep -Eq '^v[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "Not a merged release pull request; nothing to tag."
+            echo "tag=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "Release pull request #$(jq -r .number pr.json) merged as ${GITHUB_SHA}; tag ${tag}"
+
+      - name: Factory app token
+        id: app
+        if: steps.pr.outputs.tag != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - name: Create the tag and delete the release branch
+        if: steps.pr.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          TAG: ${{ steps.pr.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The app token (not GITHUB_TOKEN) makes the new tag start t3-release.
+          gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}" > /dev/null
+          echo "Created tag ${TAG} at ${GITHUB_SHA}"
+          gh api -X DELETE "repos/${REPO}/git/refs/heads/release/${TAG}" \
+            || echo "Could not delete branch release/${TAG} (not fatal)"
