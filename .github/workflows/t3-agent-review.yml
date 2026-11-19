@@ -224,6 +224,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          show_full_output: true
           prompt: |
             You are the independent reviewer for pull request #${{ needs.gate.outputs.pr }} in ${{ github.repository }}.
             Read the file CICD/factory/REVIEW.md in this checkout and follow it exactly.
