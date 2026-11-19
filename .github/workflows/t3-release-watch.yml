@@ -4,8 +4,10 @@
 # Watches only t3-release runs that deployed through the environment `production-auto`
 # (dial 4, no reviewer), and any manual run. Rollback:
 #   1. lower T3_FACTORY_DIAL to 3 (never raises it; app token, Variables permission);
-#   2. redeploy the previous version tag with t3-release. At dial 3 that deploy uses
-#      the environment `production` and waits for the owner: a person looks before
+#   2. redeploy the previous version with t3-release: the tag of the last successful
+#      production deployment before this one (fallback: the highest tag below the
+#      released one). A manual t3-release run always uses the
+#      environment `production` and waits for the owner: a person looks before
 #      production changes a second time;
 #   3. open an issue "Production rollback: <tag> was unhealthy";
 #   4. post to Discord.
@@ -60,6 +62,7 @@ jobs:
     permissions:
       contents: read
       deployments: read
+      actions: read
     outputs:
       watch: ${{ steps.ctx.outputs.watch }}
       released: ${{ steps.ctx.outputs.released }}
@@ -101,14 +104,61 @@ jobs:
             if [ "${n}" -gt 0 ]; then watch=true; else watch=false; fi
           fi
 
-          # Previous tag = the highest version tag below the released one.
+          # Previous version = the tag of the last successful production deployment
+          # before this run: environments production and production-auto, newest
+          # first, latest status success, not the released sha. A highest-tag-below rule
+          # could pick a version that was itself rolled back. A run started by a tag
+          # records the tag as the deployment ref; a manual run (rollback, redeploy)
+          # records its branch, so its tag is read from the log line
+          # "tag <tag> -> <sha> is on main" of its job verify-tag-on-main.
+          before="${created:-9999-12-31T23:59:59Z}"
+          previous=""
+          for env_name in production production-auto; do
+            gh api -X GET "repos/${REPO}/deployments" -f environment="${env_name}" -f per_page=30 \
+              --jq '.[] | [.created_at, (.id | tostring), .sha, .ref, .environment] | @tsv' || true
+          done | sort -r > deployments.tsv
+          while IFS=$'\t' read -r at id dsha dref denv; do
+            [[ "${at}" < "${before}" ]] || continue
+            [ "${dsha}" != "${sha}" ] || continue
+            # Statuses are listed newest first: the first one is the latest.
+            latest="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" \
+              --jq '.[0] | [.state, (.log_url // .target_url // "")] | @tsv' || true)"
+            [ "${latest%%$'\t'*}" = "success" ] || continue
+            t=""
+            if printf '%s' "${dref}" | grep -Eq "${version}"; then
+              t="${dref}"
+            else
+              run_id="$(printf '%s' "${latest#*$'\t'}" | sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p')"
+              job_id=""
+              if [ -n "${run_id}" ]; then
+                job_id="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs" \
+                  --jq '[.jobs[] | select(.name == "verify-tag-on-main") | .id][0] // empty' || true)"
+              fi
+              if [ -n "${job_id}" ]; then
+                t="$({ gh api "repos/${REPO}/actions/jobs/${job_id}/logs" 2>/dev/null || true; } \
+                  | grep -oE 'tag v[0-9]+\.[0-9]+(\.[0-9]+)? -> [0-9a-f]{40} is on main' \
+                  | tail -n 1 | awk '{ print $2 }' || true)"
+              fi
+            fi
+            if [ -n "${t}" ] && [ "${t}" != "${tag}" ] \
+               && git rev-parse --verify --quiet "refs/tags/${t}^{commit}" > /dev/null; then
+              previous="${t}"
+              echo "Previous version: ${t} (deployment ${id} in ${denv}, ${at})"
+              break
+            fi
+            echo "::warning::deployment ${id} in ${denv} (${at}) succeeded but its tag is unknown; skipped"
+          done < deployments.tsv
+
+          # Fallback when no such deployment is found: the highest version tag below
+          # the released one.
           key() {
             local a b c
             IFS=. read -r a b c <<< "${1#v}"
             printf '%06d%06d%06d' "$((10#${a}))" "$((10#${b}))" "$((10#${c:-0}))"
           }
           previous=""
-          if printf '%s' "${tag}" | grep -Eq "${version}"; then
+          if [ -z "${previous}" ] && printf '%s' "${tag}" | grep -Eq "${version}"; then
+            echo "No earlier successful production deployment found; using the highest tag below ${tag}"
             want="$(key "${tag}")"
             best=""
             while IFS= read -r t; do
@@ -146,6 +196,8 @@ jobs:
           ref: develop
           fetch-depth: 1
           clean: true
+          # The self-hosted runner keeps its workspace: leave no token in .git/config.
+          persist-credentials: false
 
       - name: Check production every 60 seconds for 15 minutes
         id: watch
@@ -221,7 +273,7 @@ jobs:
             echo "Production was unhealthy after the automatic release of \`${TAG}\` (\`${SHA:0:7}\`)."
             echo
             echo "- ${what}"
-            echo "- Rollback: redeploy \`${PREVIOUS:-none found}\` with t3-release. At dial 3 it waits for the owner to approve the environment \`production\`."
+            echo "- Rollback: redeploy \`${PREVIOUS:-none found}\` with t3-release. It waits for the owner to approve the environment \`production\`."
             echo "- The factory dial was lowered to 3."
             echo "- Run: ${RUN_URL}"
             echo
@@ -285,7 +337,7 @@ jobs:
               errors=$((errors + 1))
             fi
           else
-            echo "::error::no version tag below ${TAG}; nothing to roll back to"
+            echo "::error::no previous version found for ${TAG}; nothing to roll back to"
             errors=$((errors + 1))
           fi
 

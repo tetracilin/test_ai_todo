@@ -7,7 +7,8 @@
 #      job `publish` opens the pull request release/<tag> -> main and switches
 #      auto-merge on (merge commit).
 #   2. push to main: job `tag` creates the tag <tag> on the merge commit of a merged
-#      release pull request. Creating the tag with the app token starts t3-release,
+#      release pull request (opened by t3-factory-bot, head on develop, still no open
+#      severity:critical issue). Creating the tag with the app token starts t3-release,
 #      which deploys through the environment `production-auto` at dial 4.
 #
 # Every decision is the pure function in scripts/agent-release-policy.mjs, covered by
@@ -82,7 +83,9 @@ jobs:
           WINDOW: ${{ vars.T3_FACTORY_RELEASE_WINDOW_UTC || '23-03' }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin +refs/heads/develop:refs/remotes/origin/develop
+          git fetch --no-tags origin \
+            +refs/heads/develop:refs/remotes/origin/develop \
+            +refs/heads/main:refs/remotes/origin/main
 
           if [ "${GITHUB_EVENT_NAME}" = "repository_dispatch" ]; then
             jq -c '.client_payload // {}' "${GITHUB_EVENT_PATH}" > scenarios.json
@@ -120,16 +123,19 @@ jobs:
             --jq '[.[] | select(.pull_request == null)] | length')"
           open_release_pr="$(gh api -X GET "repos/${REPO}/issues" -f state=open -f labels=release -f per_page=100 \
             --jq '[.[] | select(.pull_request != null)] | length > 0')"
-          main_only="$(gh api "repos/${REPO}/compare/develop...main" --jq '.ahead_by')"
+          # Every release adds a merge commit to main; only non-merge commits that
+          # develop lacks are a hotfix on main.
+          main_only="$(git rev-list --count --no-merges origin/develop..origin/main)"
           last_release="$(gh api -X GET "repos/${REPO}/actions/workflows/t3-release.yml/runs" \
             -f status=success -f per_page=1 --jq '.workflow_runs[0] | (.run_started_at // .created_at) // empty')"
 
           # Annotated tags appear twice (tag object and peeled "^{}"); keep the names once.
           git ls-remote --tags origin > tags.txt
           sed -e 's#^.*refs/tags/##' -e 's#\^{}$##' tags.txt | sort -u | jq -R . | jq -s . > tags.json
-          if [ -n "${sha}" ]; then
-            awk -v s="${sha}" '$1 == s { print $2 }' tags.txt \
-              | sed -e 's#^refs/tags/##' -e 's#\^{}$##' | sort -u | jq -R . | jq -s . > tags-at-sha.json
+          # "Already released": the tag sits on main's merge commit, not on the develop
+          # sha, so a sha that main already contains counts as released.
+          if [ -n "${sha}" ] && git merge-base --is-ancestor "${sha}" origin/main; then
+            echo '["contained in main"]' > tags-at-sha.json
           else
             echo '[]' > tags-at-sha.json
           fi
@@ -219,7 +225,20 @@ jobs:
         run: |
           set -euo pipefail
           branch="release/${TAG}"
-          gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" > /dev/null
+          # A failed earlier run may have left release/<tag> behind (it is the app's
+          # own branch): reuse it at the same sha, move it to this sha otherwise.
+          current="$(gh api "repos/${REPO}/git/ref/heads/${branch}" --jq '.object.sha' 2>/dev/null || true)"
+          # A 404 body is not a commit id: treat anything else as "no branch".
+          printf '%s' "${current}" | grep -Eq '^[0-9a-f]{40}$' || current=""
+          if [ -z "${current}" ]; then
+            gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" > /dev/null
+            echo "Created branch ${branch} at ${SHA}"
+          elif [ "${current}" = "${SHA}" ]; then
+            echo "Branch ${branch} already exists at ${SHA}; reusing it"
+          else
+            gh api -X PATCH "repos/${REPO}/git/refs/heads/${branch}" -f sha="${SHA}" -F force=true > /dev/null
+            echo "Moved branch ${branch} from ${current} to ${SHA}"
+          fi
           number="$(gh api -X POST "repos/${REPO}/pulls" \
             -f title="Release ${TAG}" \
             -f head="${branch}" \
@@ -248,24 +267,54 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      issues: read
     steps:
       - name: Find the merged release pull request
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           set -euo pipefail
           gh api "repos/${REPO}/commits/${GITHUB_SHA}/pulls" \
             --jq "[.[] | select(.merged_at != null and .base.ref == \"main\" and .merge_commit_sha == \"${GITHUB_SHA}\")][0] // {}" \
             > pr.json
-          jq '{number, head: .head.ref, labels: [.labels[]?.name]}' pr.json
+          jq '{number, head: .head.ref, author: .user.login, labels: [.labels[]?.name]}' pr.json
           head="$(jq -r '.head.ref // empty' pr.json)"
+          head_sha="$(jq -r '.head.sha // empty' pr.json)"
           has_label="$(jq -r '[.labels[]?.name] | index("release") != null' pr.json)"
+          # Only a pull request the factory app opened from a branch of this repository.
+          by_app="$(jq -r --arg repo "${REPO}" \
+            '.user.login == "t3-factory-bot[bot]" and .user.type == "Bot" and .head.repo.full_name == $repo' pr.json)"
           tag="${head#release/}"
-          if [ "${has_label}" != "true" ] || [ "${tag}" = "${head}" ] \
+          if [ "${has_label}" != "true" ] || [ "${by_app}" != "true" ] || [ "${tag}" = "${head}" ] \
              || ! printf '%s' "${tag}" | grep -Eq '^v[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
-            echo "Not a merged release pull request; nothing to tag."
+            echo "Not a merged release pull request of t3-factory-bot; nothing to tag."
             echo "tag=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # The released version must be merged code: its head is on develop.
+          # compare <head>...develop is "ahead" or "identical" exactly when it is.
+          status="$(gh api "repos/${REPO}/compare/${head_sha}...develop" --jq '.status' 2>/dev/null || true)"
+          if [ "${status}" != "ahead" ] && [ "${status}" != "identical" ]; then
+            echo "::error::release pull request head ${head_sha} is not on develop (${status:-unknown}); not tagging"
+            echo "tag=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Re-check the policy's critical-issue rule: one may have opened since the gate.
+          open_critical="$(gh api -X GET "repos/${REPO}/issues" -f state=open -f labels=severity:critical -f per_page=100 \
+            --jq '[.[] | select(.pull_request == null)] | length')"
+          if [ "${open_critical}" -gt 0 ]; then
+            echo "Hold: open severity:critical issue; not tagging ${tag}."
+            echo "tag=" >> "${GITHUB_OUTPUT}"
+            if [ -n "${WEBHOOK:-}" ]; then
+              msg="Release ${tag} (${head_sha:0:7}) held: open severity:critical issue. Main has the merge commit ${GITHUB_SHA:0:7} without a tag; production is unchanged."
+              jq -n --arg content "${msg}" '{content: $content, allowed_mentions: {parse: []}}' \
+                | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+                || echo "Discord post failed (not fatal)"
+            fi
             exit 0
           fi
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
