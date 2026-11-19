@@ -1,0 +1,5 @@
+# actionlint configuration (https://github.com/rhysd/actionlint/blob/main/docs/config.md)
+# kmv8 is the self-hosted runner on kvm8 (t3-nightly, t3-release, t3-release-watch).
+self-hosted-runner:
+  labels:
+    - kmv8
