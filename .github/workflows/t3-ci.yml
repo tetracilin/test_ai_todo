@@ -118,7 +118,7 @@ jobs:
         # The guard decides whether an agent patch may be pushed
         # (technical-spec/specs/2026-10-12-agent-issue-loop-design.md section 5).
         # List the files: Node 22 does not accept a directory argument to --test.
-        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs ./scripts/__tests__/agent-merge-policy.test.mjs ./scripts/__tests__/agent-review-render.test.mjs
+        run: node --test ./scripts/__tests__/agent-patch.test.mjs ./scripts/__tests__/agent-guard.test.mjs ./scripts/__tests__/agent-state.test.mjs ./scripts/__tests__/agent-merge-policy.test.mjs ./scripts/__tests__/agent-review-render.test.mjs ./scripts/__tests__/agent-triage-policy.test.mjs ./scripts/__tests__/agent-release-policy.test.mjs ./scripts/__tests__/agent-breaker-policy.test.mjs
       - name: Lint the factory workflows
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
