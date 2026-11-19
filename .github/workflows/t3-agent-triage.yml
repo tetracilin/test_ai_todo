@@ -177,8 +177,10 @@ jobs:
           fetch-depth: 1
 
       # The model gets no shell. Everything it may read about the issue is fetched
-      # here, by a step that does not hold the Claude token. Comments are left out
-      # on purpose: anyone can write them on a public repo.
+      # here, by a step that does not hold the Claude token. Comments by other people are
+      # left out on purpose: anyone can write them on a public repo. Comments by the issue
+      # author are kept: they answer a needs-info question, and the reporter already
+      # controls the body (gate rule 4 only lets the reporter's own comments through).
       - name: Fetch what the triage reads
         env:
           GH_TOKEN: ${{ github.token }}
@@ -186,8 +188,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p triage-input
-          gh issue view "${ISSUE}" --repo "${REPO}" --json title,body,labels \
-            --jq '{title, body, labels: [.labels[].name]}' > triage-input/issue.json
+          gh issue view "${ISSUE}" --repo "${REPO}" --json title,body,labels,author,comments \
+            --jq '.author.login as $a | {title, body, labels: [.labels[].name],
+                   reporter_comments: ([.comments[] | select(.author.login == $a) | .body[0:4000]] | .[-10:])}' \
+            > triage-input/issue.json
           gh issue list --repo "${REPO}" --state open --limit 200 --json number,title > triage-input/open-issues.json
           ls -l triage-input
 
