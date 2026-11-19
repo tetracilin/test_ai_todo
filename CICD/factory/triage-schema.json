@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "clarity", "size", "decision_needed", "summary", "acceptance_criteria", "affected_area", "duplicate_of", "question"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["bug", "feature", "question", "duplicate"] },
+    "clarity": { "type": "string", "enum": ["clear", "needs-info"] },
+    "size": { "type": "string", "enum": ["S", "M", "L"] },
+    "decision_needed": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "affected_area": { "type": "string" },
+    "duplicate_of": { "type": "integer" },
+    "question": { "type": "string" }
+  }
+}

@@ -4,7 +4,7 @@ import type { Db } from "@paperclipai/db";
 import { labels, projectMemberships, projects } from "@paperclipai/db";
 import { INTAKE_TRIAGE_LABEL_NAME } from "@paperclipai/shared";
 import { logActivity } from "./activity-log.js";
-import { formatChatCorrelationLine, issueDossierService } from "./issue-dossier.js";
+import { issueDossierService } from "./issue-dossier.js";
 import { issueService } from "./issues.js";
 
 // F-004-1 job-order intake (PC-004 AC1/AC4): a job order forwarded (or typed
@@ -135,14 +135,17 @@ export function discordIntakeService(db: Db) {
 
       // Checked, not assumed: a first attempt that created the card but died
       // before seeding is retried by the F-DM-3 replay and lands here as a duplicate.
-      if (!(await dossierSvc.get(issue.id))) {
-        const correlation = formatChatCorrelationLine({
+      // issueService.create has already seeded the dossier from the description;
+      // a replayed intake (card created, process died) lands here too.
+      await dossierSvc.ensureChatCorrelation(
+        issue.id,
+        {
           chatOriginId: input.origin?.messageId ?? input.discordMessageId,
           issueIdentifier: issue.identifier ?? issue.id,
           originKind: "discord",
-        });
-        await dossierSvc.seed(issue.id, { title: issue.title, jobOrder: `${correlation}\n\n${description}` }, { userId: input.userId });
-      }
+        },
+        { userId: input.userId },
+      );
       if (!duplicate) {
         await logActivity(db, {
           companyId: input.companyId,
