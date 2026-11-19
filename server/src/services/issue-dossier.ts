@@ -546,14 +546,35 @@ export function issueDossierService(db: Db) {
     actor: DossierActor,
     changeSummary: string,
   ): Promise<DossierDocument> {
+    return updateDocument(
+      issueId,
+      (document) => {
+        const newLines = buildLines(document);
+        if (newLines.length === 0) return false;
+        const existingBody = document.sections[section];
+        document.sections[section] = existingBody ? `${existingBody}\n${newLines.join("\n")}` : newLines.join("\n");
+        return true;
+      },
+      actor,
+      changeSummary,
+    );
+  }
+
+  /**
+   * The retry loop behind `appendLines` and `ensureChatCorrelation`: `mutate` edits the freshly
+   * read (or lazily seeded) document in place and returns false when there is nothing to write.
+   */
+  async function updateDocument(
+    issueId: string,
+    mutate: (document: DossierDocument) => boolean,
+    actor: DossierActor,
+    changeSummary: string,
+  ): Promise<DossierDocument> {
     let lastConflict: unknown;
     for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt += 1) {
       const current = await readCurrent(issueId);
       const document = current?.document ?? (await seedDocumentFor(issueId));
-      const newLines = buildLines(document);
-      if (newLines.length === 0) return document;
-      const existingBody = document.sections[section];
-      document.sections[section] = existingBody ? `${existingBody}\n${newLines.join("\n")}` : newLines.join("\n");
+      if (!mutate(document)) return document;
       try {
         const result = await write(issueId, document, current?.latestRevisionId ?? null, actor, changeSummary);
         return parseDossierMarkdown(result.document.body);
@@ -574,6 +595,27 @@ export function issueDossierService(db: Db) {
       const document = createSeededDossier(input);
       const result = await write(issueId, document, null, actor, "Seed dossier at intake");
       return parseDossierMarkdown(result.document.body);
+    },
+
+    /**
+     * F-004-1: chat intake puts the correlation line first in Job order. `issueService.create`
+     * already seeds every new card's dossier from its description, so intake cannot rely on
+     * `seed`; this prepends the line to the existing (or lazily seeded) dossier, and is a no-op
+     * when a correlation line is already there (a replayed intake).
+     */
+    ensureChatCorrelation: (issueId: string, correlation: DossierChatCorrelation, actor: DossierActor) => {
+      const line = formatChatCorrelationLine(correlation);
+      return updateDocument(
+        issueId,
+        (document) => {
+          if (parseChatCorrelation(document)) return false;
+          const jobOrder = document.sections["Job order"];
+          document.sections["Job order"] = jobOrder ? `${line}\n\n${jobOrder}` : line;
+          return true;
+        },
+        actor,
+        "Link chat origin at intake",
+      );
     },
 
     /**
