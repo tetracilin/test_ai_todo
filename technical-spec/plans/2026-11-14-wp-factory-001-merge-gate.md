@@ -1741,20 +1741,20 @@ These need the owner's judgment or hands. They are not acceptance criteria.
 
 ## Progress checklist
 
-- [ ] Prerequisites P-1 and P-2 confirmed by step 2 (secrets and variable present)
-- [ ] Step 1: private worktree made
-- [ ] Step 2: starting state recorded; assumptions A1 confirmed or the ruleset variant chosen
-- [ ] Step 3: PR-1 merged (scripts and tests; AC-1 output shown)
-- [ ] Step 4: PR-2 merged; `server-tests` required; old `ci/pr-server-tests` pull request closed
-- [ ] Step 5: canary S failed `server-tests` and was closed (AC-14)
-- [ ] Step 6: PR-3 merged; first `t3-agent-sweep` run succeeded (AC-2, AC-3)
-- [ ] Step 7: labels, variables and auto-merge set (AC-6, AC-8)
-- [ ] Step 8: canary E kill-switch drill shown (AC-13); "not reviewed" status seen; `agent-review` required (AC-4, AC-5)
-- [ ] Step 9: canary C forced FAIL shown (AC-11)
-- [ ] Step 10: older pull requests held with `factory-hold`; `T3_AGENT_AUTOMATION` set to `on` (AC-7)
-- [ ] Step 11: canary D merged by the factory (AC-9)
-- [ ] Step 12: canaries C and E merged by the factory after a branch update (AC-10)
-- [ ] Step 13: PR-4 reviewed, labelled `needs-human`, merged under this file's authority (AC-12, AC-15)
+- [x] Prerequisites P-1 and P-2 confirmed by step 2 (secrets and variable present)
+- [x] Step 1: private worktree made (replaced by a clean clone)
+- [x] Step 2: starting state recorded; assumptions A1 confirmed or the ruleset variant chosen
+- [x] Step 3: PR-1 merged (scripts and tests; AC-1 output shown)
+- [x] Step 4: PR-2 merged; `server-tests` required; old `ci/pr-server-tests` pull request closed
+- [x] Step 5: canary S failed `server-tests` and was closed (AC-14)
+- [x] Step 6: PR-3 merged; first `t3-agent-sweep` run succeeded (AC-2, AC-3)
+- [x] Step 7: labels, variables and auto-merge set (AC-6, AC-8)
+- [x] Step 8: canary E kill-switch drill shown (AC-13); "not reviewed" status seen; `agent-review` required (AC-4, AC-5)
+- [x] Step 9: canary C forced FAIL shown (AC-11)
+- [x] Step 10: older pull requests held with `factory-hold`; `T3_AGENT_AUTOMATION` set to `on` (AC-7)
+- [x] Step 11: canary D merged by the factory (AC-9)
+- [x] Step 12: canaries C and E merged by the factory after a branch update (AC-10)
+- [x] Step 13: PR-4 reviewed, labelled `needs-human`, merged under this file's authority (AC-12, AC-15)
 - [ ] Step 14: PR-5 merged by the factory (AC-16)
 - [ ] Step 15: verification script prints `failed checks: 0`; scope check done (AC-17); DSH backlog released; worktree removed
 - [ ] Subagent review of the whole diff against this file done; gaps fixed or reported
