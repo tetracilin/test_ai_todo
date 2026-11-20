@@ -46,7 +46,7 @@ concurrency:
 
 env:
   REPO: ${{ github.repository }}
-  HEALTH_URL: http://100.103.41.112:33100/api/health
+  HEALTH_URL: http://100.94.238.72:33100/api/health
 
 jobs:
   context:
