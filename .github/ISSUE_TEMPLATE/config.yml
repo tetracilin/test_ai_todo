@@ -1,8 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: Discord (#dev)
-    url: https://discord.gg/paperclipai
-    about: Design discussions, questions, and feature coordination before opening a PR
-  - name: Roadmap
-    url: https://github.com/tetracilin/test_ai_todo/blob/main/roadmap.md
-    about: Check the roadmap before requesting a feature
