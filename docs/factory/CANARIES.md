@@ -1,3 +1,3 @@
 # Factory canaries
 
-Canary F - routed to the Claude Code loop.
+Canary G - routed to the DSH loop.
