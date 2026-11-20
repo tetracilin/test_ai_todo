@@ -411,19 +411,10 @@ jobs:
 
       - name: serialized shard ${{ matrix.shard }}/2
         run: pnpm run test:run:serialized --shard-index ${{ matrix.shard }} --shard-count 2
-      - name: Full vitest suite (general + serialized)
-        # pnpm test:run (bare) skips the plugin-sdk build step that
-        # test:run:general / test:run:serialized include, so
-        # @paperclipai/plugin-sdk/testing isn't built yet -- fails every
-        # test file that imports it (ERR_MODULE_NOT_FOUND).
-        #
-        # workspace-runtime.test.ts runs in its own job below (non-blocking), so
-        # one flaky suite cannot fail this job or close the deploy gate. The flag
-        # only skips RUNNING it here; the runner still excludes it from the
-        # general-server lane, so it does not run twice or by accident.
-        run: >-
-          pnpm --filter @paperclipai/plugin-sdk ensure-build-deps &&
-          pnpm test:run --skip-suite server/src/__tests__/workspace-runtime.test.ts
+        # No full-suite step here: the general-server, serialized and workspaces
+        # shards together already run every vitest file. A leftover
+        # `pnpm test:run` step from the old single slow-tests job ran the whole
+        # suite again in each serialized shard and hit the 30-minute timeout.
 
   workspaces_a:
     name: server-tests (workspaces-a — ui, cli)
