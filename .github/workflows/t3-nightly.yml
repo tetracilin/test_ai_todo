@@ -36,7 +36,7 @@ env:
   COMPOSE_PROJECT: t3-nightly
   COMPOSE_FILE: deploy/compose.yaml
   IMAGE_NAME: paperclip
-  HEALTH_URL: http://100.94.238.72:33130/api/health
+  HEALTH_URL: http://100.103.41.112:33130/api/health
   # PLAN_CICD.md §3 moves secrets here; until then point at /root/.hermes/secrets/t3-nightly.
   SECRETS_DIR: /etc/t3/secrets/nightly
 
@@ -56,7 +56,7 @@ jobs:
     needs: [e2e, server_tests_general, server_tests_serialized, workspaces_a, workspaces_b]
     environment:
       name: staging
-      url: http://100.94.238.72:33130
+      url: http://100.103.41.112:33130
     timeout-minutes: 30
     steps:
       - name: Skip scheduled run if develop has no new commits
@@ -185,18 +185,18 @@ jobs:
           # Binding the tailnet IP UNBINDS 127.0.0.1:33130 -- the ports entry in
           # deploy/compose.yaml publishes one address. HEALTH_URL above moves with
           # it; anything else pointing at loopback on this host must move too.
-          PAPERCLIP_BIND_ADDRESS: 100.94.238.72
+          PAPERCLIP_BIND_ADDRESS: 100.103.41.112
           # exposure=private + mode=authenticated enables the private-hostname
           # guard, which runs BEFORE the health route and 403s any Host: not in
           # this list. Both the tailnet IP and the MagicDNS name are listed, so a
           # browser can use either; loopback stays for anything still on the host.
           # See t3-release.yml for the same guard on production.
-          PAPERCLIP_ALLOWED_HOSTNAMES: 100.94.238.72,hostinger-vps2.tail9831b.ts.net,localhost,127.0.0.1
+          PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,hostinger-kvm8-host.tail9831b.ts.net,localhost,127.0.0.1
           # The only value that can put the PUBLISHED host port into Better
           # Auth's trusted origins. deriveAuthTrustedOrigins (server/src/auth/
           # better-auth.ts) expands PAPERCLIP_ALLOWED_HOSTNAMES using the
           # container's INTERNAL listen port (3100, per deploy/compose.yaml),
-          # so it can only ever produce http://100.94.238.72:3100 -- never
+          # so it can only ever produce http://100.103.41.112:3100 -- never
           # :33130, which is what a browser actually sends. The remaining
           # source of trusted origins is config.auth.publicBaseUrl, which
           # deploy/scripts/container-entrypoint.sh writes from this variable
@@ -205,7 +205,7 @@ jobs:
           # browser sign-in got 403 INVALID_ORIGIN. t3-release.yml sets the
           # prod equivalent; this is the fifth value that must move with a
           # bind change, not the fourth.
-          PAPERCLIP_PUBLIC_URL: http://100.94.238.72:33130
+          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33130
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `staging` GitHub Environment to override this default.
@@ -474,7 +474,7 @@ jobs:
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          STAGING_URL: http://100.94.238.72:33130
+          STAGING_URL: http://100.103.41.112:33130
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           DEPLOY_SKIP: ${{ needs.deploy.outputs.skip }}
           DEPLOY_IMAGE: ${{ needs.deploy.outputs.image }}
