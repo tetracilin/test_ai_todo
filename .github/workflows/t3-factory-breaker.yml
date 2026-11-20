@@ -1,0 +1,228 @@
+# t3-factory-breaker - the circuit breaker of the factory (WP-FACTORY-002, Interface 8).
+#
+# Every hour it counts reverts, rollbacks, open critical issues, scenario failures
+# and blocked agent work, and LOWERS the repository variable T3_FACTORY_DIAL when a
+# limit is crossed. It never raises the dial: only the owner does, after reading
+# the `factory-status` issue. At hour 0 UTC it posts the daily report to Discord.
+#
+# GitHub-hosted runner only. Runs no model and checks out no pull request code.
+# Every decision is a pure function: scripts/agent-breaker-policy.mjs `decide`,
+# covered by scripts/__tests__/agent-breaker-policy.test.mjs. The shell here only
+# moves data in and out.
+#
+# Drill (dry run, fixture stats; changes nothing):
+#   gh workflow run t3-factory-breaker.yml -f dry_run=true -f fixture=revert-storm
+# prints `DRY RUN: would set T3_FACTORY_DIAL from 4 to 2: ...` at dial 4.
+# Fixture stats live in scripts/__fixtures__/agent-breaker/<fixture>.json.
+#
+# Kill switch: with T3_AGENT_AUTOMATION not `on` the breaker still decides and
+# prints, but changes nothing (no dial change, no issue comment, no change post).
+# The hour-0 daily report (read-only, shows the switch) is still posted.
+
+name: t3-factory-breaker
+
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print what would change"
+        required: false
+        type: boolean
+        default: true
+      fixture:
+        description: "Replace the collected stats with a fixture (drills; needs dry_run)"
+        required: false
+        type: choice
+        default: none
+        options: [none, revert-storm, rollback]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-factory-breaker
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  breaker:
+    name: breaker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Collect stats
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXTURE: ${{ inputs.fixture || 'none' }}
+          DRY_RUN: ${{ inputs.dry_run == true && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "${FIXTURE}" != "none" ]; then
+            if [ "${DRY_RUN}" != "true" ]; then
+              echo "::error::fixture=${FIXTURE} needs dry_run=true: fixture stats never change the dial"
+              exit 1
+            fi
+            file="scripts/__fixtures__/agent-breaker/${FIXTURE}.json"
+            [ -f "${file}" ] || { echo "::error::no fixture file ${file}"; exit 1; }
+            echo "Using fixture ${FIXTURE} instead of the collected stats."
+            jq -c . "${file}" > stats.json
+            cat stats.json
+            exit 0
+          fi
+
+          since7d="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          since24h="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+          # search/issues covers issues and pull requests. 100 items is far above every limit.
+          search() {
+            gh api -X GET search/issues -f q="repo:${REPO} $1" -f per_page=100 --jq '.items'
+          }
+          reverts="$(search "is:pr is:merged merged:>=${since7d} in:title Revert" \
+            | jq '[.[] | select(.title | startswith("Revert"))] | length')"
+          rollbacks="$(search "is:issue label:factory-rollback created:>=${since7d}" | jq 'length')"
+          critical="$(search "is:issue is:open label:\"severity:critical\"" | jq 'length')"
+          scenarios="$(search "is:issue label:scenario-failure created:>=${since24h}" | jq 'length')"
+          blocked="$(search "label:agent-blocked updated:>=${since7d}" | jq 'length')"
+          jq -n -c \
+            --argjson reverts7d "${reverts}" \
+            --argjson rollbacks7d "${rollbacks}" \
+            --argjson openCritical "${critical}" \
+            --argjson scenarioIssues24h "${scenarios}" \
+            --argjson blocked7d "${blocked}" \
+            '{reverts7d: $reverts7d, rollbacks7d: $rollbacks7d, openCritical: $openCritical,
+              scenarioIssues24h: $scenarioIssues24h, blocked7d: $blocked7d}' > stats.json
+          cat stats.json
+
+      - name: Decide
+        id: decide
+        env:
+          DIAL: ${{ vars.T3_FACTORY_DIAL || '0' }}
+          AUTOMATION: ${{ vars.T3_AGENT_AUTOMATION || 'off' }}
+          DRY_RUN: ${{ inputs.dry_run == true && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg dial "${DIAL}" \
+            --argjson hourUtc "$(date -u +%-H)" \
+            --arg automation "${AUTOMATION}" \
+            --slurpfile stats stats.json \
+            '{dial: ($dial | tonumber? // $dial), stats: $stats[0], hourUtc: $hourUtc, automation: $automation}' \
+            > decide-input.json
+          node scripts/agent-breaker-policy.mjs decide < decide-input.json > decision.json
+          cat decision.json
+
+          target="$(jq -r .targetDial decision.json)"
+          reasons="$(jq -r '.reasons | join("; ")' decision.json)"
+          apply=false
+          if [ "$(jq -r .changed decision.json)" = "true" ]; then
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "DRY RUN: would set T3_FACTORY_DIAL from ${DIAL} to ${target}: ${reasons}"
+            elif [ "${AUTOMATION}" != "on" ]; then
+              echo "Automation is ${AUTOMATION}: the breaker would lower the dial from ${DIAL} to ${target} but writes nothing."
+            else
+              apply=true
+            fi
+          else
+            echo "No change: T3_FACTORY_DIAL stays at ${DIAL}."
+          fi
+          echo "apply=${apply}" >> "${GITHUB_OUTPUT}"
+
+      - name: Factory app token
+        id: app
+        if: steps.decide.outputs.apply == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          # `app-id` still works in v3 (marked deprecated in favour of `client-id`).
+          # actionlint 1.7.12 does not know `client-id` yet; switch both together later.
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - name: Lower the dial
+        if: steps.decide.outputs.apply == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          target="$(jq -r .targetDial decision.json)"
+          reasons="$(jq -r '.reasons | join("; ")' decision.json)"
+
+          discord() {
+            if [ -n "${WEBHOOK:-}" ]; then
+              jq -n --arg content "$1" '{content: $content}' \
+                | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+                || echo "Discord post failed (not fatal)"
+            fi
+          }
+
+          # Read the dial again right before writing: the owner may have lowered it since
+          # the job started. Writing only when the target is below the live value means
+          # the breaker can never raise the dial.
+          if ! live="$(GH_TOKEN="${APP_TOKEN}" gh variable get T3_FACTORY_DIAL --repo "${REPO}" 2> get.err)"; then
+            cat get.err
+            live=""
+          fi
+          if ! [[ "${live}" =~ ^[0-9]+$ && "${target}" =~ ^[0-9]+$ ]]; then
+            echo "::error::cannot read T3_FACTORY_DIAL (got '${live}') or bad target '${target}'; not writing"
+            exit 1
+          fi
+          if [ "${target}" -ge "${live}" ]; then
+            echo "T3_FACTORY_DIAL is already ${live} (target ${target}): nothing to lower."
+            exit 0
+          fi
+
+          if GH_TOKEN="${APP_TOKEN}" gh variable set T3_FACTORY_DIAL --repo "${REPO}" --body "${target}" 2> set.err; then
+            msg="The circuit breaker lowered T3_FACTORY_DIAL from ${live} to ${target}: ${reasons}. Only the owner raises it again, after fixing the cause. Run: ${RUN_URL}"
+            echo "${msg}"
+            issue="$(gh issue list --repo "${REPO}" --state open --label factory-status --limit 1 --json number --jq '.[0].number // empty')"
+            if [ -z "${issue}" ]; then
+              gh issue create --repo "${REPO}" --title "Factory status" --label factory-status --body "${msg}"
+            else
+              gh issue comment "${issue}" --repo "${REPO}" --body "${msg}"
+            fi
+            discord "${msg}"
+          else
+            # Fallback (assumption B4): the app cannot write variables. Ask a person instead.
+            cat set.err
+            msg="The circuit breaker could not lower T3_FACTORY_DIAL from ${live} to ${target} (setting the variable failed). Reasons: ${reasons}. Lower it by hand. Run: ${RUN_URL}"
+            gh issue create --repo "${REPO}" --title "Factory breaker could not lower the dial" --label needs-human --body "${msg}"
+            discord "${msg}"
+            exit 1
+          fi
+
+      - name: Daily report
+        # Posted at hour 0 UTC (the policy sets `report` only then), also in dry-run
+        # mode and with the kill switch off (it only reads), but never for fixture stats.
+        if: ${{ !cancelled() && steps.decide.outcome == 'success' && (inputs.fixture || 'none') == 'none' }}
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          report="$(jq -r '.report // empty' decision.json)"
+          if [ -z "${report}" ]; then
+            echo "No daily report this hour."
+            exit 0
+          fi
+          printf '%s\n' "${report}"
+          if [ -n "${WEBHOOK:-}" ]; then
+            jq -n --arg content "${report}" '{content: $content}' \
+              | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+              || echo "Discord post failed (not fatal)"
+          fi
