@@ -1,0 +1,366 @@
+# t3-release-watch - 15 minutes of health checks after an automatic release, and a
+# rollback when production is unhealthy (WP-FACTORY-002, Interface 7).
+#
+# Watches only t3-release runs that deployed through the environment `production-auto`
+# (dial 4, no reviewer), and any manual run. Rollback:
+#   1. lower T3_FACTORY_DIAL to 3 (never raises it; app token, Variables permission);
+#   2. redeploy the previous version with t3-release: the tag of the last successful
+#      production deployment before this one (fallback: the highest tag below the
+#      released one). A manual t3-release run always uses the
+#      environment `production` and waits for the owner: a person looks before
+#      production changes a second time;
+#   3. open an issue "Production rollback: <tag> was unhealthy";
+#   4. post to Discord.
+# `simulate: unhealthy` counts every check as failed and only prints the four actions
+# with the prefix `DRY RUN:` (a drill; it changes nothing and exits 0).
+#
+# Production is reachable only from kvm8, so only the job `health` runs on the
+# self-hosted runner. It holds no token, runs merged code from develop and only curls.
+# The jobs that hold tokens run on GitHub-hosted runners.
+
+name: t3-release-watch
+
+on:
+  workflow_run:
+    workflows: ["t3-release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag that production runs, e.g. v0.2.1"
+        required: true
+        type: string
+      simulate:
+        description: "unhealthy = count every check as failed and only print the rollback (drill)"
+        required: false
+        type: choice
+        default: none
+        options: [none, unhealthy]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-release-watch
+  cancel-in-progress: false
+
+env:
+  REPO: ${{ github.repository }}
+  HEALTH_URL: http://100.103.41.112:33100/api/health
+
+jobs:
+  context:
+    name: context
+    # A t3-release run started by a tag push. Manual t3-release runs (rollbacks and
+    # redeploys) are not watched; they are the remedy, not a release.
+    # A manual run must start from develop (merged code only).
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop') ||
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+      actions: read
+    outputs:
+      watch: ${{ steps.ctx.outputs.watch }}
+      released: ${{ steps.ctx.outputs.released }}
+      tag: ${{ steps.ctx.outputs.tag }}
+      sha: ${{ steps.ctx.outputs.sha }}
+      previous: ${{ steps.ctx.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Which release, which environment, which previous tag
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/tags/*:refs/tags/*'
+          version='^v[0-9]+\.[0-9]+(\.[0-9]+)?$'
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="${INPUT_TAG}"
+            sha="$(git rev-parse --verify --quiet "refs/tags/${tag}^{commit}" || true)"
+            [ -n "${sha}" ] || { echo "::error::tag ${tag} not found"; exit 1; }
+            watch=true
+            released=success
+          else
+            tag="$(jq -r '.workflow_run.head_branch' "${GITHUB_EVENT_PATH}")"
+            sha="$(jq -r '.workflow_run.head_sha' "${GITHUB_EVENT_PATH}")"
+            released="$(jq -r '.workflow_run.conclusion' "${GITHUB_EVENT_PATH}")"
+            created="$(jq -r '.workflow_run.created_at' "${GITHUB_EVENT_PATH}")"
+            # The deploy job of t3-release creates a deployment in the environment it
+            # used. Only production-auto deployments of this run are watched.
+            n="$(gh api -X GET "repos/${REPO}/deployments" -f sha="${sha}" -f environment=production-auto -f per_page=100 \
+              --jq "[.[] | select(.created_at >= \"${created}\")] | length" || echo 1)"
+            # If the lookup fails, watch anyway: a broken release still gets a rollback.
+            if [ "${n}" -gt 0 ]; then watch=true; else watch=false; fi
+          fi
+
+          # Previous version = the tag of the last successful production deployment
+          # before this run: environments production and production-auto, newest
+          # first, latest status success, not the released sha. A highest-tag-below rule
+          # could pick a version that was itself rolled back. A run started by a tag
+          # records the tag as the deployment ref; a manual run (rollback, redeploy)
+          # records its branch, so its tag is read from the log line
+          # "tag <tag> -> <sha> is on main" of its job verify-tag-on-main.
+          before="${created:-9999-12-31T23:59:59Z}"
+          previous=""
+          for env_name in production production-auto; do
+            gh api -X GET "repos/${REPO}/deployments" -f environment="${env_name}" -f per_page=30 \
+              --jq '.[] | [.created_at, (.id | tostring), .sha, .ref, .environment] | @tsv' || true
+          done | sort -r > deployments.tsv
+          while IFS=$'\t' read -r at id dsha dref denv; do
+            [[ "${at}" < "${before}" ]] || continue
+            [ "${dsha}" != "${sha}" ] || continue
+            # A later deployment marks older ones "inactive", so accept a deployment that
+            # had a success status at any time; its log URL comes from that status.
+            latest="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=100" \
+              --jq '[.[] | select(.state == "success")][0] | select(. != null) | [.state, (.log_url // .target_url // "")] | @tsv' || true)"
+            [ "${latest%%$'\t'*}" = "success" ] || continue
+            t=""
+            if printf '%s' "${dref}" | grep -Eq "${version}"; then
+              t="${dref}"
+            else
+              run_id="$(printf '%s' "${latest#*$'\t'}" | sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p')"
+              job_id=""
+              if [ -n "${run_id}" ]; then
+                job_id="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs" \
+                  --jq '[.jobs[] | select(.name == "verify-tag-on-main") | .id][0] // empty' || true)"
+              fi
+              if [ -n "${job_id}" ]; then
+                t="$({ gh api "repos/${REPO}/actions/jobs/${job_id}/logs" 2>/dev/null || true; } \
+                  | grep -oE 'tag v[0-9]+\.[0-9]+(\.[0-9]+)? -> [0-9a-f]{40} is on main' \
+                  | tail -n 1 | awk '{ print $2 }' || true)"
+              fi
+            fi
+            if [ -n "${t}" ] && [ "${t}" != "${tag}" ] \
+               && git rev-parse --verify --quiet "refs/tags/${t}^{commit}" > /dev/null; then
+              previous="${t}"
+              echo "Previous version: ${t} (deployment ${id} in ${denv}, ${at})"
+              break
+            fi
+            echo "::warning::deployment ${id} in ${denv} (${at}) succeeded but its tag is unknown; skipped"
+          done < deployments.tsv
+
+          # Fallback when no such deployment is found: the highest version tag below
+          # the released one.
+          key() {
+            local a b c
+            IFS=. read -r a b c <<< "${1#v}"
+            printf '%06d%06d%06d' "$((10#${a}))" "$((10#${b}))" "$((10#${c:-0}))"
+          }
+          if [ -z "${previous}" ] && printf '%s' "${tag}" | grep -Eq "${version}"; then
+            echo "No earlier successful production deployment found; using the highest tag below ${tag}"
+            want="$(key "${tag}")"
+            best=""
+            while IFS= read -r t; do
+              k="$(key "${t}")"
+              if [[ "${k}" < "${want}" ]] && { [ -z "${best}" ] || [[ "${k}" > "${best}" ]]; }; then
+                best="${k}"
+                previous="${t}"
+              fi
+            done < <(git tag -l 'v*' | grep -E "${version}" || true)
+          fi
+
+          echo "tag=${tag} sha=${sha} t3-release=${released} watch=${watch} previous=${previous:-none}"
+          {
+            echo "watch=${watch}"
+            echo "released=${released}"
+            echo "tag=${tag}"
+            echo "sha=${sha}"
+            echo "previous=${previous}"
+          } >> "${GITHUB_OUTPUT}"
+
+  health:
+    name: health
+    needs: context
+    if: needs.context.outputs.watch == 'true' && needs.context.outputs.released == 'success'
+    runs-on: [self-hosted, kmv8]
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      healthy: ${{ steps.watch.outputs.healthy }}
+      summary: ${{ steps.watch.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 1
+          clean: true
+          # The self-hosted runner keeps its workspace: leave no token in .git/config.
+          persist-credentials: false
+
+      - name: Check production every 60 seconds for 15 minutes
+        id: watch
+        env:
+          SHA: ${{ needs.context.outputs.sha }}
+          SIMULATE: ${{ inputs.simulate || 'none' }}
+        run: |
+          set -euo pipefail
+          passed=0
+          : > checks.log
+          for i in $(seq 1 15); do
+            if deploy/scripts/healthcheck.sh "${HEALTH_URL}" "${SHA}" 1 0 >> checks.log 2>&1 \
+               && [ "${SIMULATE}" != "unhealthy" ]; then
+              passed=$((passed + 1))
+              echo "check ${i}/15: pass"
+            else
+              echo "check ${i}/15: fail"
+              echo "check ${i}/15 failed$([ "${SIMULATE}" = "unhealthy" ] && echo ' (simulated)')" >> checks.log
+            fi
+            # The drill does not need to hold the shared runner for 15 minutes.
+            if [ "${i}" -lt 15 ] && [ "${SIMULATE}" != "unhealthy" ]; then sleep 60; fi
+          done
+          cat checks.log
+          if [ "${passed}" -eq 15 ]; then healthy=true; else healthy=false; fi
+          echo "healthy=${healthy} (${passed}/15 checks passed)"
+          {
+            echo "healthy=${healthy}"
+            echo "summary=${passed}/15 checks passed. Last lines: $(tail -n 4 checks.log | tr '\n' ' ' | cut -c1-600)"
+          } >> "${GITHUB_OUTPUT}"
+
+  rollback:
+    name: rollback
+    needs: [context, health]
+    # Rollback when the release itself failed, or when the watch did not report healthy
+    # (a watch that could not run counts as unhealthy: at dial 3 the redeploy waits for a person).
+    if: >-
+      always() && needs.context.result == 'success' && needs.context.outputs.watch == 'true' &&
+      (needs.context.outputs.released != 'success' || needs.health.outputs.healthy != 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      issues: write
+    env:
+      TAG: ${{ needs.context.outputs.tag }}
+      SHA: ${{ needs.context.outputs.sha }}
+      PREVIOUS: ${{ needs.context.outputs.previous }}
+      RELEASED: ${{ needs.context.outputs.released }}
+      HEALTH_RESULT: ${{ needs.health.result }}
+      SUMMARY: ${{ needs.health.outputs.summary }}
+      DIAL: ${{ vars.T3_FACTORY_DIAL || '0' }}
+      SIMULATE: ${{ inputs.simulate || 'none' }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Write the issue body
+        run: |
+          set -euo pipefail
+          if [ "${RELEASED}" != "success" ]; then
+            what="The t3-release run for ${TAG} ended with: ${RELEASED}."
+          elif [ "${HEALTH_RESULT}" != "success" ]; then
+            what="The health watch did not finish (job result: ${HEALTH_RESULT})."
+          else
+            what="Production health watch: ${SUMMARY}"
+          fi
+          # Redact like scripts/agent-review-render.mjs: credentials, HTML comments, mentions.
+          what="$(printf '%s' "${what}" \
+            | sed -E -e 's/sk-ant-[A-Za-z0-9_-]{20,}/[redacted]/g' \
+                     -e 's/(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}/[redacted]/g' \
+                     -e 's/<!--//g' -e 's/-->//g' -e 's/(^|[^A-Za-z0-9_])@/\1@ /g' \
+            | cut -c1-900)"
+          {
+            echo "Production was unhealthy after the automatic release of \`${TAG}\` (\`${SHA:0:7}\`)."
+            echo
+            echo "- ${what}"
+            echo "- Rollback: redeploy \`${PREVIOUS:-none found}\` with t3-release. It waits for the owner to approve the environment \`production\`."
+            echo "- The factory dial was lowered to 3."
+            echo "- Run: ${RUN_URL}"
+            echo
+            echo "Find why \`${TAG}\` broke production and fix it on \`develop\`. Do not fix forward on \`main\`."
+          } > issue.md
+          cat issue.md
+
+      - name: Dry run (simulate unhealthy)
+        if: env.SIMULATE == 'unhealthy'
+        run: |
+          set -euo pipefail
+          if [ "${DIAL}" -gt 3 ] 2>/dev/null; then
+            echo "DRY RUN: would set T3_FACTORY_DIAL from ${DIAL} to 3"
+          else
+            echo "DRY RUN: would leave T3_FACTORY_DIAL at ${DIAL} (already 3 or lower)"
+          fi
+          echo "DRY RUN: would run t3-release.yml with tag=${PREVIOUS:-<none found>}"
+          echo "DRY RUN: would open issue \"Production rollback: ${TAG} was unhealthy\" with labels severity:critical, factory-rollback, agent-ready"
+          echo "DRY RUN: would post to Discord: Production rollback: ${TAG} was unhealthy"
+
+      - name: Factory app token
+        id: app
+        if: env.SIMULATE != 'unhealthy'
+        uses: actions/create-github-app-token@v3
+        with:
+          # `app-id` still works in v3 (marked deprecated in favour of `client-id`).
+          # actionlint 1.7.12 does not know `client-id` yet; switch both together later.
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - name: Roll back
+        if: env.SIMULATE != 'unhealthy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          errors=0
+
+          # 1. Lower the dial first, so the rollback deploy below takes the environment
+          #    `production` (owner approval). Only ever lowers: a dial at 3 or below stays.
+          if [ "${DIAL}" -gt 3 ] 2>/dev/null; then
+            if GH_TOKEN="${APP_TOKEN}" gh variable set T3_FACTORY_DIAL --repo "${REPO}" --body 3; then
+              echo "Set T3_FACTORY_DIAL from ${DIAL} to 3"
+            else
+              echo "::error::could not set T3_FACTORY_DIAL to 3"
+              errors=$((errors + 1))
+            fi
+          else
+            echo "T3_FACTORY_DIAL is ${DIAL}; left unchanged"
+          fi
+
+          # 2. Redeploy the previous version tag. GITHUB_TOKEN (actions: write) may start
+          #    a workflow_dispatch run; the app has no Actions permission.
+          if [ -n "${PREVIOUS}" ]; then
+            if gh workflow run t3-release.yml --repo "${REPO}" --ref develop -f tag="${PREVIOUS}"; then
+              echo "Started t3-release for ${PREVIOUS}"
+            else
+              echo "::error::could not start t3-release for ${PREVIOUS}"
+              errors=$((errors + 1))
+            fi
+          else
+            echo "::error::no previous version found for ${TAG}; nothing to roll back to"
+            errors=$((errors + 1))
+          fi
+
+          # 3. Critical issue for the loop.
+          title="Production rollback: ${TAG} was unhealthy"
+          # The app token, so the issues: opened trigger of t3-agent-triage fires at once.
+          if ! url="$(GH_TOKEN="${APP_TOKEN}" gh issue create --repo "${REPO}" --title "${title}" --body-file issue.md \
+                --label severity:critical --label factory-rollback --label agent-ready)"; then
+            url="$(gh issue create --repo "${REPO}" --title "${title}" --body-file issue.md || true)"
+            errors=$((errors + 1))
+          fi
+          echo "Issue: ${url:-not created}"
+
+          # 4. Discord.
+          if [ -n "${WEBHOOK:-}" ]; then
+            msg="$(printf 'Production rollback: %s was unhealthy. Redeploying %s; it waits for approval of the environment production. Dial lowered to 3.\n%s\n<%s>' \
+              "${TAG}" "${PREVIOUS:-nothing (no previous tag)}" "${url:-}" "${RUN_URL}")"
+            jq -n --arg content "${msg}" '{content: $content, allowed_mentions: {parse: []}}' \
+              | curl -fsS -H 'content-type: application/json' -d @- "${WEBHOOK}" > /dev/null \
+              || { echo "Discord post failed"; errors=$((errors + 1)); }
+          fi
+
+          echo "Rollback steps with errors: ${errors}"
+          # The run is red on a real rollback, so it is visible in the Actions list.
+          exit 1
