@@ -507,7 +507,7 @@ Phase 0.1 and 0.2 are the only host commands in this plan and they are the owner
 | D7 | Create a GitHub App identity for agents (2.6) | **Yes**, before any agent pushes | Yes |
 | D8 | Enable Claude review on PRs (5.1) with a monthly cap | **Yes**, advisory only, after Phase 2 | Yes (kill switch) |
 | D9 | Release cadence after v0.2.0 | **Weekly tag from `develop` when nightly was green the night before**; a rule, not a schedule | Yes |
-| D10 | Build the issue-driven auto-merge loop (§5.6) | **Decided 2026-11-14: yes, at dial 4.** Built by WP-FACTORY-001 (`technical-spec/plans/2026-11-14-wp-factory-001-merge-gate.md`): independent review as the required check `agent-review`, GitHub auto-merge, kill switch `T3_AGENT_AUTOMATION`, dial `T3_FACTORY_DIAL`. Protected paths still need the owner | Yes (kill switch, dial) |
+| D10 | Build the issue-driven auto-merge loop (§5.6) | **Decided 2026-11-14: yes, at dial 4.** Built by WP-FACTORY-001 (`technical-spec/plans/2026-11-14-wp-factory-001-merge-gate.md`): independent review as the required check `agent-review`, GitHub auto-merge, kill switch `T3_AGENT_AUTOMATION`, dial `T3_FACTORY_DIAL`. Protected paths still need the owner. Extended 2026-11-15 by WP-FACTORY-002: triage, hidden scenarios, automatic production, circuit breaker. | Yes (kill switch, dial) |
 
 ---
 

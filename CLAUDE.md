@@ -239,9 +239,9 @@ Migrations must be forward-only and backward-compatible with the previous releas
 Migrations run automatically on container start. If a migration cannot be made safe this way, the PR body must say so and a human decides.
 Releasing to production
 Open PR develop → main. CI must be green. One human reviews.
-Merge (merge commit, not squash, so main keeps develop's history). Note: main currently has required_linear_history: true, which contradicts this step. enforce_admins is false, so an admin reviewer merges through it; a non-admin cannot. See CICD/PLAN_CICD.md 2.1.
+Merge (merge commit, not squash, so main keeps develop's history). At dial 4 t3-agent-release opens and merges this pull request itself. Note: main currently has required_linear_history: true, which contradicts this step. enforce_admins is false, so an admin reviewer merges through it; a non-admin cannot. See CICD/PLAN_CICD.md 2.1.
 Tag on main: git tag -a vX.Y.Z -m "<one line>" && git push origin vX.Y.Z. SemVer: patch for fixes, minor for features, major for breaking API/schema.
-The t3-release workflow builds, then waits on the production environment gate. A human approves in the Actions UI. Agents do not approve production deploys.
+The t3-release workflow builds, then waits on the production environment gate. A human approves in the Actions UI. Agents do not approve production deploys. Exception: at dial 4 a tag pushed by t3-agent-release deploys through production-auto, which has no approval step.
 Confirm 100.103.41.112:33100/api/health shows the new sha. The Discord message will not arrive until DISCORD_WEBHOOK_URL is set (see Staging / nightly below); check the Actions run directly instead.
 
 Rollback: re-run the t3-release workflow for the previous tag and approve. Then open a fix/* PR against develop for the actual fix — do not fix forward on main.
@@ -274,11 +274,14 @@ Kill switch: repository variable T3_AGENT_AUTOMATION (on or off). To stop now: s
 To keep the factory away from one pull request, add the label factory-hold. It is then not reviewed, not updated and not merged by the factory. Remove the label to release it.
 Agents never switch auto-merge on, never use the override input, never change the two variables, and never change the reviewer, the sweep, the rubric (CICD/factory/REVIEW.md) or the policy scripts in a pull request that also has application code.
 The rules are tested code: scripts/agent-merge-policy.mjs. The rubric the reviewer follows: CICD/factory/REVIEW.md.
+Issues: only issues opened by a user in T3_FACTORY_REPORTERS are triaged automatically (t3-agent-triage). Acceptance criteria are appended to the issue body under "Acceptance criteria (factory triage)".
+Hidden scenarios live in the private repository tetracilin/t3-scenarios. Never read it, never ask for it. A scenario-failure issue states the behaviour to fix.
+Dial 4 releases to production automatically after every critical scenario passes (t3-agent-release, environment production-auto), watched for 15 minutes by t3-release-watch, which rolls back and sets the dial to 3. t3-factory-breaker lowers the dial when reverts, rollbacks or failures pile up; only the owner raises it.
 Where things live
 Item	Location
 CI/CD plan and assumptions	CICD/PLAN_CICD.md
 Fork origin and cherry-pick policy	technical-spec/fork/ORIGIN.md
-Workflows	.github/workflows/t3-{ci,nightly,release,agent-review,agent-sweep}.yml — the only workflows that should exist
+Workflows	.github/workflows/t3-{ci,nightly,release,agent-review,agent-sweep,agent-triage,agent-release,release-watch,factory-breaker}.yml — the only workflows that should exist
 Deploy scripts	deploy/scripts/{healthcheck,image-retention,version-drift}.sh
 Compose	deploy/compose.yaml
 Run logs	GitHub → Actions; Discord channel 1534836487772704800 for summaries
