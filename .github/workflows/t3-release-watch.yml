@@ -156,7 +156,6 @@ jobs:
             IFS=. read -r a b c <<< "${1#v}"
             printf '%06d%06d%06d' "$((10#${a}))" "$((10#${b}))" "$((10#${c:-0}))"
           }
-          previous=""
           if [ -z "${previous}" ] && printf '%s' "${tag}" | grep -Eq "${version}"; then
             echo "No earlier successful production deployment found; using the highest tag below ${tag}"
             want="$(key "${tag}")"
