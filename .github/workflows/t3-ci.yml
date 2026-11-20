@@ -122,7 +122,7 @@ jobs:
       - name: Lint the factory workflows
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color .github/workflows/t3-agent-review.yml .github/workflows/t3-agent-sweep.yml .github/workflows/t3-agent-triage.yml
+          ./actionlint -color .github/workflows/t3-agent-review.yml .github/workflows/t3-agent-sweep.yml .github/workflows/t3-agent-triage.yml .github/workflows/t3-agent-release.yml .github/workflows/t3-release-watch.yml
       - name: Test plugin-SDK dev symlinker
         # Salvaged from pr.yml's `pnpm run test:release-registry`, which was
         # otherwise release-only and is deleted with the rest of upstream's
