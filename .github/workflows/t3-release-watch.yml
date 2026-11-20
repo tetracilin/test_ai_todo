@@ -100,7 +100,8 @@ jobs:
             # The deploy job of t3-release creates a deployment in the environment it
             # used. Only production-auto deployments of this run are watched.
             n="$(gh api -X GET "repos/${REPO}/deployments" -f sha="${sha}" -f environment=production-auto -f per_page=100 \
-              --jq "[.[] | select(.created_at >= \"${created}\")] | length")"
+              --jq "[.[] | select(.created_at >= \"${created}\")] | length" || echo 1)"
+            # If the lookup fails, watch anyway: a broken release still gets a rollback.
             if [ "${n}" -gt 0 ]; then watch=true; else watch=false; fi
           fi
 
@@ -120,9 +121,10 @@ jobs:
           while IFS=$'\t' read -r at id dsha dref denv; do
             [[ "${at}" < "${before}" ]] || continue
             [ "${dsha}" != "${sha}" ] || continue
-            # Statuses are listed newest first: the first one is the latest.
-            latest="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" \
-              --jq '.[0] | [.state, (.log_url // .target_url // "")] | @tsv' || true)"
+            # A later deployment marks older ones "inactive", so accept a deployment that
+            # had a success status at any time; its log URL comes from that status.
+            latest="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=100" \
+              --jq '[.[] | select(.state == "success")][0] | select(. != null) | [.state, (.log_url // .target_url // "")] | @tsv' || true)"
             [ "${latest%%$'\t'*}" = "success" ] || continue
             t=""
             if printf '%s' "${dref}" | grep -Eq "${version}"; then
@@ -342,7 +344,8 @@ jobs:
 
           # 3. Critical issue for the loop.
           title="Production rollback: ${TAG} was unhealthy"
-          if ! url="$(gh issue create --repo "${REPO}" --title "${title}" --body-file issue.md \
+          # The app token, so the issues: opened trigger of t3-agent-triage fires at once.
+          if ! url="$(GH_TOKEN="${APP_TOKEN}" gh issue create --repo "${REPO}" --title "${title}" --body-file issue.md \
                 --label severity:critical --label factory-rollback --label agent-ready)"; then
             url="$(gh issue create --repo "${REPO}" --title "${title}" --body-file issue.md || true)"
             errors=$((errors + 1))
