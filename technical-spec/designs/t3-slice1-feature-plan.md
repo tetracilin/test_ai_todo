@@ -105,8 +105,9 @@ remaining candidates stand:
   to need Discord's approval: a bot in fewer than 100 servers turns on the Message Content
   intent with a Developer Portal toggle. F-004-1 (intake) has shipped too. **F-004-3**
   (confidential refusal) should come next, because intake now stores what is forwarded, and
-  F-004-2 (clarifying questions) after it. F-CAP-1 takes over the attachment download that
-  F-DM-2 left out, and the content fingerprint F-DM-3 left out.
+  F-004-2 (clarifying questions) after it. F-CAP-1 and F-CAP-2 have shipped: they took over
+  the attachment download that F-DM-2 left out and the content fingerprint F-DM-3 left out.
+  F-CAP-3 (Teable allowlist half), F-CAP-4 and F-CAP-5 remain.
 - **F-006-2** (WP-close export → `Tecotec-JSc/T3-wiki` commit + CTO notification) is the
   direct follow-up to the now-shipped F-006-1, but needs push credentials to an external repo
   most dev environments will not have configured — confirm access before picking it up.
@@ -618,8 +619,8 @@ work package binds a second transport to the same pipeline (TODOS.md).
 | **F-004-3** | **Confidential-content refusal (NAS instructions)** | F-004-1 | human: 1d / CC: 45m |
 | F-DM-2 | Discord DM surface (intent, handler, auth gate, media) | G-2, F-VERB-0 | human: 1w / CC: 4h — ✅ shipped; media is metadata-gated only, byte fetch moved to F-CAP-1 |
 | F-DM-3 | Inbound persistence + replay across agent downtime | F-DM-2 | human: 2d / CC: 2h — ✅ shipped; Discord DM history is the durable store, content fingerprint for resent photos left to F-CAP-1 |
-| F-CAP-1 | Capture pipeline — one bounded LLM call | F-DM-2, F-007-1, F-002-1 | human: 1w / CC: 4h |
-| F-CAP-2 | Capture fallback → unstructured triage capture | F-CAP-1 | human: 1d / CC: 1h |
+| F-CAP-1 | Capture pipeline — one bounded LLM call | F-DM-2, F-007-1, F-002-1 | human: 1w / CC: 4h — ✅ shipped; the server makes the call, the bridge only pairs messages; this is the first `source=bot` producer |
+| F-CAP-2 | Capture fallback → unstructured triage capture | F-CAP-1 | human: 1d / CC: 1h — ✅ shipped; one re-prompt, then the engineer's triage card |
 | F-CAP-3 | Server-side write-target validation | F-CAP-1, F-003-1 | human: 1d / CC: 1h |
 | F-CAP-4 | Vietnamese eval suite (≥90% card matching) | F-CAP-1 | human: 3d / CC: 2h |
 | F-CAP-5 | Wrong-card correction reply | F-CAP-1 | human: 1d / CC: 45m |
@@ -761,6 +762,41 @@ user cost: the photo vanishes (review finding 1.7). On that path the idempotency
 is **not** consumed, so a resend still works (the F-DM-3 rule).
 - Tests: each of malformed / empty / refusal / provider-down lands on the triage card with a
   reply; the provider-down case leaves the fingerprint clear. **Capture is never silently lost.**
+
+**F-CAP-1 and F-CAP-2 as shipped** (`server/src/services/discord-capture.ts`,
+`server/src/services/wp0-structuring.ts`, `discord-bridge/src/lib/dmHandler.ts`):
+  - **Trigger.** A DM that carries files and is not a forward is a capture. Text sent with
+    the files, or paired with them, is the caption. A bare verb is not a caption.
+  - **Pairing.** The bridge holds a files-only DM for 20 s (`DM_PAIRING_WINDOW_MS`). Text
+    from the same sender inside the window travels with it, and the server settles both
+    message ids. For caption-first, the server marks unrecognized text
+    (`holdReplyForCaption`), the bridge holds that reply for the window and drops it when
+    files arrive. Replayed history is not paired: the photo is still captured and the
+    caption is answered on its own.
+  - **Bytes.** The bridge sends the CDN URL. The server fetches it, only over https from
+    `cdn.discordapp.com` or `media.discordapp.net`, with no redirect and a size cap, and
+    checks the bytes against the declared type. A failed download stores nothing and the
+    engineer resends.
+  - **The one call.** A chat-completion request to an OpenAI-compatible provider
+    (`PAPERCLIP_WP0_LLM_BASE_URL`, `PAPERCLIP_WP0_LLM_MODEL`, company secret
+    `WP0_LLM_API_KEY`). It gets the engineer's open cards (assignee or creator, at most 25)
+    and the caption as JSON data, and returns `{card, evidence_type, gloss}`. Photos are not
+    sent to the model. A card that was not offered is rejected in code, which covers the
+    F-CAP-3 control for the capture path; F-CAP-3's Teable allowlist half is still open.
+  - **Filing.** Bytes go to the evidence bucket (provider `minio`), linked with
+    `source = bot`, with one dossier Evidence-log line holding the caption verbatim and the
+    English gloss.
+  - **Fallback.** An unusable answer is re-prompted once. After that, or when the provider
+    is unreachable or not configured, or when the model says no card fits, the capture is
+    filed on the engineer's `Unsorted chat captures` card (label `triage`). Zero open cards
+    goes there with no model call.
+  - **The fingerprint.** It is the evidence object's SHA-256 on the card it was filed on.
+    A triage filing is on a different card, so a resend after a provider outage is filed
+    normally; a resend onto the same card adds no second link.
+  - **Evidence store down.** The request answers 503, the F-DM-3 claim is released, and the
+    bridge replay retries it. Without `PAPERCLIP_STORAGE_EXTERNAL_*` this is every capture.
+  - **Not built here.** F-CAP-4 (eval suite), F-CAP-5 (wrong-card reply), links as
+    evidence, and the F-OPS-3 spend cap. No budget entry is written for the call yet.
 
 **F-CAP-3 — Server-side write-target validation.** Whatever the LLM output names, the write
 target is validated against PC-003 AC2 scoping (assignee or creator) and the F-010-2 allowlist

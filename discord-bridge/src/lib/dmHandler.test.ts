@@ -72,7 +72,10 @@ describe("handleDirectMessage", () => {
     });
   });
 
-  it("forwards attachment metadata only", async () => {
+  // F-CAP-1 changed this contract on purpose: the CDN URL now travels with the
+  // metadata so the server can fetch the bytes after its own gate. The bridge
+  // still never downloads or forwards the bytes themselves.
+  it("forwards attachment metadata and the CDN URL, never the bytes", async () => {
     const ctx = fakeContext(linkedReply);
     const attachments = new Map([
       ["a-1", { id: "a-1", name: "photo.png", contentType: "image/png", size: 512, url: "https://cdn.discordapp.com/x" }],
@@ -87,8 +90,8 @@ describe("handleDirectMessage", () => {
       channelId: "dm-channel-1",
       content: "",
       attachments: [
-        { id: "a-1", filename: "photo.png", contentType: "image/png", size: 512 },
-        { id: "a-2", filename: "notes", contentType: null, size: 3 },
+        { id: "a-1", filename: "photo.png", contentType: "image/png", size: 512, url: "https://cdn.discordapp.com/x" },
+        { id: "a-2", filename: "notes", contentType: null, size: 3, url: "https://cdn.discordapp.com/y" },
       ],
       messageCreatedAt: "2026-11-08T03:00:00.000Z",
     });
