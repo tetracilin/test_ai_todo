@@ -187,3 +187,20 @@ If the list is not empty, work on the oldest one and do not take a new issue in 
    Push the branch. Remove the label agent-rework. Post one Discord message.
 The limits of section 6 still apply to the whole pull request.
 ```
+
+## 12. Triage, hidden scenarios, pick order (WP-FACTORY-002)
+
+Issues reach the loop only after the factory has triaged them (`t3-agent-triage` adds `agent-ready` and the acceptance criteria). Hidden scenarios run in a private repository the loop cannot read; a failing scenario opens an issue labelled `scenario-failure` that states the behaviour to fix. The loop uses its own token, which has no access to that repository. These rules are in the DSH schedule prompt, after the rework rule of section 11.
+
+```text
+Token: before any gh or git command, run in Git Bash
+  export GH_TOKEN="$(tr -d '\r\n' < ~/.dsh/state/dsh-superagent/gh-token)"
+and keep it set for every gh and git call of this run. Never print, copy or log the token.
+Pick order for new issues labelled agent-ready, oldest first within each group:
+  1. label severity:critical   2. label scenario-failure   3. everything else.
+Never take an issue labelled needs-human, needs-info, needs-triage, factory-hold or factory-canary.
+The acceptance criteria are in the issue body under "## Acceptance criteria (factory triage)".
+Never try to read the repository tetracilin/t3-scenarios. For a scenario-failure issue, fix the behaviour the issue describes.
+```
+
+The token is a fine-grained personal access token owned by the owner, limited to `test_ai_todo` (Contents, Issues and Pull requests read and write, Metadata read), saved in `%USERPROFILE%\.dsh\state\dsh-superagent\gh-token`. Only the owner creates or renews it.

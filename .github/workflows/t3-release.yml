@@ -87,7 +87,7 @@ jobs:
       # t3-factory-bot may create v* tags). Manual runs (redeploys, rollbacks)
       # always use production and wait for the owner.
       name: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.T3_FACTORY_DIAL == '4' && vars.T3_AGENT_AUTOMATION == 'on' && 'production-auto' || 'production' }}
-      url: http://100.103.41.112:33100
+      url: https://t3work.cloud
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -148,8 +148,8 @@ jobs:
           # the health route, so HEALTH_URL fails for 30 attempts while the stack
           # is actually live and healthy. Nightly is unaffected: it health-checks
           # 127.0.0.1, which is always in the allow set.
-          PAPERCLIP_ALLOWED_HOSTNAMES: 100.103.41.112,localhost,127.0.0.1
-          PAPERCLIP_PUBLIC_URL: http://100.103.41.112:33100
+          PAPERCLIP_ALLOWED_HOSTNAMES: t3work.cloud,100.103.41.112,localhost,127.0.0.1
+          PAPERCLIP_PUBLIC_URL: https://t3work.cloud
           # Adapters an operator may pick when hiring an agent on this stack.
           # Set the `SELECTABLE_ADAPTER_TYPES` environment variable on the
           # `production` GitHub Environment to override this default.
