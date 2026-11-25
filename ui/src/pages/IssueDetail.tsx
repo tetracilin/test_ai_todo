@@ -107,6 +107,7 @@ import { IssueContinuationHandoff } from "../components/IssueContinuationHandoff
 import { IssueDossierPanel } from "../components/IssueDossierPanel";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
+import { IssueArtifactManager } from "../components/issue-properties/IssueArtifactManager";
 import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
 import { IssueOutputSection } from "../components/issue-output/IssueOutputSection";
 import { isImageAttachment, isVideoAttachment } from "../lib/issue-attachments";
@@ -5190,6 +5191,10 @@ export function IssueDetail() {
         agentMap={agentMap}
         userProfileMap={userProfileMap}
       />
+      )}
+
+      {taskChatShellEnabled ? null : (
+      <IssueArtifactManager companyId={issue.companyId} issueId={issue.id} />
       )}
 
       {taskChatShellEnabled ? null : (
