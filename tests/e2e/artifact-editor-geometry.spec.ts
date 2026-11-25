@@ -36,9 +36,10 @@ async function createArtifactEditorSeed(request: APIRequestContext): Promise<See
   };
 }
 
-// Uploaded artifacts are listed only in the chat-style task view's "Artifacts" tab, and that
-// view is behind an experimental flag that is off by default. Enable it for this spec and put
-// the previous value back afterwards, because every spec shares one server.
+// Uploaded artifacts render in the classic task view's "Artifact files" section and in the
+// chat-style task view's "Artifacts" tab. This spec exercises the tab layout, which is behind
+// an experimental flag that is off by default. Enable it for this spec and put the previous
+// value back afterwards, because every spec shares one server.
 let restoreTaskChatRedesign: (() => Promise<void>) | null = null;
 
 test.afterEach(async () => {

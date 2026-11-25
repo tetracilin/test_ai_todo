@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, Issue, IssueAttachment, IssueComment, IssueTreeControlPreview, IssueTreeHold, IssueWorkProduct } from "@paperclipai/shared";
+import type { Agent, Artifact, Issue, IssueAttachment, IssueComment, IssueTreeControlPreview, IssueTreeHold, IssueWorkProduct } from "@paperclipai/shared";
 import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@paperclipai/shared";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import { NavigationType } from "react-router-dom";
@@ -24,6 +24,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   listAcceptedPlanDecompositions: vi.fn(),
   listComments: vi.fn(),
   listAttachments: vi.fn(),
+  listArtifacts: vi.fn(),
   listWorkProducts: vi.fn(),
   listFeedbackVotes: vi.fn(),
   markRead: vi.fn(),
@@ -1067,6 +1068,7 @@ describe("IssueDetail", () => {
     mockIssuesApi.list.mockResolvedValue([]);
     mockIssuesApi.listComments.mockResolvedValue([]);
     mockIssuesApi.listAttachments.mockResolvedValue([]);
+    mockIssuesApi.listArtifacts.mockResolvedValue({ artifacts: [] });
     mockIssuesApi.listWorkProducts.mockResolvedValue([]);
     mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
     mockIssuesApi.markRead.mockResolvedValue({ id: "issue-1", lastReadAt: new Date().toISOString() });
@@ -2295,6 +2297,46 @@ describe("IssueDetail", () => {
 
     await waitForAssertion(() => {
       expect(mockOpenPanel).toHaveBeenCalled();
+    });
+  });
+
+  it("shows agent-created artifact documents on a task in the classic interface", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableExperimentalFileViewer: false,
+      enableExternalObjects: false,
+      enableTaskChatRedesign: false,
+    });
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    const artifact: Artifact = {
+      id: "artifact-1",
+      companyId: "company-1",
+      issueId: "issue-1",
+      kind: "document",
+      format: "markdown",
+      name: "Claude notes.md",
+      contentType: "text/markdown",
+      currentVersionId: "version-2",
+      currentVersionNumber: 2,
+      createdByUserId: null,
+      createdByAgentId: "agent-1",
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:05:00.000Z",
+      contentPath: "/api/companies/company-1/artifacts/artifact-1/content",
+    };
+    mockIssuesApi.listArtifacts.mockResolvedValue({ artifacts: [artifact] });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Artifact files");
+      expect(container.textContent).toContain("Claude notes.md");
     });
   });
 

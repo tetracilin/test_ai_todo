@@ -102,6 +102,38 @@ describe("LiveUpdatesProvider issue invalidation", () => {
     });
   });
 
+  it("refreshes issue artifact queries when an artifact activity event arrives", () => {
+    const invalidations: unknown[] = [];
+    const queryClient = {
+      invalidateQueries: (input: unknown) => {
+        invalidations.push(input);
+      },
+      getQueryData: () => undefined,
+    };
+
+    __liveUpdatesTestUtils.invalidateActivityQueries(
+      queryClient as never,
+      "company-1",
+      {
+        entityType: "artifact",
+        entityId: "artifact-1",
+        action: "artifact.created",
+        details: { kind: "document", format: "markdown", name: "notes.md" },
+      },
+      { userId: null, agentId: null },
+    );
+
+    expect(invalidations).toContainEqual({
+      queryKey: ["issues", "artifacts", "company-1"],
+    });
+    expect(invalidations).toContainEqual({
+      queryKey: queryKeys.issues.artifactVersions("company-1", "artifact-1"),
+    });
+    expect(invalidations).toContainEqual({
+      queryKey: queryKeys.issues.artifactComments("company-1", "artifact-1"),
+    });
+  });
+
   it("keeps heartbeat progress invalidation scoped away from hot list queries", () => {
     const invalidations: unknown[] = [];
     const queryClient = {

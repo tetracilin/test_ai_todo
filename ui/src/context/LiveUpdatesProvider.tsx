@@ -627,6 +627,7 @@ const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.co
 const ISSUE_DOCUMENT_ACTIVITY_ACTIONS = new Set([
   "issue.document_created",
   "issue.document_updated",
+  "issue.document_upserted",
   "issue.document_restored",
   "issue.document_deleted",
 ]);
@@ -1039,6 +1040,19 @@ function invalidateActivityQueries(
           queryClient.invalidateQueries({ queryKey: queryKeys.issues.interactions(ref), ...invalidationOptions });
         }
       }
+    }
+    return;
+  }
+
+  // Artifact files are attached to an issue, but their activity rows carry the
+  // artifact id rather than the issue id. Refresh the issue-scoped artifact
+  // lists so a document another actor (for example an agent) attaches while the
+  // task is open appears without a manual reload.
+  if (entityType === "artifact") {
+    queryClient.invalidateQueries({ queryKey: ["issues", "artifacts", companyId] });
+    if (entityId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.artifactVersions(companyId, entityId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.artifactComments(companyId, entityId) });
     }
     return;
   }
