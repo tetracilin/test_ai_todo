@@ -4903,7 +4903,17 @@ export function agentRoutes(
     const limitParam = req.query.limit as string | undefined;
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
     const summary = req.query.summary === "true" || req.query.summary === "1";
-    const runs = await heartbeat.list(companyId, agentId, limit, { summary });
+
+    let updatedSince: Date | undefined;
+    if (req.query.updatedSince) {
+      const parsed = new Date(req.query.updatedSince as string);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: "Invalid updatedSince parameter: must be a valid ISO-8601 date" });
+      }
+      updatedSince = parsed;
+    }
+
+    const runs = await heartbeat.list(companyId, agentId, limit, { summary, updatedSince });
     res.json(await Promise.all(runs.map((run) => runRedactions.redactForRun(companyId, run.id, run))));
   });
 

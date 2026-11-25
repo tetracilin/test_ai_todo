@@ -19192,10 +19192,18 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       companyId: string,
       agentId?: string,
       limit?: number,
-      options: { summary?: boolean } = {},
+      options: { summary?: boolean; updatedSince?: Date } = {},
     ) => {
       const safeForLegacyEncoding = await hasUnsafeTextProjectionDatabase();
       const summary = options.summary === true;
+      const updatedSince = options.updatedSince;
+
+      const whereConditions = [
+        eq(heartbeatRuns.companyId, companyId),
+        ...(agentId ? [eq(heartbeatRuns.agentId, agentId)] : []),
+        ...(updatedSince ? [gte(heartbeatRuns.updatedAt, updatedSince)] : []),
+      ];
+
       const query = db
         .select(
           summary
@@ -19216,12 +19224,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               },
         )
         .from(heartbeatRuns)
-        .where(
-          agentId
-            ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))
-            : eq(heartbeatRuns.companyId, companyId),
-        )
-        .orderBy(desc(heartbeatRuns.createdAt));
+        .where(and(...whereConditions))
+        .orderBy(updatedSince ? asc(heartbeatRuns.updatedAt) : desc(heartbeatRuns.createdAt));
 
       const rows = limit ? await query.limit(limit) : await query;
       return rows.map((row) => {
