@@ -44,12 +44,13 @@ describe("StoryDetailPanel", () => {
   const onSaveEpic = vi.fn();
   const onClose = vi.fn();
 
-  async function render(target: DetailTarget | null) {
+  async function render(target: DetailTarget | null, error: string | null = null) {
     await act(async () => {
       root.render(
         <StoryDetailPanel
           tree={tree}
           target={target}
+          error={error}
           onClose={onClose}
           onSaveStory={onSaveStory}
           onSaveEpic={onSaveEpic}
@@ -174,6 +175,21 @@ describe("StoryDetailPanel", () => {
     expect(scroller).not.toBeNull();
     expect(scroller!.querySelector("form")).not.toBeNull();
     expect(scroller!.className).toContain("min-h-0");
+  });
+
+  it("shows a failed save inside the panel", async () => {
+    await render({ kind: "story", id: "s1" }, "Could not save the story");
+    const alert = container.querySelector('[role="dialog"] [role="alert"]');
+    expect(alert?.textContent).toBe("Could not save the story");
+  });
+
+  it("saves once when Save is pressed twice while the first save is open", async () => {
+    onSaveStory.mockReturnValue(new Promise(() => undefined));
+    await render({ kind: "story", id: "s1" });
+    await submit();
+    await submit();
+    expect(onSaveStory).toHaveBeenCalledTimes(1);
+    expect([...container.querySelectorAll("button")].find((b) => b.textContent === "Save story")!.disabled).toBe(true);
   });
 
   it("handles an item that was deleted while the panel was open", async () => {

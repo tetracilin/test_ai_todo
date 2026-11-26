@@ -35,7 +35,13 @@ function StoryRow({ story, tree }: { story: StoryMapStory; tree: StoryMapTree })
   );
 }
 
+/** Keyed by company, so the filters never carry a release id into a company that has none. */
 export function StoryMapBacklog() {
+  const { selectedCompanyId } = useCompany();
+  return <StoryMapBacklogForCompany key={selectedCompanyId ?? "none"} />;
+}
+
+function StoryMapBacklogForCompany() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [release, setRelease] = useState<string>(ALL);

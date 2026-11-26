@@ -54,6 +54,7 @@ function StoryForm({
   const [size, setSize] = useState(story?.size ?? NONE);
   const [status, setStatus] = useState<StoryMapStoryStatus>(story?.status ?? "planned");
   const [epicId, setEpicId] = useState(story?.epicId ?? NONE);
+  const [saving, setSaving] = useState(false);
   if (!story) return <p className="p-4 text-sm text-muted-foreground">This story no longer exists.</p>;
 
   const epics = tree.epics.filter((epic) => epic.taskId === story.taskId);
@@ -65,15 +66,18 @@ function StoryForm({
       onSubmit={(event) => {
         event.preventDefault();
         const trimmedTitle = title.trim();
-        if (!trimmedTitle) return;
-        onSave({
+        if (!trimmedTitle || saving) return;
+        setSaving(true);
+        Promise.resolve(onSave({
           title: trimmedTitle,
           description: description.trim() || null,
           acceptanceCriteria: acceptance.trim() || null,
           size: size || null,
           status,
           epicId: epicId || null,
-        });
+        }))
+          .catch(() => undefined)
+          .finally(() => setSaving(false));
       }}
     >
       <Field label="Title">
@@ -123,7 +127,9 @@ function StoryForm({
           </select>
         </Field>
       ) : null}
-      <Button type="submit">Save story</Button>
+      <Button type="submit" disabled={saving}>
+        Save story
+      </Button>
     </form>
   );
 }
@@ -140,6 +146,7 @@ function EpicForm({
   const epic = tree.epics.find((item) => item.id === epicId);
   const [name, setName] = useState(epic?.name ?? "");
   const [description, setDescription] = useState(epic?.description ?? "");
+  const [saving, setSaving] = useState(false);
   if (!epic) return <p className="p-4 text-sm text-muted-foreground">This epic no longer exists.</p>;
 
   const children = tree.stories
@@ -153,8 +160,11 @@ function EpicForm({
         onSubmit={(event) => {
           event.preventDefault();
           const trimmed = name.trim();
-          if (!trimmed) return;
-          onSave({ name: trimmed, description: description.trim() || null });
+          if (!trimmed || saving) return;
+          setSaving(true);
+          Promise.resolve(onSave({ name: trimmed, description: description.trim() || null }))
+            .catch(() => undefined)
+            .finally(() => setSaving(false));
         }}
       >
         <Field label="Epic name">
@@ -163,7 +173,9 @@ function EpicForm({
         <Field label="Description">
           <Textarea value={description} maxLength={10000} onChange={(event) => setDescription(event.target.value)} />
         </Field>
-        <Button type="submit">Save epic</Button>
+        <Button type="submit" disabled={saving}>
+          Save epic
+        </Button>
       </form>
 
       <section aria-label="Child stories" className="space-y-2">
@@ -197,9 +209,12 @@ export function StoryDetailPanel({
   onClose,
   onSaveStory,
   onSaveEpic,
+  error,
 }: {
   tree: StoryMapTree;
   target: DetailTarget | null;
+  /** A failed save. Shown inside the panel, because the panel covers the page behind it. */
+  error?: string | null;
   onClose: () => void;
   onSaveStory: (id: string, patch: StoryPatch) => unknown;
   onSaveEpic: (id: string, patch: EpicPatch) => unknown;
@@ -215,6 +230,11 @@ export function StoryDetailPanel({
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
+        {error ? (
+          <p role="alert" className="px-4 pt-4 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         {target?.kind === "story" ? (
           <StoryForm key={target.id} tree={tree} storyId={target.id} onSave={(patch) => onSaveStory(target.id, patch)} />
         ) : null}

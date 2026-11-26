@@ -87,6 +87,7 @@ function InlineText({
       aria-label={`Name of ${label}`}
       value={draft}
       maxLength={200}
+      disabled={saving}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => finish(true)}
       onKeyDown={(event) => {
@@ -111,6 +112,7 @@ function AddInline({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
+  const [busy, setBusy] = useState(false);
 
   if (!open) {
     return (
@@ -124,14 +126,17 @@ function AddInline({
   function submit(event: FormEvent) {
     event.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) return;
+    // A second click or Enter while the first request is open must not add a second item.
+    if (!trimmed || busy) return;
+    setBusy(true);
     Promise.resolve(onAdd(trimmed, date || null))
       .then(() => {
         setName("");
         setDate("");
         setOpen(false);
       })
-      .catch(() => undefined); // The page shows the error; the typed text stays here.
+      .catch(() => undefined) // The page shows the error; the typed text stays here.
+      .finally(() => setBusy(false));
   }
 
   return (
@@ -141,6 +146,7 @@ function AddInline({
         aria-label={`${label}: name`}
         value={name}
         maxLength={200}
+        disabled={busy}
         onChange={(event) => setName(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
@@ -151,14 +157,15 @@ function AddInline({
           type="date"
           aria-label={`${label}: target date`}
           value={date}
+          disabled={busy}
           onChange={(event) => setDate(event.target.value)}
         />
       ) : null}
       <div className="flex gap-1">
-        <Button type="submit" size="xs">
+        <Button type="submit" size="xs" disabled={busy}>
           Add
         </Button>
-        <Button type="button" size="xs" variant="ghost" onClick={() => setOpen(false)}>
+        <Button type="button" size="xs" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
           Cancel
         </Button>
       </div>
@@ -172,9 +179,6 @@ const collisionDetection: CollisionDetection = (args) => {
   const cards = hits.filter((hit) => !String(hit.id).startsWith("cell:"));
   return cards.length > 0 ? cards : hits;
 };
-
-const ROW_LABEL_COLUMN = "10rem";
-const TASK_COLUMN = "14rem";
 
 export function StoryMap() {
   const { selectedCompanyId } = useCompany();
@@ -192,7 +196,7 @@ export function StoryMap() {
   });
 
   // Stories promoted from a scratch pad note link back to the scratch pad.
-  const { data: scratchPad } = useQuery({
+  const { data: scratchPad, error: scratchPadError } = useQuery({
     queryKey: queryKeys.scratchPad.list(selectedCompanyId ?? ""),
     queryFn: () => scratchPadApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -263,7 +267,7 @@ export function StoryMap() {
   const slots = layout.groups.flatMap((group): Array<{ column: StoryMapColumn | null }> =>
     group.columns.length > 0 ? group.columns.map((column) => ({ column })) : [{ column: null }],
   );
-  const gridTemplateColumns = `${ROW_LABEL_COLUMN} repeat(${Math.max(slots.length, 1)}, ${TASK_COLUMN})`;
+  const gridTemplateColumns = `var(--story-map-row-label) repeat(${Math.max(slots.length, 1)}, var(--story-map-task-col))`;
 
   const cell = "border-b border-r border-border p-2 space-y-1";
 
@@ -287,6 +291,11 @@ export function StoryMap() {
       <StoryMapTabs />
 
       {change.error ? <p className="text-sm text-destructive">{change.error.message}</p> : null}
+      {scratchPadError ? (
+        <p className="text-sm text-destructive">
+          The scratch pad could not be loaded: {scratchPadError.message}. The From scratch pad links are not shown.
+        </p>
+      ) : null}
 
       {layout.groups.length === 0 ? (
         <EmptyState
@@ -497,7 +506,11 @@ export function StoryMap() {
       <StoryDetailPanel
         tree={tree}
         target={detail}
-        onClose={() => setDetail(null)}
+        error={change.error?.message ?? null}
+        onClose={() => {
+          setDetail(null);
+          change.reset();
+        }}
         onSaveStory={(id, patch) =>
           run(() => storyMapApi.updateStory(companyId, id, patch))
             .then(() => setDetail(null))

@@ -467,6 +467,57 @@ describe("Story map page", () => {
     expect(container.textContent).toContain("Could not save");
   });
 
+  it("adds one item when Add is pressed twice while the first request is open", async () => {
+    storyMapApiMock.createActivity.mockReturnValue(new Promise(() => undefined));
+    await render(emptyTree);
+    await click("Add activity");
+    await typeInto("Add activity: name", "Plan work");
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    expect(storyMapApiMock.createActivity).toHaveBeenCalledTimes(1);
+    expect((byLabel("Add activity: name") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("shows a failed story save inside the detail panel", async () => {
+    storyMapApiMock.updateStory.mockRejectedValue(new Error("Could not save the story"));
+    await render(fullTree);
+    await click("Open story Pick a template");
+    await act(async () => {
+      container.querySelector('[role="dialog"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe("Could not save the story");
+  });
+
+  it("says so when the scratch pad cannot be loaded, instead of silently dropping its links", async () => {
+    scratchPadApiMock.list.mockRejectedValue(new Error("Scratch pad is down"));
+    storyMapApiMock.get.mockResolvedValue(fullTree);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <StoryMap />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    expect(container.textContent).toContain("The scratch pad could not be loaded: Scratch pad is down");
+  });
+
+  it("takes the grid column widths from tokens, not literal sizes", async () => {
+    await render(fullTree);
+    const grid = container.querySelector<HTMLElement>('[role="grid"]')!;
+    expect(grid.style.gridTemplateColumns).toContain("var(--story-map-row-label)");
+    expect(grid.style.gridTemplateColumns).toContain("var(--story-map-task-col)");
+    expect(grid.style.gridTemplateColumns).not.toMatch(/d+(rem|px)/);
+  });
+
   it("asks to select a company when none is selected", async () => {
     companyState.selectedCompanyId = null;
     await render(emptyTree);

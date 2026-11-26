@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StickyNote } from "lucide-react";
 import { SCRATCH_NOTE_MAX_LENGTH, type ScratchNoteView } from "@paperclipai/shared";
@@ -18,6 +18,7 @@ function NoteCard({
   note,
   isMine,
   canModerate,
+  busy,
   onEdit,
   onDelete,
   onPromote,
@@ -28,6 +29,8 @@ function NoteCard({
   canModerate: boolean;
   /** Returns a promise; the editor stays open, with the text, if it rejects. */
   onEdit: (body: string) => Promise<unknown>;
+  /** A request is open. Controls are disabled so a double click cannot repeat it. */
+  busy: boolean;
   onDelete: () => void;
   onPromote: () => void;
   onArchive: () => void;
@@ -49,7 +52,7 @@ function NoteCard({
             <Button
               type="button"
               size="sm"
-              disabled={draft.trim().length === 0}
+              disabled={busy || draft.trim().length === 0}
               onClick={() => {
                 onEdit(draft.trim())
                   .then(() => setEditing(false))
@@ -98,17 +101,17 @@ function NoteCard({
               >
                 Edit
               </Button>
-              <Button type="button" size="xs" variant="outline" onClick={onDelete}>
+              <Button type="button" size="xs" variant="outline" disabled={busy} onClick={onDelete}>
                 Delete
               </Button>
             </>
           ) : null}
           {canModerate && note.status === "active" ? (
             <>
-              <Button type="button" size="xs" onClick={onPromote}>
+              <Button type="button" size="xs" disabled={busy} onClick={onPromote}>
                 Promote to story
               </Button>
-              <Button type="button" size="xs" variant="outline" onClick={onArchive}>
+              <Button type="button" size="xs" variant="outline" disabled={busy} onClick={onArchive}>
                 Archive
               </Button>
             </>
@@ -119,12 +122,23 @@ function NoteCard({
   );
 }
 
+/**
+ * The page is keyed by company, so a draft, an open editor and the archived toggle never
+ * follow the user into another company.
+ */
 export function ScratchPad() {
+  const { selectedCompanyId } = useCompany();
+  return <ScratchPadForCompany key={selectedCompanyId ?? "none"} />;
+}
+
+function ScratchPadForCompany() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  // A ref, not state: it must block a second submit that arrives before React re-renders.
+  const sending = useRef(false);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Scratch pad" }]);
@@ -168,12 +182,17 @@ export function ScratchPad() {
         onSubmit={(event) => {
           event.preventDefault();
           const body = draft.trim();
-          if (!body) return;
+          if (!body || sending.current) return;
+          sending.current = true;
           // Clear the box only once the note is saved, so a failed save keeps the text.
           change
             .mutateAsync(() => scratchPadApi.create(companyId, { body }))
-            .then(() => setDraft(""))
-            .catch(() => undefined);
+            // Clear only what was sent. Anything typed while it saved stays.
+            .then(() => setDraft((current) => (current.trim() === body ? "" : current)))
+            .catch(() => undefined)
+            .finally(() => {
+              sending.current = false;
+            });
         }}
       >
         <Textarea
@@ -184,7 +203,7 @@ export function ScratchPad() {
           onChange={(event) => setDraft(event.target.value)}
         />
         <div className="flex items-center gap-3">
-          <Button type="submit" size="sm" disabled={draft.trim().length === 0}>
+          <Button type="submit" size="sm" disabled={change.isPending || draft.trim().length === 0}>
             Save
           </Button>
           <span className="text-xs text-muted-foreground">
@@ -212,6 +231,7 @@ export function ScratchPad() {
               note={note}
               isMine={note.authorUserId === data.viewerUserId}
               canModerate={data.canModerate}
+              busy={change.isPending}
               onEdit={(body) => change.mutateAsync(() => scratchPadApi.update(companyId, note.id, { body }))}
               onDelete={() => change.mutate(() => scratchPadApi.remove(companyId, note.id))}
               onPromote={() => change.mutate(() => scratchPadApi.promote(companyId, note.id))}

@@ -157,6 +157,52 @@ describe("Scratch pad page", () => {
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit note"]')!.value).toBe("Changed text");
   });
 
+  it("does not carry a draft or an open editor into another company", async () => {
+    scratchPadApiMock.create.mockResolvedValue({});
+    await render(list([note({})]));
+    await typeNote("Draft written in company one");
+    const card = container.querySelector<HTMLElement>('[data-note-id="n1"]')!;
+    await act(async () => button("Edit", card)!.click());
+    expect(container.querySelector('textarea[aria-label="Edit note"]')).not.toBeNull();
+
+    companyState.selectedCompanyId = "company-2";
+    await render(list([]));
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="New note"]')!.value).toBe("");
+    expect(container.querySelector('textarea[aria-label="Edit note"]')).toBeNull();
+    expect(scratchPadApiMock.create).not.toHaveBeenCalled();
+  });
+
+  it("saves a note once when Save is pressed twice while the first request is open", async () => {
+    scratchPadApiMock.create.mockReturnValue(new Promise(() => undefined));
+    await render(list([]));
+    await typeNote("One idea");
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    expect(scratchPadApiMock.create).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(button("Save")!.disabled).toBe(true);
+  });
+
+  it("keeps text typed while a save was in flight", async () => {
+    let finish!: (value: unknown) => void;
+    scratchPadApiMock.create.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await render(list([]));
+    await typeNote("First");
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await typeNote("First, and more typed meanwhile");
+    await act(async () => finish({}));
+    await flush();
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="New note"]')!.value).toBe(
+      "First, and more typed meanwhile",
+    );
+  });
+
   it("shows each note with its author and time", async () => {
     await render(list([note({})]));
     const card = container.querySelector('[data-note-id="n1"]')!;

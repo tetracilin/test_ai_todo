@@ -142,6 +142,18 @@ describe("Product backlog page", () => {
     expect(text()).toContain("No stories match these filters.");
   });
 
+  it("resets the filters when the company changes, so a stale release id cannot hide every story", async () => {
+    await render(tree);
+    await choose("Filter by release", "r1");
+    expect(text()).not.toContain("Save as template");
+
+    companyState.selectedCompanyId = "company-2";
+    await render({ ...tree, releases: [] });
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Filter by release"]')!.value).toBe("all");
+    expect(text()).toContain("Pick a template");
+    expect(text()).toContain("Save as template");
+  });
+
   it("shows an empty message for a map with nothing in it", async () => {
     await render({ map: null, activities: [], tasks: [], releases: [], epics: [], stories: [] });
     expect(text()).toContain("The backlog is empty");
