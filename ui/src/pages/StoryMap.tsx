@@ -27,6 +27,7 @@ import {
 import { CellDrop, DragItem, MoveMenu, type MoveMenuItem } from "../components/StoryMapDnd";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { StoryMapTabs } from "../components/StoryMapTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -239,6 +240,8 @@ export function StoryMap() {
           />
         </div>
       </div>
+
+      <StoryMapTabs />
 
       {change.error ? <p className="text-sm text-destructive">{change.error.message}</p> : null}
 
