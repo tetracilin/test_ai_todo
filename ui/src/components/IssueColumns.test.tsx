@@ -196,3 +196,25 @@ describe("InboxIssueTrailingColumns attribution", () => {
     expect(text).not.toContain("Unknown");
   });
 });
+
+describe("InboxIssueMetaLeading ongoing state", () => {
+  it("marks an in-progress issue Ongoing in the list", () => {
+    const text = renderLeading(
+      <InboxIssueMetaLeading
+        issue={makeIssue({ id: "issue-1", identifier: "PAP-1", status: "in_progress" })}
+        isLive={false}
+      />,
+    );
+    expect(text).toContain("Ongoing");
+  });
+
+  it("does not mark an issue in another status Ongoing", () => {
+    const text = renderLeading(
+      <InboxIssueMetaLeading
+        issue={makeIssue({ id: "issue-2", identifier: "PAP-2", status: "todo" })}
+        isLive={false}
+      />,
+    );
+    expect(text).not.toContain("Ongoing");
+  });
+});

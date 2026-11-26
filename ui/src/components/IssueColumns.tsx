@@ -174,6 +174,14 @@ export function InboxIssueMetaLeading({
           {issue.identifier ?? issue.id.slice(0, 8)}
         </span>
       ) : null}
+      {issue.status === "in_progress" ? (
+        <span
+          data-testid="issue-ongoing-badge"
+          className="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-(length:--text-nano) font-medium text-foreground"
+        >
+          Ongoing
+        </span>
+      ) : null}
       {isLive && (
         <Badge variant="ghost"
           className={cn(
