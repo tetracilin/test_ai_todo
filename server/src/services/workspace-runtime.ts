@@ -494,17 +494,23 @@ type ProcessOutputAccumulator = {
  * Waits until no runtime continuation is in flight.
  *
  * The trackers are read again after every round because a continuation can
- * enqueue another one: a start queued behind a running start, a provision that
- * a start awaits, or a child exit caused by the teardown itself. Only an empty
- * set of trackers proves that nothing can still write a
- * `workspace_runtime_services` row.
+ * enqueue another one: a start queued behind a running start, or a provision
+ * that a start awaits. Only an empty set of trackers proves that nothing can
+ * still write a `workspace_runtime_services` row.
+ *
+ * `includeExitContinuations` is false for the simulated-supervisor-exit reset:
+ * there the incomplete teardown *is* the state under test, and draining it
+ * would finish the cleanup that the restart reconciliation is meant to adopt.
  */
-async function drainRuntimeContinuations() {
+async function drainRuntimeContinuations(
+  opts: { includeExitContinuations?: boolean } = {},
+) {
+  const includeExitContinuations = opts.includeExitContinuations ?? true;
   for (;;) {
     const inFlight = [
       ...runtimeProvisionByWorkspace.values(),
       ...runtimeControlStartByOwner.values(),
-      ...runtimeServiceExitContinuations,
+      ...(includeExitContinuations ? runtimeServiceExitContinuations : []),
     ];
     if (inFlight.length === 0) return;
     // A continuation's failure is already reported by its own caller; the reset
@@ -532,11 +538,16 @@ async function drainRuntimeContinuations() {
  * stopping a process schedules its exit-handler write. Without both drains a
  * late write can outlive the test and hit the parent company's foreign key after
  * the suite cleaned it up.
+ *
+ * `simulateSupervisorExit` is the exception: the exit-handler teardown is left
+ * incomplete on purpose, so the next startup reconciliation has the surviving
+ * service to adopt. A later reset still drains that continuation.
  */
 export async function resetRuntimeServicesForTests(
   opts: { terminateProcesses?: boolean; simulateSupervisorExit?: boolean } = {},
 ) {
-  await drainRuntimeContinuations();
+  const drainExitContinuations = !opts.simulateSupervisorExit;
+  await drainRuntimeContinuations({ includeExitContinuations: drainExitContinuations });
   if (opts.terminateProcesses) {
     for (const serviceId of [...runtimeServicesById.keys()]) {
       await stopRuntimeService(serviceId).catch(() => undefined);
@@ -552,13 +563,12 @@ export async function resetRuntimeServicesForTests(
       record.child?.stderr?.destroy();
     }
   }
-  await drainRuntimeContinuations();
+  await drainRuntimeContinuations({ includeExitContinuations: drainExitContinuations });
   runtimeServicesById.clear();
   runtimeServicesByReuseKey.clear();
   runtimeServiceLeasesByRun.clear();
   runtimeProvisionByWorkspace.clear();
   runtimeControlStartByOwner.clear();
-  runtimeServiceExitContinuations.clear();
   runtimeReplacementClaimsByReuseKey.clear();
   quarantinedRuntimeExposurePorts.clear();
   exposurePortPairClaims.clear();
