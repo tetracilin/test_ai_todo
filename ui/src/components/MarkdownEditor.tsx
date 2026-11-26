@@ -665,6 +665,49 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [isDragOver, setIsDragOver] = useState(false);
   const [richEditorError, setRichEditorError] = useState<string | null>(null);
   const dragDepthRef = useRef(0);
+  const placeholderLabel = placeholder?.trim() || null;
+
+  /**
+   * The rich editor's visible prompt is a non-interactive overlay, and its
+   * accessible name defaults to the generic "editable markdown". Both leave the
+   * reply box unidentifiable as "Reply" to assistive tech and to locator-based
+   * tooling. Reuse the placeholder as the real textbox's accessible name, and
+   * expose it as a `placeholder` attribute too so the editable answers the same
+   * queries a native textarea would.
+   */
+  const editorTranslation = useCallback(
+    (key: string, defaultValue: string) =>
+      key === "contentArea.editableMarkdown" && placeholderLabel ? placeholderLabel : defaultValue,
+    [placeholderLabel],
+  );
+
+  useEffect(() => {
+    if (richEditorError) return;
+    const editable = containerRef.current?.querySelector<HTMLElement>('[contenteditable="true"]');
+    if (!editable) return;
+    if (!placeholderLabel) {
+      editable.removeAttribute("placeholder");
+      return;
+    }
+    editable.setAttribute("placeholder", placeholderLabel);
+    return () => {
+      editable.removeAttribute("placeholder");
+    };
+  }, [placeholderLabel, richEditorError]);
+
+  /**
+   * Clicking the visible prompt should put the caret in the editor. The prompt
+   * sits above the empty editable with `pointer-events: none`, so the click
+   * skips it in a real browser; forwarding it explicitly also makes the click
+   * land on the prompt for automation and pointer tooling.
+   */
+  const focusEditorFromPlaceholder = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.closest('[class*="_placeholder_"]')) return;
+    event.preventDefault();
+    ref.current?.focus();
+  }, []);
 
   // Stable ref for imageUploadHandler so plugins don't recreate on every render
   const imageUploadHandlerRef = useRef(imageUploadHandler);
@@ -1335,6 +1378,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         }
       }}
       onPasteCapture={handlePasteCapture}
+      onClickCapture={focusEditorFromPlaceholder}
     >
       <MarkdownEditorRichErrorBoundary onError={handleRichEditorError}>
         <MDXEditor
@@ -1344,6 +1388,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           suppressHtmlProcessing
           placeholder={placeholder}
           readOnly={readOnly}
+          translation={editorTranslation}
           onChange={(rawNext) => {
             if (readOnly) return;
             // Recover blockquotes the exporter escaped as `\>` (see
