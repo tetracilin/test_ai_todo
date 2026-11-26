@@ -406,4 +406,32 @@ describe("openapi routes", () => {
     const codes = Object.keys(cancel.responses).sort();
     expect(codes).toEqual(["200", "401", "403", "404"]);
   });
+
+  it("documents story map writes as board-only and creates as 201", () => {
+    const { spec } = loadSpecRoutes();
+    const base = "/api/companies/{companyId}";
+    const writes: Array<[string, string]> = [];
+    const creates: string[] = [];
+    for (const kind of ["activities", "tasks", "releases", "epics", "stories"]) {
+      creates.push(`${base}/story-map/${kind}`);
+      writes.push(["post", `${base}/story-map/${kind}`]);
+      writes.push(["patch", `${base}/story-map/${kind}/{itemId}`]);
+      writes.push(["delete", `${base}/story-map/${kind}/{itemId}`]);
+    }
+    creates.push(`${base}/scratch-notes`);
+    writes.push(["post", `${base}/scratch-notes`]);
+    writes.push(["patch", `${base}/scratch-notes/{noteId}`]);
+    writes.push(["delete", `${base}/scratch-notes/{noteId}`]);
+
+    // The routes call assertBoard, so agents must not be advertised as allowed.
+    for (const [method, path] of writes) {
+      expect(spec.paths[path][method].security, `${method} ${path}`).not.toContainEqual({ AgentBearerAuth: [] });
+    }
+    for (const path of creates) {
+      expect(spec.paths[path].post.responses["201"], path).toBeDefined();
+      expect(spec.paths[path].post.responses["200"], path).toBeUndefined();
+    }
+    // Reads stay open to agents with company access.
+    expect(spec.paths[`${base}/story-map`].get.security).toContainEqual({ AgentBearerAuth: [] });
+  });
 });

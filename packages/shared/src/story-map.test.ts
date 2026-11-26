@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   SCRATCH_NOTE_MAX_LENGTH,
+  STORY_MAP_MAX_POSITION,
+  createStoryMapActivitySchema,
+  updateStoryMapActivitySchema,
   createScratchNoteSchema,
   createStoryMapReleaseSchema,
   createStoryMapStorySchema,
@@ -42,5 +45,12 @@ describe("story map schemas", () => {
     expect(createStoryMapReleaseSchema.safeParse({ name: "Release 1", targetDate: "2026-12-31" }).success).toBe(true);
     expect(createStoryMapReleaseSchema.safeParse({ name: "Release 1", targetDate: "next week" }).success).toBe(false);
     expect(createStoryMapReleaseSchema.safeParse({ name: "Release 1" }).success).toBe(true);
+  });
+  it("caps positions so they fit a Postgres integer and an append cannot overflow", () => {
+    expect(createStoryMapActivitySchema.safeParse({ name: "A", position: STORY_MAP_MAX_POSITION }).success).toBe(true);
+    expect(createStoryMapActivitySchema.safeParse({ name: "A", position: STORY_MAP_MAX_POSITION + 1 }).success).toBe(false);
+    expect(createStoryMapActivitySchema.safeParse({ name: "A", position: 3_000_000_000 }).success).toBe(false);
+    expect(updateStoryMapActivitySchema.safeParse({ position: 2147483647 }).success).toBe(false);
+    expect(createStoryMapActivitySchema.safeParse({ name: "A", position: -1 }).success).toBe(false);
   });
 });

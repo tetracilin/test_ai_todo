@@ -39,6 +39,12 @@ function pickDefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
+/** A row can vanish between the existence check and the write; that is a 404, not a 500. */
+function required<T>(row: T | undefined, message: string): T {
+  if (!row) throw notFound(message);
+  return row;
+}
+
 function blankToNull(value: string | null | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value?.trim() ?? "";
@@ -158,7 +164,7 @@ export function storyMapService(db: Db) {
         .insert(storyMapActivities)
         .values({ companyId, mapId: map.id, name: input.name, position })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async updateActivity(companyId: string, id: string, input: UpdateStoryMapActivity): Promise<StoryMapActivity> {
@@ -168,7 +174,7 @@ export function storyMapService(db: Db) {
         .set({ ...pickDefined(input), updatedAt: new Date() })
         .where(and(eq(storyMapActivities.companyId, companyId), eq(storyMapActivities.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async deleteActivity(companyId: string, id: string): Promise<StoryMapActivity> {
@@ -177,7 +183,7 @@ export function storyMapService(db: Db) {
         .delete(storyMapActivities)
         .where(and(eq(storyMapActivities.companyId, companyId), eq(storyMapActivities.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async createTask(companyId: string, input: CreateStoryMapTask): Promise<StoryMapTask> {
@@ -187,7 +193,7 @@ export function storyMapService(db: Db) {
         .insert(storyMapTasks)
         .values({ companyId, mapId: activity.mapId, activityId: activity.id, name: input.name, position })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async updateTask(companyId: string, id: string, input: UpdateStoryMapTask): Promise<StoryMapTask> {
@@ -197,7 +203,7 @@ export function storyMapService(db: Db) {
         .set({ ...pickDefined(input), updatedAt: new Date() })
         .where(and(eq(storyMapTasks.companyId, companyId), eq(storyMapTasks.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async deleteTask(companyId: string, id: string): Promise<StoryMapTask> {
@@ -206,7 +212,7 @@ export function storyMapService(db: Db) {
         .delete(storyMapTasks)
         .where(and(eq(storyMapTasks.companyId, companyId), eq(storyMapTasks.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async createRelease(companyId: string, input: CreateStoryMapRelease): Promise<StoryMapRelease> {
@@ -216,7 +222,7 @@ export function storyMapService(db: Db) {
         .insert(storyMapReleases)
         .values({ companyId, mapId: map.id, name: input.name, targetDate: input.targetDate ?? null, position })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async updateRelease(companyId: string, id: string, input: UpdateStoryMapRelease): Promise<StoryMapRelease> {
@@ -226,7 +232,7 @@ export function storyMapService(db: Db) {
         .set({ ...pickDefined(input), updatedAt: new Date() })
         .where(and(eq(storyMapReleases.companyId, companyId), eq(storyMapReleases.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     /** Stories of a deleted release return to "Unscheduled" (release_id set null by the database). */
@@ -236,7 +242,7 @@ export function storyMapService(db: Db) {
         .delete(storyMapReleases)
         .where(and(eq(storyMapReleases.companyId, companyId), eq(storyMapReleases.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async createEpic(companyId: string, input: CreateStoryMapEpic): Promise<StoryMapEpic> {
@@ -253,7 +259,7 @@ export function storyMapService(db: Db) {
           position,
         })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async updateEpic(companyId: string, id: string, input: UpdateStoryMapEpic): Promise<StoryMapEpic> {
@@ -269,7 +275,7 @@ export function storyMapService(db: Db) {
         .set({ ...patch, updatedAt: new Date() })
         .where(and(eq(storyMapEpics.companyId, companyId), eq(storyMapEpics.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     /** Stories of a deleted epic stay under their task (epic_id set null by the database). */
@@ -303,7 +309,7 @@ export function storyMapService(db: Db) {
           position,
         })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async updateStory(companyId: string, id: string, input: UpdateStoryMapStory): Promise<StoryMapStory> {
@@ -326,7 +332,7 @@ export function storyMapService(db: Db) {
         .set({ ...patch, updatedAt: new Date() })
         .where(and(eq(storyMapStories.companyId, companyId), eq(storyMapStories.id, id)))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     async deleteStory(companyId: string, id: string): Promise<StoryMapStory> {
@@ -351,7 +357,7 @@ export function storyMapService(db: Db) {
         .insert(scratchNotes)
         .values({ companyId, authorUserId, body: input.body })
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     /** Authors edit only their own notes (AD-106). */
@@ -367,14 +373,14 @@ export function storyMapService(db: Db) {
         .set({ body: input.body, updatedAt: new Date() })
         .where(eq(scratchNotes.id, note.id))
         .returning();
-      return row!;
+      return required(row, "Item not found");
     },
 
     /** Authors delete only their own notes (AD-106). */
     async deleteScratchNote(companyId: string, id: string, actorUserId: string): Promise<ScratchNote> {
       const note = await requireOwnScratchNote(companyId, id, actorUserId);
       const [row] = await db.delete(scratchNotes).where(eq(scratchNotes.id, note.id)).returning();
-      return row!;
+      return required(row, "Item not found");
     },
   };
 }

@@ -4,7 +4,9 @@ import { SCRATCH_NOTE_MAX_LENGTH, STORY_MAP_STORY_STATUSES } from "../types/stor
 const id = z.string().guid();
 const name = z.string().trim().min(1).max(200);
 const longText = z.string().trim().max(10000);
-const position = z.number().int().min(0);
+/** Largest value a Postgres integer column holds, minus one so an append (+1) cannot overflow. */
+export const STORY_MAP_MAX_POSITION = 2147483646;
+const position = z.number().int().min(0).max(STORY_MAP_MAX_POSITION);
 
 export const storyMapStoryStatusSchema = z.enum(STORY_MAP_STORY_STATUSES);
 

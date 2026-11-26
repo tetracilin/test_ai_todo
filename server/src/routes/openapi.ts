@@ -867,6 +867,24 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/story-map/activities",
+  "PATCH /api/companies/{companyId}/story-map/activities/{itemId}",
+  "DELETE /api/companies/{companyId}/story-map/activities/{itemId}",
+  "POST /api/companies/{companyId}/story-map/tasks",
+  "PATCH /api/companies/{companyId}/story-map/tasks/{itemId}",
+  "DELETE /api/companies/{companyId}/story-map/tasks/{itemId}",
+  "POST /api/companies/{companyId}/story-map/releases",
+  "PATCH /api/companies/{companyId}/story-map/releases/{itemId}",
+  "DELETE /api/companies/{companyId}/story-map/releases/{itemId}",
+  "POST /api/companies/{companyId}/story-map/epics",
+  "PATCH /api/companies/{companyId}/story-map/epics/{itemId}",
+  "DELETE /api/companies/{companyId}/story-map/epics/{itemId}",
+  "POST /api/companies/{companyId}/story-map/stories",
+  "PATCH /api/companies/{companyId}/story-map/stories/{itemId}",
+  "DELETE /api/companies/{companyId}/story-map/stories/{itemId}",
+  "POST /api/companies/{companyId}/scratch-notes",
+  "PATCH /api/companies/{companyId}/scratch-notes/{noteId}",
+  "DELETE /api/companies/{companyId}/scratch-notes/{noteId}",
   "GET /api/cloud/stacks",
   "GET /api/companies",
   "POST /api/companies",
@@ -1014,6 +1032,12 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 ]);
 
 const CREATED_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/story-map/activities",
+  "POST /api/companies/{companyId}/story-map/tasks",
+  "POST /api/companies/{companyId}/story-map/releases",
+  "POST /api/companies/{companyId}/story-map/epics",
+  "POST /api/companies/{companyId}/story-map/stories",
+  "POST /api/companies/{companyId}/scratch-notes",
   "POST /api/adapters/install",
   "POST /api/companies/{companyId}/agent-hires",
   "POST /api/companies/{companyId}/agents",
