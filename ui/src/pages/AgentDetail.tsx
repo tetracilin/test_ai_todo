@@ -62,6 +62,7 @@ import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
+import { stripInformationalStderrExcerpt } from "../lib/transcriptPresentation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
@@ -3237,6 +3238,10 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
   });
   const run = hydratedRun ?? initialRun;
   const metrics = runMetrics(run);
+  // The red stderr excerpt is a failure summary. Filter the benign
+  // start-of-run `[paperclip]` notices so a normal timeout diagnostic does not
+  // read as the run's error. The full transcript and raw log keep every line.
+  const stderrExcerpt = stripInformationalStderrExcerpt(run.stderrExcerpt);
   const { data: userDirectory } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(run.companyId),
     queryFn: () => accessApi.listUserDirectory(run.companyId),
@@ -3696,10 +3701,10 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       )}
 
       {/* stderr excerpt for failed runs */}
-      {run.stderrExcerpt && (
+      {stderrExcerpt && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{stderrExcerpt}</pre>
         </div>
       )}
 
@@ -3750,6 +3755,9 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   });
   const isLive = run.status === "running" || run.status === "queued";
   const shouldPollShellLog = shouldPollRunShellLog(run.status);
+  // Same failure-summary rule as the run header: the benign start-of-run
+  // `[paperclip]` notices are not failure details.
+  const stderrExcerpt = stripInformationalStderrExcerpt(run.stderrExcerpt);
   const { data: workspaceOperations = [] } = useQuery({
     queryKey: queryKeys.runWorkspaceOperations(run.id),
     queryFn: () => heartbeatsApi.workspaceOperations(run.id),
@@ -4275,11 +4283,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               {redactPathText(run.error, censorUsernameInLogs)}
             </div>
           )}
-          {run.stderrExcerpt && run.stderrExcerpt.trim() && (
+          {stderrExcerpt && (
             <div>
               <div className="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
               <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
-                {redactPathText(run.stderrExcerpt, censorUsernameInLogs)}
+                {redactPathText(stderrExcerpt, censorUsernameInLogs)}
               </pre>
             </div>
           )}

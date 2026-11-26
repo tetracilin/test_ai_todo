@@ -178,6 +178,59 @@ describe("RunTranscriptView", () => {
     });
   });
 
+  it("hides the informational adapter execution timeout notice from nice mode normalization", () => {
+    const entries: TranscriptEntry[] = [
+      {
+        kind: "stderr",
+        ts: "2026-03-12T00:00:00.000Z",
+        text: "[paperclip] Adapter execution timeout: none (no adapter wall-clock timeout for this target; set adapterConfig.timeoutSec to add one).",
+      },
+      {
+        kind: "stderr",
+        ts: "2026-03-12T00:00:01.000Z",
+        text: "[paperclip] Adapter execution timeout: timeoutSec=14400 (sandbox default; set adapterConfig.timeoutSec to override).",
+      },
+      {
+        kind: "stderr",
+        ts: "2026-03-12T00:00:02.000Z",
+        text: "[paperclip] ACPX child stderr tail (turn): error: missing credentials",
+      },
+      {
+        kind: "assistant",
+        ts: "2026-03-12T00:00:03.000Z",
+        text: "Working on the task.",
+      },
+    ];
+
+    const blocks = normalizeTranscript(entries, false);
+
+    // The start-of-run timeout notice is a diagnostic, not a failure, so nice
+    // mode hides it. Other stderr still shows as a log block.
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "stderr_group",
+      lines: [{ text: "[paperclip] ACPX child stderr tail (turn): error: missing credentials" }],
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "message",
+      role: "assistant",
+      text: "Working on the task.",
+    });
+  });
+
+  it("keeps the adapter execution timeout notice in raw mode for diagnosis", () => {
+    const notice =
+      "[paperclip] Adapter execution timeout: none (no adapter wall-clock timeout for this target; set adapterConfig.timeoutSec to add one).";
+
+    const html = renderToStaticMarkup(
+      <ThemeProvider>
+        <RunTranscriptView mode="raw" entries={[{ kind: "stderr", ts: "2026-03-12T00:00:00.000Z", text: notice }]} />
+      </ThemeProvider>,
+    );
+
+    expect(html).toContain(notice);
+  });
+
   it("renders successful result summaries as markdown in nice mode", () => {
     const html = renderToStaticMarkup(
       <ThemeProvider>
