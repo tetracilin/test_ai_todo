@@ -1639,6 +1639,13 @@
       "when": 1794107198028,
       "tag": "0235_discord_dm_inbound_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1795676985162,
+      "tag": "0236_story_map_scratch_pad",
+      "breakpoints": true
     }
   ]
 }

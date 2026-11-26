@@ -40,6 +40,15 @@ export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { folders } from "./folders.js";
+export {
+  storyMaps,
+  storyMapActivities,
+  storyMapTasks,
+  storyMapReleases,
+  storyMapEpics,
+  storyMapStories,
+  scratchNotes,
+} from "./story_map.js";
 export { issues } from "./issues.js";
 export { issueWatchdogs } from "./issue_watchdogs.js";
 export { issuePlanDecompositions } from "./issue_plan_decompositions.js";
