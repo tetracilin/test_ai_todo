@@ -444,7 +444,14 @@ function parseSystemActivity(text: string): { activityId?: string; name: string;
 
 function shouldHideNiceModeStderr(text: string): boolean {
   const normalized = compactWhitespace(text).toLowerCase();
-  return normalized.startsWith("[paperclip] skipping saved session resume");
+  return (
+    normalized.startsWith("[paperclip] skipping saved session resume")
+    // The acpx engine states the effective adapter execution timeout at run
+    // start. It is a diagnostic notice, not a failure: the real timeout failure
+    // starts with "Run exceeded the adapter execution timeout". Nice mode hides
+    // this notice so a normal run does not read as an error; Raw mode keeps it.
+    || normalized.startsWith("[paperclip] adapter execution timeout:")
+  );
 }
 
 function groupCommandBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
