@@ -1262,6 +1262,10 @@
   font-size: inherit;
   line-height: 1.5;
   color: var(--muted-foreground);
+  /* Keep the visible prompt clickable: MarkdownEditor forwards the click to the
+     editor so clicking "Reply" focuses the reply box. */
+  pointer-events: auto;
+  cursor: text;
 }
 
 /* MDXEditor defaults placeholders to a single clipped line. The task-chat
