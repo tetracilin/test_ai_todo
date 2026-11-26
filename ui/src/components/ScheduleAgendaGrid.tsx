@@ -200,6 +200,7 @@ export function ScheduleAgendaGrid({
               style={{ top: `${top}px`, height: `${height}px`, zIndex: selected ? 10 : 1 }}
             >
               <div
+                data-testid={`agenda-item-${item.issueId}`}
                 draggable={!!onRescheduleItem}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";

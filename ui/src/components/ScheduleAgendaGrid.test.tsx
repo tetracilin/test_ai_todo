@@ -94,7 +94,10 @@ describe("ScheduleAgendaGrid slot labels", () => {
     root = null;
   });
 
-  function renderItems(items: Parameters<typeof ScheduleAgendaGrid>[0]["items"]) {
+  function renderItems(
+    items: Parameters<typeof ScheduleAgendaGrid>[0]["items"],
+    onSelectItem: (issueId: string) => void = () => {},
+  ) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -105,7 +108,7 @@ describe("ScheduleAgendaGrid slot labels", () => {
           startHour={7}
           endHour={20}
           items={items}
-          onSelectItem={() => {}}
+          onSelectItem={onSelectItem}
         />,
       );
     });
@@ -163,5 +166,45 @@ describe("ScheduleAgendaGrid slot labels", () => {
     expect(ongoing).toHaveLength(1);
     expect(rendered.textContent).toContain("Todo");
     expect(rendered.textContent).toContain("In progress");
+  });
+
+  it("handles a click on the agenda block and then shows its slot and the Ongoing mark", () => {
+    const onSelectItem = vi.fn();
+    const rendered = renderItems(
+      [
+        {
+          issueId: "issue-1",
+          identifier: "T-1",
+          title: "Write",
+          status: "todo",
+          scheduledAt: new Date(2026, 9, 14, 9, 0, 0).toISOString(),
+          scheduledDurationMinutes: 180,
+        },
+        {
+          issueId: "issue-2",
+          identifier: "T-2",
+          title: "Review",
+          status: "in_progress",
+          scheduledAt: new Date(2026, 9, 14, 12, 30, 0).toISOString(),
+          scheduledDurationMinutes: 60,
+        },
+      ],
+      onSelectItem,
+    );
+
+    const firstBlock = rendered.querySelector('[data-testid="agenda-item-issue-1"]') as HTMLElement;
+    expect(firstBlock).not.toBeNull();
+    firstBlock.click();
+    expect(onSelectItem).toHaveBeenCalledWith("issue-1");
+    expect(rendered.textContent).toContain("09:00 - 12:00");
+
+    const secondBlock = rendered.querySelector('[data-testid="agenda-item-issue-2"]') as HTMLElement;
+    expect(secondBlock).not.toBeNull();
+    secondBlock.click();
+    expect(onSelectItem).toHaveBeenCalledWith("issue-2");
+    const ongoing = Array.from(rendered.querySelectorAll("span")).filter(
+      (node) => node.textContent === "Ongoing",
+    );
+    expect(ongoing).toHaveLength(1);
   });
 });
