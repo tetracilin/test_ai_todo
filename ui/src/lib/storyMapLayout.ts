@@ -108,3 +108,121 @@ export function formatReleaseDate(targetDate: string | null): string | null {
     timeZone: "UTC",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Moving items: pure helpers for drag and drop and for the Move menu.
+// ---------------------------------------------------------------------------
+
+export type MovableKind = "activities" | "tasks" | "epics" | "stories";
+
+export interface MovePlan {
+  kind: MovableKind;
+  id: string;
+  body: { beforeId?: string | null; releaseId?: string | null };
+}
+
+/** Keys used as drag and drop ids, for example "story:abc" or "cell:<taskId>|<rowKey>". */
+export const dragKey = {
+  activity: (id: string) => `activity:${id}`,
+  task: (id: string) => `task:${id}`,
+  epic: (id: string) => `epic:${id}`,
+  story: (id: string) => `story:${id}`,
+  cell: (taskId: string, rowKey: string) => `cell:${taskId}|${rowKey}`,
+};
+
+/**
+ * The sibling to insert before so that `movingId` lands where `targetId` is.
+ * Moving forward passes the target (insert after it); moving back inserts before it.
+ */
+export function beforeIdForDrop(orderedIds: string[], movingId: string, targetId: string): string | null {
+  const from = orderedIds.indexOf(movingId);
+  const to = orderedIds.indexOf(targetId);
+  if (to < 0) return null;
+  if (from >= 0 && from < to) return orderedIds[to + 1] ?? null;
+  return targetId;
+}
+
+/**
+ * For the Move menu: the sibling to insert before to step one place earlier or later.
+ * Returns undefined when the item is already at that end, so the menu can disable it.
+ */
+export function beforeIdForStep(
+  orderedIds: string[],
+  movingId: string,
+  direction: "earlier" | "later",
+): string | null | undefined {
+  const index = orderedIds.indexOf(movingId);
+  if (index < 0) return undefined;
+  if (direction === "earlier") return index === 0 ? undefined : orderedIds[index - 1];
+  if (index === orderedIds.length - 1) return undefined;
+  return orderedIds[index + 2] ?? null;
+}
+
+function parseKey(key: string): { type: string; id: string } | null {
+  const at = key.indexOf(":");
+  return at < 0 ? null : { type: key.slice(0, at), id: key.slice(at + 1) };
+}
+
+function sortedIds<T extends { id: string; position: number; createdAt: Date | string }>(items: T[]) {
+  return [...items].sort(byPosition).map((item) => item.id);
+}
+
+/** Sibling ids, in order, of an item that can be moved. Stories are ordered across the whole task. */
+export function siblingIds(tree: StoryMapTree, kind: MovableKind, id: string): string[] {
+  if (kind === "activities") return sortedIds(tree.activities);
+  if (kind === "tasks") {
+    const task = tree.tasks.find((t) => t.id === id);
+    return task ? sortedIds(tree.tasks.filter((t) => t.activityId === task.activityId)) : [];
+  }
+  if (kind === "epics") {
+    const epic = tree.epics.find((e) => e.id === id);
+    return epic ? sortedIds(tree.epics.filter((e) => e.taskId === epic.taskId)) : [];
+  }
+  const story = tree.stories.find((s) => s.id === id);
+  return story ? sortedIds(tree.stories.filter((s) => s.taskId === story.taskId)) : [];
+}
+
+/**
+ * Turns "dragged X over Y" into the move to save, or null when the drop means nothing
+ * (different kinds, different parents, or dropped on itself).
+ */
+export function resolveDrop(activeKey: string, overKey: string | null, tree: StoryMapTree): MovePlan | null {
+  if (!overKey || activeKey === overKey) return null;
+  const active = parseKey(activeKey);
+  const over = parseKey(overKey);
+  if (!active || !over) return null;
+
+  if (active.type === "activity" && over.type === "activity") {
+    return { kind: "activities", id: active.id, body: { beforeId: beforeIdForDrop(siblingIds(tree, "activities", active.id), active.id, over.id) } };
+  }
+  if (active.type === "task" && over.type === "task") {
+    const ids = siblingIds(tree, "tasks", active.id);
+    if (!ids.includes(over.id)) return null;
+    return { kind: "tasks", id: active.id, body: { beforeId: beforeIdForDrop(ids, active.id, over.id) } };
+  }
+  if (active.type === "epic" && over.type === "epic") {
+    const ids = siblingIds(tree, "epics", active.id);
+    if (!ids.includes(over.id)) return null;
+    return { kind: "epics", id: active.id, body: { beforeId: beforeIdForDrop(ids, active.id, over.id) } };
+  }
+  if (active.type === "story") {
+    const story = tree.stories.find((s) => s.id === active.id);
+    if (!story) return null;
+    if (over.type === "story") {
+      const target = tree.stories.find((s) => s.id === over.id);
+      if (!target || target.taskId !== story.taskId) return null;
+      const ids = siblingIds(tree, "stories", story.id);
+      return {
+        kind: "stories",
+        id: story.id,
+        body: { beforeId: beforeIdForDrop(ids, story.id, target.id), releaseId: target.releaseId ?? null },
+      };
+    }
+    if (over.type === "cell") {
+      const [taskId, rowKey] = over.id.split("|");
+      if (taskId !== story.taskId) return null;
+      return { kind: "stories", id: story.id, body: { releaseId: rowKey === UNSCHEDULED_ROW ? null : rowKey } };
+    }
+  }
+  return null;
+}

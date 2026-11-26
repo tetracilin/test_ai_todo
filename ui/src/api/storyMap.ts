@@ -4,6 +4,8 @@ import type {
   CreateStoryMapReleaseRequest,
   CreateStoryMapStoryRequest,
   CreateStoryMapTaskRequest,
+  MoveStoryMapItemRequest,
+  MoveStoryMapStoryRequest,
   StoryMapActivity,
   StoryMapEpic,
   StoryMapRelease,
@@ -25,6 +27,8 @@ function base(companyId: string) {
 function item(companyId: string, kind: string, id: string) {
   return `${base(companyId)}/${kind}/${encodeURIComponent(id)}`;
 }
+
+export type MovableStoryMapKind = "activities" | "tasks" | "epics" | "stories";
 
 export const storyMapApi = {
   get: (companyId: string) => api.get<StoryMapTree>(base(companyId)),
@@ -53,4 +57,12 @@ export const storyMapApi = {
     api.post<StoryMapStory>(`${base(companyId)}/stories`, payload),
   updateStory: (companyId: string, id: string, payload: UpdateStoryMapStoryRequest) =>
     api.patch<StoryMapStory>(item(companyId, "stories", id), payload),
+
+  /** Moves an item among its siblings; a story may also change release. */
+  move: (
+    companyId: string,
+    kind: MovableStoryMapKind,
+    id: string,
+    payload: MoveStoryMapItemRequest | MoveStoryMapStoryRequest,
+  ) => api.post<unknown>(`${item(companyId, kind, id)}/move`, payload),
 };

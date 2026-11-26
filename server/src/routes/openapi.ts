@@ -76,6 +76,8 @@ import {
   createStoryMapReleaseSchema,
   createStoryMapStorySchema,
   createStoryMapTaskSchema,
+  moveStoryMapItemSchema,
+  moveStoryMapStorySchema,
   updateScratchNoteSchema,
   updateStoryMapActivitySchema,
   updateStoryMapEpicSchema,
@@ -867,6 +869,11 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/story-map/activities/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/tasks/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/releases/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/epics/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/stories/{itemId}/move",
   "POST /api/companies/{companyId}/story-map/activities",
   "PATCH /api/companies/{companyId}/story-map/activities/{itemId}",
   "DELETE /api/companies/{companyId}/story-map/activities/{itemId}",
@@ -7019,6 +7026,46 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/story-map/stories/{itemId}",
   tags: ["story-map"],
   summary: "Delete a story map story",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/activities/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map activity among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/tasks/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map task among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/releases/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map release among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/epics/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map epic among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/stories/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map story among its siblings",
+  body: moveStoryMapStorySchema,
 });
 
 registerCurrentRoute({

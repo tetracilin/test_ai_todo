@@ -417,6 +417,7 @@ describe("openapi routes", () => {
       writes.push(["post", `${base}/story-map/${kind}`]);
       writes.push(["patch", `${base}/story-map/${kind}/{itemId}`]);
       writes.push(["delete", `${base}/story-map/${kind}/{itemId}`]);
+      writes.push(["post", `${base}/story-map/${kind}/{itemId}/move`]);
     }
     creates.push(`${base}/scratch-notes`);
     writes.push(["post", `${base}/scratch-notes`]);

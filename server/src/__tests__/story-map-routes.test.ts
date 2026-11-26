@@ -8,6 +8,7 @@ const mockService = vi.hoisted(() => ({
   updateActivity: vi.fn(),
   deleteActivity: vi.fn(),
   createStory: vi.fn(),
+  moveItem: vi.fn(),
   listScratchNotes: vi.fn(),
   createScratchNote: vi.fn(),
   updateScratchNote: vi.fn(),
@@ -111,6 +112,50 @@ describe("story map routes", () => {
     expect(res.status).toBe(200);
     expect(mockService.deleteActivity).toHaveBeenCalledWith(COMPANY, ID);
     expect(mockLogActivity).toHaveBeenCalledWith({}, expect.objectContaining({ action: "story_map_activity.deleted" }));
+  });
+});
+
+describe("story map move routes", () => {
+  beforeEach(() => {
+    for (const mock of Object.values(mockService)) mock.mockReset();
+    mockLogActivity.mockReset();
+  });
+
+  it("moves an item before a sibling and logs the move", async () => {
+    mockService.moveItem.mockResolvedValue({ id: ID });
+    const BEFORE = "22222222-2222-4222-8222-222222222222";
+    const res = await request(await createApp(board))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({ beforeId: BEFORE });
+    expect(res.status).toBe(200);
+    expect(mockService.moveItem).toHaveBeenCalledWith(COMPANY, "tasks", ID, { beforeId: BEFORE });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ action: "story_map_task.moved", entityId: ID, details: { beforeId: BEFORE } }),
+    );
+  });
+
+  it("moves a story to a release, or to Unscheduled with null", async () => {
+    mockService.moveItem.mockResolvedValue({ id: ID });
+    const RELEASE = "33333333-3333-4333-8333-333333333333";
+    const app = await createApp(board);
+    await request(app).post(`/api/companies/${COMPANY}/story-map/stories/${ID}/move`).send({ releaseId: RELEASE });
+    await request(app).post(`/api/companies/${COMPANY}/story-map/stories/${ID}/move`).send({ releaseId: null });
+    expect(mockService.moveItem).toHaveBeenNthCalledWith(1, COMPANY, "stories", ID, { releaseId: RELEASE });
+    expect(mockService.moveItem).toHaveBeenNthCalledWith(2, COMPANY, "stories", ID, { releaseId: null });
+  });
+
+  it("refuses a bad id and a move by an agent", async () => {
+    const bad = await request(await createApp(board))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({ beforeId: "not-a-uuid" });
+    expect(bad.status).toBe(400);
+    const agent = { type: "agent", agentId: "agent-1", companyId: COMPANY, source: "agent_key" };
+    const denied = await request(await createApp(agent))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({});
+    expect(denied.status).toBe(403);
+    expect(mockService.moveItem).not.toHaveBeenCalled();
   });
 });
 

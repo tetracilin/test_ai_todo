@@ -16,6 +16,7 @@ import type {
   CreateStoryMapRelease,
   CreateStoryMapStory,
   CreateStoryMapTask,
+  MoveStoryMapStory,
   ScratchNote,
   StoryMap,
   StoryMapActivity,
@@ -49,6 +50,24 @@ function blankToNull(value: string | null | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export type MovableStoryMapKind = "activities" | "tasks" | "releases" | "epics" | "stories";
+
+/**
+ * Places `id` among `ids`: before `beforeId`, or at `endIndex` (default: the end) when no
+ * target is given. Returns the new order. The target must be one of the siblings.
+ */
+export function planStoryMapOrder(ids: string[], id: string, beforeId: string | null | undefined, endIndex?: number) {
+  const rest = ids.filter((other) => other !== id);
+  if (beforeId) {
+    const index = rest.indexOf(beforeId);
+    if (index < 0) throw unprocessable("The target is not a sibling of the moved item");
+    rest.splice(index, 0, id);
+  } else {
+    rest.splice(endIndex ?? rest.length, 0, id);
+  }
+  return rest;
 }
 
 export function storyMapService(db: Db) {
@@ -342,6 +361,92 @@ export function storyMapService(db: Db) {
         .returning();
       if (!row) throw notFound("Story not found");
       return row;
+    },
+
+    /**
+     * Moves an item among its siblings and renumbers them in one transaction, so the order
+     * is saved as a whole. A story may also change release in the same step.
+     */
+    async moveItem(
+      companyId: string,
+      kind: MovableStoryMapKind,
+      id: string,
+      input: MoveStoryMapStory,
+    ): Promise<StoryMapActivity | StoryMapTask | StoryMapRelease | StoryMapEpic | StoryMapStory> {
+      if (input.beforeId === id) throw unprocessable("An item cannot be moved before itself");
+      if (kind !== "stories" && input.releaseId !== undefined) {
+        throw unprocessable("Only a story can change release");
+      }
+      if (input.releaseId) await requireRelease(companyId, input.releaseId);
+
+      return db.transaction(async (tx) => {
+        // The tables share id, company, position and timestamps, so one table type stands for all.
+        const table = {
+          activities: storyMapActivities,
+          tasks: storyMapTasks,
+          releases: storyMapReleases,
+          epics: storyMapEpics,
+          stories: storyMapStories,
+        }[kind] as typeof storyMapActivities;
+
+        const [item] = await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), eq(table.id, id)))
+          .limit(1);
+        if (!item) throw notFound("Item not found");
+
+        const scope =
+          kind === "activities" || kind === "releases"
+            ? eq(table.mapId, item.mapId)
+            : kind === "tasks"
+              ? eq(storyMapTasks.activityId, (item as unknown as StoryMapTask).activityId)
+              : eq(
+                  (kind === "epics" ? storyMapEpics : storyMapStories).taskId,
+                  (item as unknown as StoryMapEpic | StoryMapStory).taskId,
+                );
+        const siblings = (await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), scope))
+          .orderBy(asc(table.position), asc(table.createdAt))) as unknown as Array<{
+          id: string;
+          position: number;
+          releaseId?: string | null;
+        }>;
+
+        const releaseChange = kind === "stories" && input.releaseId !== undefined;
+        let endIndex: number | undefined;
+        if (releaseChange && !input.beforeId) {
+          // Dropped on a cell without a target: go after the last story already in that release.
+          const rest = siblings.filter((other) => other.id !== id);
+          const lastInRelease = rest.map((other) => (other.releaseId ?? null) === (input.releaseId ?? null)).lastIndexOf(true);
+          endIndex = lastInRelease < 0 ? rest.length : lastInRelease + 1;
+        }
+        const order = planStoryMapOrder(siblings.map((s) => s.id), id, input.beforeId, endIndex);
+
+        const positions = new Map(siblings.map((s) => [s.id, s.position]));
+        const now = new Date();
+        for (const [index, siblingId] of order.entries()) {
+          const changesRelease = releaseChange && siblingId === id;
+          if (positions.get(siblingId) === index && !changesRelease) continue;
+          await tx
+            .update(table)
+            .set({
+              position: index,
+              updatedAt: now,
+              ...(changesRelease ? ({ releaseId: input.releaseId ?? null } as Record<string, unknown>) : {}),
+            })
+            .where(and(eq(table.companyId, companyId), eq(table.id, siblingId)));
+        }
+
+        const [moved] = await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), eq(table.id, id)))
+          .limit(1);
+        return required(moved, "Item not found") as unknown as StoryMapStory;
+      });
     },
 
     async listScratchNotes(companyId: string): Promise<ScratchNote[]> {

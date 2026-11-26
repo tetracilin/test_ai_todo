@@ -1,5 +1,14 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { Map as MapIcon, Plus } from "lucide-react";
 import { storyMapApi } from "../api/storyMap";
 import { useCompany } from "../context/CompanyContext";
@@ -7,10 +16,15 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import {
   UNSCHEDULED_ROW,
+  beforeIdForStep,
   buildStoryMapLayout,
+  dragKey,
   formatReleaseDate,
+  resolveDrop,
+  type MovableKind,
   type StoryMapColumn,
 } from "../lib/storyMapLayout";
+import { CellDrop, DragItem, MoveMenu, type MoveMenuItem } from "../components/StoryMapDnd";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
@@ -134,6 +148,13 @@ function AddInline({
   );
 }
 
+/** Prefer the card under the pointer over the cell around it, and never the dragged card itself. */
+const collisionDetection: CollisionDetection = (args) => {
+  const hits = pointerWithin(args).filter((hit) => hit.id !== args.active.id);
+  const cards = hits.filter((hit) => !String(hit.id).startsWith("cell:"));
+  return cards.length > 0 ? cards : hits;
+};
+
 const ROW_LABEL_COLUMN = "10rem";
 const TASK_COLUMN = "14rem";
 
@@ -157,6 +178,18 @@ export function StoryMap() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.storyMap.tree(selectedCompanyId ?? "") }),
   });
 
+  // A small movement is a click (rename, menu); a longer one starts a drag.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (!tree || !selectedCompanyId) return;
+    const plan = resolveDrop(String(event.active.id), event.over ? String(event.over.id) : null, tree);
+    if (plan) {
+      const companyForMove = selectedCompanyId;
+      change.mutate(() => storyMapApi.move(companyForMove, plan.kind, plan.id, plan.body));
+    }
+  }
+
   if (!selectedCompanyId) {
     return <EmptyState icon={MapIcon} message="Select a company to view its story map." />;
   }
@@ -167,6 +200,20 @@ export function StoryMap() {
   const companyId = selectedCompanyId;
   const layout = buildStoryMapLayout(tree);
   const run = (action: () => Promise<unknown>) => change.mutate(action);
+  const moveTo = (kind: MovableKind, id: string, body: { beforeId?: string | null; releaseId?: string | null }) =>
+    run(() => storyMapApi.move(companyId, kind, id, body));
+
+  /** "Move earlier / later" entries for the menu, from the ordered ids of the item's siblings. */
+  function stepItems(kind: MovableKind, ids: string[], id: string, earlier: string, later: string): MoveMenuItem[] {
+    return (["earlier", "later"] as const).map((direction) => {
+      const beforeId = beforeIdForStep(ids, id, direction);
+      return {
+        label: direction === "earlier" ? earlier : later,
+        disabled: beforeId === undefined,
+        onSelect: () => moveTo(kind, id, { beforeId: beforeId ?? null }),
+      };
+    });
+  }
 
   // One grid slot per task. An activity without tasks still gets one empty slot.
   const slots = layout.groups.flatMap((group): Array<{ column: StoryMapColumn | null }> =>
@@ -202,6 +249,7 @@ export function StoryMap() {
         />
       ) : (
         <div className="overflow-x-auto border-t border-l border-border">
+          <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={handleDragEnd}>
           <div className="grid" style={{ gridTemplateColumns }} role="grid" aria-label="Story map">
             {/* Activities */}
             <div className={`${cell} text-xs text-muted-foreground`}>Activities</div>
@@ -211,12 +259,26 @@ export function StoryMap() {
                 className={`${cell} bg-muted/30`}
                 style={{ gridColumn: `span ${Math.max(columns.length, 1)}` }}
               >
-                <InlineText
-                  value={activity.name}
-                  label={`activity ${activity.name}`}
-                  className="font-medium"
-                  onSave={(name) => run(() => storyMapApi.updateActivity(companyId, activity.id, { name }))}
-                />
+                <DragItem dragKey={dragKey.activity(activity.id)} label={`activity ${activity.name}`}>
+                  <div className="flex items-center justify-between gap-1">
+                    <InlineText
+                      value={activity.name}
+                      label={`activity ${activity.name}`}
+                      className="font-medium"
+                      onSave={(name) => run(() => storyMapApi.updateActivity(companyId, activity.id, { name }))}
+                    />
+                    <MoveMenu
+                      label={`activity ${activity.name}`}
+                      items={stepItems(
+                        "activities",
+                        layout.groups.map((g) => g.activity.id),
+                        activity.id,
+                        "Move left",
+                        "Move right",
+                      )}
+                    />
+                  </div>
+                </DragItem>
                 <AddInline
                   label={`Add task to ${activity.name}`}
                   onAdd={(name) => run(() => storyMapApi.createTask(companyId, { activityId: activity.id, name }))}
@@ -229,11 +291,27 @@ export function StoryMap() {
             {slots.map(({ column }, index) => (
               <div key={column?.task.id ?? `empty-${index}`} className={`${cell} bg-muted/20`}>
                 {column ? (
-                  <InlineText
-                    value={column.task.name}
-                    label={`task ${column.task.name}`}
-                    onSave={(name) => run(() => storyMapApi.updateTask(companyId, column.task.id, { name }))}
-                  />
+                  <DragItem dragKey={dragKey.task(column.task.id)} label={`task ${column.task.name}`}>
+                    <div className="flex items-center justify-between gap-1">
+                      <InlineText
+                        value={column.task.name}
+                        label={`task ${column.task.name}`}
+                        onSave={(name) => run(() => storyMapApi.updateTask(companyId, column.task.id, { name }))}
+                      />
+                      <MoveMenu
+                        label={`task ${column.task.name}`}
+                        items={stepItems(
+                          "tasks",
+                          (layout.groups.find((g) => g.activity.id === column.task.activityId)?.columns ?? []).map(
+                            (c) => c.task.id,
+                          ),
+                          column.task.id,
+                          "Move left",
+                          "Move right",
+                        )}
+                      />
+                    </div>
+                  </DragItem>
                 ) : (
                   <span className="text-xs text-muted-foreground">No tasks yet</span>
                 )}
@@ -247,13 +325,26 @@ export function StoryMap() {
                 {column ? (
                   <>
                     {column.epics.map((epic) => (
-                      <InlineText
-                        key={epic.id}
-                        value={epic.name}
-                        label={`epic ${epic.name}`}
-                        className="text-sm text-muted-foreground"
-                        onSave={(name) => run(() => storyMapApi.updateEpic(companyId, epic.id, { name }))}
-                      />
+                      <DragItem key={epic.id} dragKey={dragKey.epic(epic.id)} label={`epic ${epic.name}`}>
+                        <div className="flex items-center justify-between gap-1">
+                          <InlineText
+                            value={epic.name}
+                            label={`epic ${epic.name}`}
+                            className="text-sm text-muted-foreground"
+                            onSave={(name) => run(() => storyMapApi.updateEpic(companyId, epic.id, { name }))}
+                          />
+                          <MoveMenu
+                            label={`epic ${epic.name}`}
+                            items={stepItems(
+                              "epics",
+                              column.epics.map((e) => e.id),
+                              epic.id,
+                              "Move up",
+                              "Move down",
+                            )}
+                          />
+                        </div>
+                      </DragItem>
                     ))}
                     <AddInline
                       label={`Add epic to ${column.task.name}`}
@@ -286,18 +377,44 @@ export function StoryMap() {
                   {slots.map(({ column }, index) => (
                     <div key={column?.task.id ?? `${row.key}-${index}`} className={cell}>
                       {column ? (
-                        <>
+                        <CellDrop dropKey={dragKey.cell(column.task.id, row.key)}>
                           {layout.storiesAt(column.task.id, row.key).map((story) => {
                             const epic = layout.epicById(story.epicId);
                             return (
-                              <div key={story.id} className="border border-border bg-card p-2 text-sm">
+                              <DragItem
+                                key={story.id}
+                                dragKey={dragKey.story(story.id)}
+                                label={`story ${story.title}`}
+                                className="border border-border bg-card p-2 text-sm"
+                              >
                                 {epic ? <div className="text-xs text-muted-foreground">{epic.name}</div> : null}
-                                <InlineText
-                                  value={story.title}
-                                  label={`story ${story.title}`}
-                                  onSave={(title) => run(() => storyMapApi.updateStory(companyId, story.id, { title }))}
-                                />
-                              </div>
+                                <div className="flex items-center justify-between gap-1">
+                                  <InlineText
+                                    value={story.title}
+                                    label={`story ${story.title}`}
+                                    onSave={(title) => run(() => storyMapApi.updateStory(companyId, story.id, { title }))}
+                                  />
+                                  <MoveMenu
+                                    label={`story ${story.title}`}
+                                    items={stepItems(
+                                      "stories",
+                                      layout.storiesAt(column.task.id, row.key).map((s) => s.id),
+                                      story.id,
+                                      "Move up",
+                                      "Move down",
+                                    )}
+                                    releaseHeading="Move to release"
+                                    releaseItems={layout.rows.map((target) => ({
+                                      label: target.release?.name ?? "Unscheduled",
+                                      disabled: target.key === row.key,
+                                      onSelect: () =>
+                                        moveTo("stories", story.id, {
+                                          releaseId: target.key === UNSCHEDULED_ROW ? null : target.key,
+                                        }),
+                                    }))}
+                                  />
+                                </div>
+                              </DragItem>
                             );
                           })}
                           <AddInline
@@ -312,7 +429,7 @@ export function StoryMap() {
                               )
                             }
                           />
-                        </>
+                        </CellDrop>
                       ) : null}
                     </div>
                   ))}
@@ -320,6 +437,7 @@ export function StoryMap() {
               );
             })}
           </div>
+          </DndContext>
         </div>
       )}
     </div>

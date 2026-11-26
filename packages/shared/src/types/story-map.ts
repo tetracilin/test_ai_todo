@@ -133,5 +133,12 @@ export interface UpdateStoryMapStoryRequest {
   status?: StoryMapStoryStatus;
   position?: number;
 }
+/**
+ * Moves one item among its siblings. The item goes before `beforeId`, or to the
+ * end when `beforeId` is null or missing. Siblings are renumbered in one step.
+ */
+export interface MoveStoryMapItemRequest { beforeId?: string | null }
+/** A story can also change release in the same move. `releaseId: null` means Unscheduled. */
+export interface MoveStoryMapStoryRequest extends MoveStoryMapItemRequest { releaseId?: string | null }
 export interface CreateScratchNoteRequest { body: string }
 export interface UpdateScratchNoteRequest { body: string }

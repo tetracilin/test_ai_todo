@@ -24,11 +24,47 @@ const storyMapApiMock = vi.hoisted(() => ({
   updateEpic: vi.fn(),
   createStory: vi.fn(),
   updateStory: vi.fn(),
+  move: vi.fn(),
 }));
+
+const dndState = vi.hoisted(() => ({ onDragEnd: null as null | ((event: unknown) => void) }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => companyState }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => breadcrumbState }));
 vi.mock("../api/storyMap", () => ({ storyMapApi: storyMapApiMock }));
+
+// Render the menu inline (no radix portal) so menu items are clickable in jsdom.
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    disabled,
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" disabled={disabled} data-menu-item onClick={onSelect}>
+      {children}
+    </button>
+  ),
+}));
+
+// Keep the real drag hooks, but let the test call the drop handler directly.
+vi.mock("@dnd-kit/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dnd-kit/core")>();
+  return {
+    ...actual,
+    DndContext: ({ children, onDragEnd }: { children: React.ReactNode; onDragEnd: (event: unknown) => void }) => {
+      dndState.onDragEnd = onDragEnd;
+      return <actual.DndContext>{children}</actual.DndContext>;
+    },
+  };
+});
 
 const NOW = new Date("2026-11-26T00:00:00Z");
 const base = { companyId: "company-1", mapId: "map-1", createdAt: NOW, updatedAt: NOW };
@@ -251,6 +287,75 @@ describe("Story map page", () => {
 
     expect(storyMapApiMock.updateActivity).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Plan work");
+  });
+
+  function menuItem(scopeLabel: string, text: string) {
+    const scope = byLabel(scopeLabel)!.closest("[data-drag-key]")!;
+    return [...scope.querySelectorAll<HTMLButtonElement>("[data-menu-item]")].find((b) => b.textContent === text);
+  }
+
+  it("moves a task left or right from its menu, and disables a move at the end", async () => {
+    storyMapApiMock.move.mockResolvedValue({});
+    await render(fullTree);
+
+    // "Create project" is first: it cannot move left, but it can move right (before the one after next, so the end).
+    expect(menuItem("Rename task Create project", "Move left")?.disabled).toBe(true);
+    await act(async () => menuItem("Rename task Create project", "Move right")!.click());
+    expect(storyMapApiMock.move).toHaveBeenCalledWith("company-1", "tasks", "t1", { beforeId: null });
+
+    // "Invite team" is last: move left puts it before "Create project".
+    await act(async () => menuItem("Rename task Invite team", "Move left")!.click());
+    expect(storyMapApiMock.move).toHaveBeenLastCalledWith("company-1", "tasks", "t2", { beforeId: "t1" });
+    expect(menuItem("Rename task Invite team", "Move right")?.disabled).toBe(true);
+  });
+
+  it("moves an activity from its menu", async () => {
+    storyMapApiMock.move.mockResolvedValue({});
+    await render({
+      ...fullTree,
+      activities: [...fullTree.activities, { ...base, id: "a2", name: "Review work", position: 1 }],
+    });
+    await act(async () => menuItem("Rename activity Review work", "Move left")!.click());
+    expect(storyMapApiMock.move).toHaveBeenCalledWith("company-1", "activities", "a2", { beforeId: "a1" });
+  });
+
+  it("moves a story to a release or back to Unscheduled from its menu", async () => {
+    storyMapApiMock.move.mockResolvedValue({});
+    await render(fullTree);
+
+    // "Save as template" sits in Unscheduled: Release 1 is open to it, Unscheduled is its own row.
+    expect(menuItem("Rename story Save as template", "Unscheduled")?.disabled).toBe(true);
+    await act(async () => menuItem("Rename story Save as template", "Release 1")!.click());
+    expect(storyMapApiMock.move).toHaveBeenCalledWith("company-1", "stories", "s2", { releaseId: "r1" });
+
+    await act(async () => menuItem("Rename story Pick a template", "Unscheduled")!.click());
+    expect(storyMapApiMock.move).toHaveBeenLastCalledWith("company-1", "stories", "s1", { releaseId: null });
+  });
+
+  it("saves a drop: dragging a task onto the one before it moves it in front", async () => {
+    storyMapApiMock.move.mockResolvedValue({});
+    await render(fullTree);
+
+    await act(async () => {
+      dndState.onDragEnd!({ active: { id: "task:t2" }, over: { id: "task:t1" } });
+    });
+    expect(storyMapApiMock.move).toHaveBeenCalledWith("company-1", "tasks", "t2", { beforeId: "t1" });
+  });
+
+  it("saves a drop of a story on a cell as a release change, and ignores a drop on nothing", async () => {
+    storyMapApiMock.move.mockResolvedValue({});
+    await render(fullTree);
+
+    await act(async () => {
+      dndState.onDragEnd!({ active: { id: "story:s2" }, over: { id: "cell:t1|r1" } });
+    });
+    expect(storyMapApiMock.move).toHaveBeenCalledWith("company-1", "stories", "s2", { releaseId: "r1" });
+
+    storyMapApiMock.move.mockClear();
+    await act(async () => {
+      dndState.onDragEnd!({ active: { id: "story:s2" }, over: null });
+    });
+    expect(storyMapApiMock.move).not.toHaveBeenCalled();
   });
 
   it("asks to select a company when none is selected", async () => {

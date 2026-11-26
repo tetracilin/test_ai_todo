@@ -7,6 +7,8 @@ import {
   createStoryMapReleaseSchema,
   createStoryMapStorySchema,
   createStoryMapTaskSchema,
+  moveStoryMapItemSchema,
+  moveStoryMapStorySchema,
   updateScratchNoteSchema,
   updateStoryMapActivitySchema,
   updateStoryMapEpicSchema,
@@ -18,6 +20,7 @@ import type { ZodTypeAny } from "zod";
 import { validate } from "../middleware/validate.js";
 import { forbidden } from "../errors.js";
 import { logActivity, storyMapService } from "../services/index.js";
+import type { MovableStoryMapKind } from "../services/story-map.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type Service = ReturnType<typeof storyMapService>;
@@ -151,6 +154,16 @@ export function storyMapRoutes(db: Db) {
         await log(req, companyId, `${kind.entity}.updated`, kind.entity, updated.id, pick(updated, kind.logFields));
         res.json(updated);
       },
+      move: async (req: Request, res: Response) => {
+        const companyId = req.params.companyId as string;
+        authorizeWrite(req, companyId);
+        const moved = await svc.moveItem(companyId, path as MovableStoryMapKind, req.params.itemId as string, req.body);
+        await log(req, companyId, `${kind.entity}.moved`, kind.entity, moved.id, {
+          beforeId: req.body.beforeId ?? null,
+          ...(req.body.releaseId !== undefined ? { releaseId: req.body.releaseId } : {}),
+        });
+        res.json(moved);
+      },
       remove: async (req: Request, res: Response) => {
         const companyId = req.params.companyId as string;
         authorizeWrite(req, companyId);
@@ -164,26 +177,31 @@ export function storyMapRoutes(db: Db) {
   const activities = itemHandlers("activities");
   router.post("/companies/:companyId/story-map/activities", validate(createStoryMapActivitySchema), activities.create);
   router.patch("/companies/:companyId/story-map/activities/:itemId", validate(updateStoryMapActivitySchema), activities.update);
+  router.post("/companies/:companyId/story-map/activities/:itemId/move", validate(moveStoryMapItemSchema), activities.move);
   router.delete("/companies/:companyId/story-map/activities/:itemId", activities.remove);
 
   const tasks = itemHandlers("tasks");
   router.post("/companies/:companyId/story-map/tasks", validate(createStoryMapTaskSchema), tasks.create);
   router.patch("/companies/:companyId/story-map/tasks/:itemId", validate(updateStoryMapTaskSchema), tasks.update);
+  router.post("/companies/:companyId/story-map/tasks/:itemId/move", validate(moveStoryMapItemSchema), tasks.move);
   router.delete("/companies/:companyId/story-map/tasks/:itemId", tasks.remove);
 
   const releases = itemHandlers("releases");
   router.post("/companies/:companyId/story-map/releases", validate(createStoryMapReleaseSchema), releases.create);
   router.patch("/companies/:companyId/story-map/releases/:itemId", validate(updateStoryMapReleaseSchema), releases.update);
+  router.post("/companies/:companyId/story-map/releases/:itemId/move", validate(moveStoryMapItemSchema), releases.move);
   router.delete("/companies/:companyId/story-map/releases/:itemId", releases.remove);
 
   const epics = itemHandlers("epics");
   router.post("/companies/:companyId/story-map/epics", validate(createStoryMapEpicSchema), epics.create);
   router.patch("/companies/:companyId/story-map/epics/:itemId", validate(updateStoryMapEpicSchema), epics.update);
+  router.post("/companies/:companyId/story-map/epics/:itemId/move", validate(moveStoryMapItemSchema), epics.move);
   router.delete("/companies/:companyId/story-map/epics/:itemId", epics.remove);
 
   const stories = itemHandlers("stories");
   router.post("/companies/:companyId/story-map/stories", validate(createStoryMapStorySchema), stories.create);
   router.patch("/companies/:companyId/story-map/stories/:itemId", validate(updateStoryMapStorySchema), stories.update);
+  router.post("/companies/:companyId/story-map/stories/:itemId/move", validate(moveStoryMapStorySchema), stories.move);
   router.delete("/companies/:companyId/story-map/stories/:itemId", stories.remove);
 
   router.get("/companies/:companyId/scratch-notes", async (req, res) => {
