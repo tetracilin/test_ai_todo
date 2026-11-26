@@ -54,6 +54,14 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   ),
 }));
 
+vi.mock("@/components/ui/sheet", () => ({
+  Sheet: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? <div>{children}</div> : null),
+  SheetContent: ({ children }: { children: React.ReactNode }) => <div role="dialog">{children}</div>,
+  SheetHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  SheetDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
+}));
+
 // Keep the real drag hooks, but let the test call the drop handler directly.
 vi.mock("@dnd-kit/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@dnd-kit/core")>();
@@ -356,6 +364,41 @@ describe("Story map page", () => {
       dndState.onDragEnd!({ active: { id: "story:s2" }, over: null });
     });
     expect(storyMapApiMock.move).not.toHaveBeenCalled();
+  });
+
+  it("opens a story in the detail panel, saves it and closes the panel", async () => {
+    storyMapApiMock.updateStory.mockResolvedValue({});
+    await render(fullTree);
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await click("Open story Pick a template");
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+
+    const description = [...container.querySelectorAll("label")]
+      .find((l) => l.textContent?.startsWith("Description"))!
+      .querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(description, "Choose one");
+      description.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector('[role="dialog"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(storyMapApiMock.updateStory).toHaveBeenCalledWith(
+      "company-1",
+      "s1",
+      expect.objectContaining({ title: "Pick a template", description: "Choose one", epicId: "e1" }),
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("opens an epic and lists its stories", async () => {
+    await render(fullTree);
+    await click("Open epic Project templates");
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Epic details");
+    expect(dialog.textContent).toContain("Pick a template");
   });
 
   it("asks to select a company when none is selected", async () => {

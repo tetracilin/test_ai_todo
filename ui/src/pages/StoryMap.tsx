@@ -9,7 +9,7 @@ import {
   type CollisionDetection,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Map as MapIcon, Plus } from "lucide-react";
+import { Map as MapIcon, PanelRightOpen, Plus } from "lucide-react";
 import { storyMapApi } from "../api/storyMap";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -28,6 +28,7 @@ import { CellDrop, DragItem, MoveMenu, type MoveMenuItem } from "../components/S
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { StoryMapTabs } from "../components/StoryMapTabs";
+import { StoryDetailPanel, type DetailTarget } from "../components/StoryDetailPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -179,6 +180,8 @@ export function StoryMap() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.storyMap.tree(selectedCompanyId ?? "") }),
   });
 
+  const [detail, setDetail] = useState<DetailTarget | null>(null);
+
   // A small movement is a click (rename, menu); a longer one starts a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -203,6 +206,18 @@ export function StoryMap() {
   const run = (action: () => Promise<unknown>) => change.mutate(action);
   const moveTo = (kind: MovableKind, id: string, body: { beforeId?: string | null; releaseId?: string | null }) =>
     run(() => storyMapApi.move(companyId, kind, id, body));
+
+  const openButton = (target: DetailTarget, label: string) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label={`Open ${label}`}
+      onClick={() => setDetail(target)}
+    >
+      <PanelRightOpen />
+    </Button>
+  );
 
   /** "Move earlier / later" entries for the menu, from the ordered ids of the item's siblings. */
   function stepItems(kind: MovableKind, ids: string[], id: string, earlier: string, later: string): MoveMenuItem[] {
@@ -336,6 +351,7 @@ export function StoryMap() {
                             className="text-sm text-muted-foreground"
                             onSave={(name) => run(() => storyMapApi.updateEpic(companyId, epic.id, { name }))}
                           />
+                          {openButton({ kind: "epic", id: epic.id }, `epic ${epic.name}`)}
                           <MoveMenu
                             label={`epic ${epic.name}`}
                             items={stepItems(
@@ -397,6 +413,7 @@ export function StoryMap() {
                                     label={`story ${story.title}`}
                                     onSave={(title) => run(() => storyMapApi.updateStory(companyId, story.id, { title }))}
                                   />
+                                  {openButton({ kind: "story", id: story.id }, `story ${story.title}`)}
                                   <MoveMenu
                                     label={`story ${story.title}`}
                                     items={stepItems(
@@ -443,6 +460,20 @@ export function StoryMap() {
           </DndContext>
         </div>
       )}
+
+      <StoryDetailPanel
+        tree={tree}
+        target={detail}
+        onClose={() => setDetail(null)}
+        onSaveStory={(id, patch) => {
+          run(() => storyMapApi.updateStory(companyId, id, patch));
+          setDetail(null);
+        }}
+        onSaveEpic={(id, patch) => {
+          run(() => storyMapApi.updateEpic(companyId, id, patch));
+          setDetail(null);
+        }}
+      />
     </div>
   );
 }
