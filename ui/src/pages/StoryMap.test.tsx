@@ -421,6 +421,52 @@ describe("Story map page", () => {
     expect(links[0]!.closest("[data-drag-key]")?.getAttribute("data-drag-key")).toBe("story:s2");
   });
 
+  it("keeps what was typed when a save fails, and clears it when the save works", async () => {
+    storyMapApiMock.createActivity.mockRejectedValueOnce(new Error("Server said no"));
+    await render(emptyTree);
+
+    await click("Add activity");
+    await typeInto("Add activity: name", "Plan work");
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await flush();
+    // The form is still open and still holds the text; the error is shown.
+    expect((byLabel("Add activity: name") as HTMLInputElement).value).toBe("Plan work");
+    expect(container.textContent).toContain("Server said no");
+
+    storyMapApiMock.createActivity.mockResolvedValueOnce({});
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await flush();
+    expect(byLabel("Add activity: name")).toBeNull();
+  });
+
+  it("keeps the rename box open with its text when the rename fails", async () => {
+    storyMapApiMock.updateTask.mockRejectedValue(new Error("Rename failed"));
+    await render(fullTree);
+    await click("Rename task Create project");
+    await typeInto("Name of task Create project", "Start project");
+    await act(async () => {
+      byLabel("Name of task Create project")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await flush();
+    expect((byLabel("Name of task Create project") as HTMLInputElement).value).toBe("Start project");
+  });
+
+  it("keeps the detail panel open when saving a story fails", async () => {
+    storyMapApiMock.updateStory.mockRejectedValue(new Error("Could not save"));
+    await render(fullTree);
+    await click("Open story Pick a template");
+    await act(async () => {
+      container.querySelector('[role="dialog"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain("Could not save");
+  });
+
   it("asks to select a company when none is selected", async () => {
     companyState.selectedCompanyId = null;
     await render(emptyTree);

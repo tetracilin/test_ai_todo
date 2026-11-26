@@ -26,7 +26,8 @@ function NoteCard({
   note: ScratchNoteView;
   isMine: boolean;
   canModerate: boolean;
-  onEdit: (body: string) => void;
+  /** Returns a promise; the editor stays open, with the text, if it rejects. */
+  onEdit: (body: string) => Promise<unknown>;
   onDelete: () => void;
   onPromote: () => void;
   onArchive: () => void;
@@ -50,8 +51,9 @@ function NoteCard({
               size="sm"
               disabled={draft.trim().length === 0}
               onClick={() => {
-                onEdit(draft.trim());
-                setEditing(false);
+                onEdit(draft.trim())
+                  .then(() => setEditing(false))
+                  .catch(() => undefined); // the page shows the error
               }}
             >
               Save
@@ -167,8 +169,11 @@ export function ScratchPad() {
           event.preventDefault();
           const body = draft.trim();
           if (!body) return;
-          change.mutate(() => scratchPadApi.create(companyId, { body }));
-          setDraft("");
+          // Clear the box only once the note is saved, so a failed save keeps the text.
+          change
+            .mutateAsync(() => scratchPadApi.create(companyId, { body }))
+            .then(() => setDraft(""))
+            .catch(() => undefined);
         }}
       >
         <Textarea
@@ -207,7 +212,7 @@ export function ScratchPad() {
               note={note}
               isMine={note.authorUserId === data.viewerUserId}
               canModerate={data.canModerate}
-              onEdit={(body) => change.mutate(() => scratchPadApi.update(companyId, note.id, { body }))}
+              onEdit={(body) => change.mutateAsync(() => scratchPadApi.update(companyId, note.id, { body }))}
               onDelete={() => change.mutate(() => scratchPadApi.remove(companyId, note.id))}
               onPromote={() => change.mutate(() => scratchPadApi.promote(companyId, note.id))}
               onArchive={() => change.mutate(() => scratchPadApi.archive(companyId, note.id))}

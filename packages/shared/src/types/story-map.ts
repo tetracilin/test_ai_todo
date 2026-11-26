@@ -115,6 +115,8 @@ export interface ScratchNoteList {
 export interface PromoteScratchNoteResult {
   note: ScratchNote;
   story: StoryMapStory;
+  /** The idea column is created on first use. These are the parents this promotion created, if any. */
+  createdParents: { activity: StoryMapActivity | null; task: StoryMapTask | null };
 }
 
 /** Where promoted notes land on the story map. */

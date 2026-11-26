@@ -127,6 +127,36 @@ describe("Scratch pad page", () => {
     expect(button("Save")!.disabled).toBe(true);
   });
 
+  it("keeps the typed note when saving fails, and clears the box only after it is saved", async () => {
+    scratchPadApiMock.create.mockRejectedValueOnce(new Error("Could not save the note"));
+    await render(list([]));
+    await typeNote("An idea worth keeping");
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await flush();
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="New note"]')!.value).toBe("An idea worth keeping");
+    expect(text()).toContain("Could not save the note");
+
+    scratchPadApiMock.create.mockResolvedValueOnce({});
+    await act(async () => {
+      container.querySelector("form")!.requestSubmit();
+    });
+    await flush();
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="New note"]')!.value).toBe("");
+  });
+
+  it("keeps the editor open with the text when an edit fails", async () => {
+    scratchPadApiMock.update.mockRejectedValue(new Error("Edit failed"));
+    await render(list([note({})]));
+    const card = container.querySelector<HTMLElement>('[data-note-id="n1"]')!;
+    await act(async () => button("Edit", card)!.click());
+    await typeNote("Changed text", "Edit note");
+    await act(async () => button("Save", card)!.click());
+    await flush();
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit note"]')!.value).toBe("Changed text");
+  });
+
   it("shows each note with its author and time", async () => {
     await render(list([note({})]));
     const card = container.querySelector('[data-note-id="n1"]')!;

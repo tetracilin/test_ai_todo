@@ -168,6 +168,14 @@ describe("StoryDetailPanel", () => {
     expect(onSaveEpic).toHaveBeenCalledWith("e2", { name: "Sharing and export", description: "Share the project" });
   });
 
+  it("scrolls inside the panel so a long form stays reachable", async () => {
+    await render({ kind: "story", id: "s1" });
+    const scroller = container.querySelector(".overflow-y-auto");
+    expect(scroller).not.toBeNull();
+    expect(scroller!.querySelector("form")).not.toBeNull();
+    expect(scroller!.className).toContain("min-h-0");
+  });
+
   it("handles an item that was deleted while the panel was open", async () => {
     await render({ kind: "story", id: "gone" });
     expect(container.textContent).toContain("no longer exists");

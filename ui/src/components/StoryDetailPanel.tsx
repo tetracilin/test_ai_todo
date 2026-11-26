@@ -45,7 +45,7 @@ function StoryForm({
 }: {
   tree: StoryMapTree;
   storyId: string;
-  onSave: (patch: StoryPatch) => void;
+  onSave: (patch: StoryPatch) => unknown;
 }) {
   const story = tree.stories.find((item) => item.id === storyId);
   const [title, setTitle] = useState(story?.title ?? "");
@@ -135,7 +135,7 @@ function EpicForm({
 }: {
   tree: StoryMapTree;
   epicId: string;
-  onSave: (patch: EpicPatch) => void;
+  onSave: (patch: EpicPatch) => unknown;
 }) {
   const epic = tree.epics.find((item) => item.id === epicId);
   const [name, setName] = useState(epic?.name ?? "");
@@ -201,8 +201,8 @@ export function StoryDetailPanel({
   tree: StoryMapTree;
   target: DetailTarget | null;
   onClose: () => void;
-  onSaveStory: (id: string, patch: StoryPatch) => void;
-  onSaveEpic: (id: string, patch: EpicPatch) => void;
+  onSaveStory: (id: string, patch: StoryPatch) => unknown;
+  onSaveEpic: (id: string, patch: EpicPatch) => unknown;
 }) {
   const heading = target?.kind === "epic" ? "Epic details" : "Story details";
   return (
@@ -214,12 +214,14 @@ export function StoryDetailPanel({
             {target?.kind === "epic" ? "Describe the epic and see the stories inside it." : "Describe the story and how to accept it."}
           </SheetDescription>
         </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {target?.kind === "story" ? (
           <StoryForm key={target.id} tree={tree} storyId={target.id} onSave={(patch) => onSaveStory(target.id, patch)} />
         ) : null}
         {target?.kind === "epic" ? (
           <EpicForm key={target.id} tree={tree} epicId={target.id} onSave={(patch) => onSaveEpic(target.id, patch)} />
         ) : null}
+        </div>
       </SheetContent>
     </Sheet>
   );

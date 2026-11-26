@@ -251,6 +251,13 @@ export function storyMapRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     await authorizeModerate(req, companyId);
     const result = await svc.promoteScratchNote(companyId, req.params.noteId as string);
+    // The first promotion also creates the idea column. Log what it created.
+    if (result.createdParents.activity) {
+      await log(req, companyId, "story_map_activity.created", "story_map_activity", result.createdParents.activity.id, pick(result.createdParents.activity, ["name", "position"]));
+    }
+    if (result.createdParents.task) {
+      await log(req, companyId, "story_map_task.created", "story_map_task", result.createdParents.task.id, pick(result.createdParents.task, ["name", "activityId", "position"]));
+    }
     await log(req, companyId, "scratch_note.promoted", "scratch_note", result.note.id, { storyId: result.story.id });
     await log(req, companyId, "story_map_story.created", "story_map_story", result.story.id, pick(result.story, ["title", "taskId", "releaseId", "status", "position"]));
     res.json(result);

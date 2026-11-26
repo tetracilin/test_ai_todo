@@ -230,12 +230,36 @@ describe("scratch note routes", () => {
 
   it("lets an owner promote a note and logs the note and the new story", async () => {
     mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
-    mockService.promoteScratchNote.mockResolvedValue({ note: { id: ID }, story: { id: "story-9", title: "An idea" } });
+    mockService.promoteScratchNote.mockResolvedValue({
+      note: { id: ID },
+      story: { id: "story-9", title: "An idea" },
+      createdParents: { activity: null, task: null },
+    });
     const res = await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
     expect(res.status).toBe(200);
     expect(mockService.promoteScratchNote).toHaveBeenCalledWith(COMPANY, ID);
     const actions = mockLogActivity.mock.calls.map((call) => call[1].action);
     expect(actions).toEqual(["scratch_note.promoted", "story_map_story.created"]);
+  });
+
+  it("logs the idea column when the first promotion creates it", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
+    mockService.promoteScratchNote.mockResolvedValue({
+      note: { id: ID },
+      story: { id: "story-9", title: "An idea" },
+      createdParents: {
+        activity: { id: "act-1", name: "Scratch pad ideas", position: 0 },
+        task: { id: "task-1", name: "Promoted ideas", activityId: "act-1", position: 0 },
+      },
+    });
+    await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    const actions = mockLogActivity.mock.calls.map((call) => call[1].action);
+    expect(actions).toEqual([
+      "story_map_activity.created",
+      "story_map_task.created",
+      "scratch_note.promoted",
+      "story_map_story.created",
+    ]);
   });
 
   it("lets an admin archive a note", async () => {

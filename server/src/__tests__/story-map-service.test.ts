@@ -270,6 +270,67 @@ describeEmbeddedPostgres("story map service", () => {
     await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
   });
 
+  it("promotes a note once when two requests arrive together, and reports the parents it created", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board as PDF" });
+
+    const results = await Promise.allSettled([
+      svc.promoteScratchNote(companyId, note.id),
+      svc.promoteScratchNote(companyId, note.id),
+      svc.promoteScratchNote(companyId, note.id),
+    ]);
+    const done = results.filter((r) => r.status === "fulfilled");
+    expect(done).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(2);
+
+    const tree = await svc.getTree(companyId);
+    expect(tree.stories).toHaveLength(1);
+    expect(tree.activities).toHaveLength(1);
+    expect(tree.tasks).toHaveLength(1);
+    const first = (done[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof svc.promoteScratchNote>>>).value;
+    expect(first.note.promotedStoryId).toBe(tree.stories[0]!.id);
+    expect(first.createdParents.activity?.name).toBe("Scratch pad ideas");
+    expect(first.createdParents.task?.name).toBe("Promoted ideas");
+
+    // The column exists now: a later promotion creates no parents.
+    const other = await svc.createScratchNote(companyId, "u2", { body: "Dark mode" });
+    const second = await svc.promoteScratchNote(companyId, other.id);
+    expect(second.createdParents).toEqual({ activity: null, task: null });
+  });
+
+  it("creates the idea column once when different notes are promoted together", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const notes = await Promise.all(
+      ["One", "Two", "Three"].map((body, index) => svc.createScratchNote(companyId, `u${index}`, { body })),
+    );
+    await Promise.all(notes.map((note) => svc.promoteScratchNote(companyId, note.id)));
+    const tree = await svc.getTree(companyId);
+    expect(tree.activities).toHaveLength(1);
+    expect(tree.tasks).toHaveLength(1);
+    expect(tree.stories).toHaveLength(3);
+  });
+
+  it("keeps positions unique when several moves run together", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const items = [];
+    for (const name of ["A", "B", "C", "D", "E"]) items.push(await svc.createActivity(companyId, { name }));
+
+    await Promise.all([
+      svc.moveItem(companyId, "activities", items[4]!.id, { beforeId: items[0]!.id }),
+      svc.moveItem(companyId, "activities", items[3]!.id, { beforeId: items[0]!.id }),
+      svc.moveItem(companyId, "activities", items[0]!.id, {}),
+      svc.moveItem(companyId, "activities", items[2]!.id, { beforeId: items[1]!.id }),
+    ]);
+
+    const activities = (await svc.getTree(companyId)).activities;
+    expect(activities).toHaveLength(5);
+    expect(activities.map((a) => a.position).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(new Set(activities.map((a) => a.id)).size).toBe(5);
+  });
+
   it("archives a note and refuses to promote it afterwards", async () => {
     const svc = storyMapService(db);
     const companyId = await seedCompany();

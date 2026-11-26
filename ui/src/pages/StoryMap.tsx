@@ -43,11 +43,13 @@ function InlineText({
 }: {
   value: string;
   label: string;
-  onSave: (next: string) => void;
+  /** May return a promise. The box stays open, with the text, if it rejects. */
+  onSave: (next: string) => unknown;
   className?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
 
   if (!editing) {
     return (
@@ -66,9 +68,17 @@ function InlineText({
   }
 
   function finish(save: boolean) {
+    if (saving) return;
     const next = draft.trim();
-    setEditing(false);
-    if (save && next && next !== value) onSave(next);
+    if (!save || !next || next === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    Promise.resolve(onSave(next))
+      .then(() => setEditing(false))
+      .catch(() => undefined) // The page shows the error; the typed text stays here.
+      .finally(() => setSaving(false));
   }
 
   return (
@@ -95,7 +105,8 @@ function AddInline({
 }: {
   label: string;
   withDate?: boolean;
-  onAdd: (name: string, date: string | null) => void;
+  /** May return a promise. The form stays open, with the text, if it rejects. */
+  onAdd: (name: string, date: string | null) => unknown;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -114,10 +125,13 @@ function AddInline({
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    onAdd(trimmed, date || null);
-    setName("");
-    setDate("");
-    setOpen(false);
+    Promise.resolve(onAdd(trimmed, date || null))
+      .then(() => {
+        setName("");
+        setDate("");
+        setOpen(false);
+      })
+      .catch(() => undefined); // The page shows the error; the typed text stays here.
   }
 
   return (
@@ -202,7 +216,7 @@ export function StoryMap() {
     const plan = resolveDrop(String(event.active.id), event.over ? String(event.over.id) : null, tree);
     if (plan) {
       const companyForMove = selectedCompanyId;
-      change.mutate(() => storyMapApi.move(companyForMove, plan.kind, plan.id, plan.body));
+      void change.mutateAsync(() => storyMapApi.move(companyForMove, plan.kind, plan.id, plan.body)).catch(() => undefined);
     }
   }
 
@@ -215,9 +229,11 @@ export function StoryMap() {
 
   const companyId = selectedCompanyId;
   const layout = buildStoryMapLayout(tree);
-  const run = (action: () => Promise<unknown>) => change.mutate(action);
-  const moveTo = (kind: MovableKind, id: string, body: { beforeId?: string | null; releaseId?: string | null }) =>
-    run(() => storyMapApi.move(companyId, kind, id, body));
+  // run() waits for the result, so a form can keep its text when the save fails.
+  const run = (action: () => Promise<unknown>) => change.mutateAsync(action);
+  const moveTo = (kind: MovableKind, id: string, body: { beforeId?: string | null; releaseId?: string | null }) => {
+    void run(() => storyMapApi.move(companyId, kind, id, body)).catch(() => undefined); // error is shown above the map
+  };
 
   const openButton = (target: DetailTarget, label: string) => (
     <Button
@@ -482,14 +498,16 @@ export function StoryMap() {
         tree={tree}
         target={detail}
         onClose={() => setDetail(null)}
-        onSaveStory={(id, patch) => {
-          run(() => storyMapApi.updateStory(companyId, id, patch));
-          setDetail(null);
-        }}
-        onSaveEpic={(id, patch) => {
-          run(() => storyMapApi.updateEpic(companyId, id, patch));
-          setDetail(null);
-        }}
+        onSaveStory={(id, patch) =>
+          run(() => storyMapApi.updateStory(companyId, id, patch))
+            .then(() => setDetail(null))
+            .catch(() => undefined)
+        }
+        onSaveEpic={(id, patch) =>
+          run(() => storyMapApi.updateEpic(companyId, id, patch))
+            .then(() => setDetail(null))
+            .catch(() => undefined)
+        }
       />
     </div>
   );
