@@ -35,6 +35,21 @@ function formatHourLabel(hour: number): string {
   return hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
 }
 
+/** 24-hour wall clock, zero padded: `09:05`. */
+function formatClockTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * The block's scheduled slot, `09:00 - 12:00`, from its start and duration.
+ * The end is derived from the duration the block is drawn with, so a live
+ * resize previews the new end time.
+ */
+export function formatSlotRange(start: Date, durationMinutes: number): string {
+  const end = new Date(start.getTime() + Math.max(1, durationMinutes) * 60_000);
+  return `${formatClockTime(start)} - ${formatClockTime(end)}`;
+}
+
 export function ScheduleAgendaGrid({
   date,
   startHour,
@@ -175,6 +190,8 @@ export function ScheduleAgendaGrid({
             liveResize?.issueId === item.issueId ? liveResize.minutes : item.scheduledDurationMinutes ?? 30;
           const height = Math.max(22, (duration / 60) * pixelsPerHour - 2);
           const selected = item.issueId === selectedItemId;
+          const slotRange = formatSlotRange(itemDate, duration);
+          const isOngoing = item.status === "in_progress";
 
           return (
             <div
@@ -183,6 +200,7 @@ export function ScheduleAgendaGrid({
               style={{ top: `${top}px`, height: `${height}px`, zIndex: selected ? 10 : 1 }}
             >
               <div
+                data-testid={`agenda-item-${item.issueId}`}
                 draggable={!!onRescheduleItem}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
@@ -199,16 +217,23 @@ export function ScheduleAgendaGrid({
                   onRescheduleItem && "cursor-grab active:cursor-grabbing",
                 )}
               >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-foreground">{item.title}</p>
-                  {item.identifier && (
-                    <p className="truncate text-(length:--text-nano) text-muted-foreground">{item.identifier}</p>
+                <div className="flex min-w-0 items-start justify-between gap-1">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">{item.title}</p>
+                    {item.identifier && (
+                      <p className="truncate text-(length:--text-nano) text-muted-foreground">{item.identifier}</p>
+                    )}
+                  </div>
+                  {isOngoing && (
+                    <span className="shrink-0 rounded-full border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-(length:--text-nano) font-medium text-foreground">
+                      Ongoing
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-1">
                   <IssueStatusBadge status={item.status} />
-                  <span className="text-(length:--text-nano) text-muted-foreground">
-                    {itemDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                  <span className="shrink-0 text-(length:--text-nano) text-muted-foreground" title={`Scheduled ${slotRange}`}>
+                    {slotRange}
                   </span>
                 </div>
                 {onResizeItem && (

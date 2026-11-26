@@ -51,6 +51,7 @@ vi.mock("@mdxeditor/editor", async () => {
       onError,
       className,
       suppressHtmlProcessing,
+      translation,
     }: {
       markdown: string;
       placeholder?: string;
@@ -58,6 +59,7 @@ vi.mock("@mdxeditor/editor", async () => {
       onError?: (error: unknown) => void;
       suppressHtmlProcessing?: boolean;
       className?: string;
+      translation?: (key: string, defaultValue: string) => string;
     },
     forwardedRef: React.ForwardedRef<{ setMarkdown: (value: string) => void; focus: () => void } | null>,
   ) {
@@ -110,6 +112,8 @@ vi.mock("@mdxeditor/editor", async () => {
       };
     }, []);
 
+    const accessibleName = translation?.("contentArea.editableMarkdown", "editable markdown") ?? "editable markdown";
+
     return (
       <div
         ref={editableRef}
@@ -117,8 +121,12 @@ vi.mock("@mdxeditor/editor", async () => {
         className={className}
         contentEditable
         suppressContentEditableWarning
+        role="textbox"
+        aria-label={accessibleName}
       >
-        {content || placeholder || ""}
+        {content || (
+          placeholder ? <span className="_placeholder_mock">{placeholder}</span> : ""
+        )}
       </div>
     );
   });
@@ -248,6 +256,46 @@ describe("MarkdownEditor", () => {
     mdxEditorMockState.throwOnRender = false;
     mdxEditorMockState.markdownValues = [];
     mdxEditorMockState.suppressHtmlProcessingValues = [];
+  });
+
+  it("exposes the visible placeholder as the editor's accessible name and placeholder attribute", async () => {
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<MarkdownEditor value="" onChange={() => {}} placeholder="Reply" />);
+    });
+    await flush();
+
+    const editable = container.querySelector('[data-testid="mdx-editor"]') as HTMLElement;
+    expect(editable.getAttribute("aria-label")).toBe("Reply");
+    expect(editable.getAttribute("placeholder")).toBe("Reply");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("focuses the editor when the visible placeholder prompt is clicked", async () => {
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<MarkdownEditor value="" onChange={() => {}} placeholder="Reply" />);
+    });
+    await flush();
+
+    const editable = container.querySelector('[data-testid="mdx-editor"]') as HTMLElement;
+    const placeholderPrompt = container.querySelector("._placeholder_mock") as HTMLElement;
+    const focusSpy = vi.spyOn(editable, "focus");
+
+    act(() => {
+      placeholderPrompt.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 
   it("applies async external value updates once the editor ref becomes ready", async () => {

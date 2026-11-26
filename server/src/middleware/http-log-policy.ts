@@ -26,7 +26,7 @@ const SILENCED_SUCCESS_STATIC_PATHS = new Set([
   "/",
   "/index.html",
   "/favicon.ico",
-  "/site.webmanifest",
+  "/manifest.webmanifest",
   "/sw.js",
 ]);
 
