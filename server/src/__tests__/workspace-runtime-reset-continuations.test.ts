@@ -328,5 +328,45 @@ describe.skipIf(process.platform === "win32")(
       expect(gatedDb.inserts[1]?.status).toBe("stopped");
       expect(resetState.settled).toBe(true);
     });
+
+    it("leaves the simulated supervisor-exit teardown incomplete", async () => {
+      const gatedDb = createGatedDb(2);
+      const [service] = await startRuntimeServicesForWorkspaceControl(startInput({ db: gatedDb.db }));
+      expect(gatedDb.inserts).toHaveLength(1);
+
+      process.kill(-Number(service!.providerRef), "SIGTERM");
+      await waitFor(gatedDb.waitForInsert(2), "child-exit teardown write");
+
+      // The restart reconciliation suites adopt the service whose teardown is
+      // still in flight, so this reset must not wait for the write.
+      const resetPromise = resetRuntimeServicesForTests({ simulateSupervisorExit: true });
+      const resetState = trackSettled(resetPromise);
+      let drainPromise: Promise<void> | null = null;
+      const drainState = { settled: false };
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(resetState.settled).toBe(true);
+
+        // A later reset still drains the tracked teardown.
+        drainPromise = resetRuntimeServicesForTests();
+        void drainPromise.then(
+          () => {
+            drainState.settled = true;
+          },
+          () => {
+            drainState.settled = true;
+          },
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(drainState.settled).toBe(false);
+      } finally {
+        gatedDb.releaseInsert(2);
+      }
+
+      await resetPromise;
+      await drainPromise;
+      expect(gatedDb.inserts).toHaveLength(2);
+      expect(gatedDb.inserts[1]?.status).toBe("stopped");
+    });
   },
 );
