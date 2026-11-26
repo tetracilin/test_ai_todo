@@ -2691,3 +2691,7 @@ export {
   type DossierViewScopeChangeEntry,
   type DossierViewSection,
 } from "./dossier-view.js";
+
+// PF-02 story map and scratch pad
+export * from "./types/story-map.js";
+export * from "./validators/story-map.js";

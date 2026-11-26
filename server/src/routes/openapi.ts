@@ -70,6 +70,18 @@ import {
   runRoutineSchema,
   // Folders
   createFolderSchema,
+  createScratchNoteSchema,
+  createStoryMapActivitySchema,
+  createStoryMapEpicSchema,
+  createStoryMapReleaseSchema,
+  createStoryMapStorySchema,
+  createStoryMapTaskSchema,
+  updateScratchNoteSchema,
+  updateStoryMapActivitySchema,
+  updateStoryMapEpicSchema,
+  updateStoryMapReleaseSchema,
+  updateStoryMapStorySchema,
+  updateStoryMapTaskSchema,
   ensureMySkillFolderSchema,
   folderKindSchema,
   moveFolderItemSchema,
@@ -6861,6 +6873,158 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/folders/{folderId}",
   tags: ["folders"],
   summary: "Delete a folder",
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/story-map",
+  tags: ["story-map"],
+  summary: "Get the story map of a company",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/activities",
+  tags: ["story-map"],
+  summary: "Create a story map activity",
+  body: createStoryMapActivitySchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/story-map/activities/{itemId}",
+  tags: ["story-map"],
+  summary: "Update a story map activity",
+  body: updateStoryMapActivitySchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/story-map/activities/{itemId}",
+  tags: ["story-map"],
+  summary: "Delete a story map activity",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/tasks",
+  tags: ["story-map"],
+  summary: "Create a story map task",
+  body: createStoryMapTaskSchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/story-map/tasks/{itemId}",
+  tags: ["story-map"],
+  summary: "Update a story map task",
+  body: updateStoryMapTaskSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/story-map/tasks/{itemId}",
+  tags: ["story-map"],
+  summary: "Delete a story map task",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/releases",
+  tags: ["story-map"],
+  summary: "Create a story map release",
+  body: createStoryMapReleaseSchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/story-map/releases/{itemId}",
+  tags: ["story-map"],
+  summary: "Update a story map release",
+  body: updateStoryMapReleaseSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/story-map/releases/{itemId}",
+  tags: ["story-map"],
+  summary: "Delete a story map release",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/epics",
+  tags: ["story-map"],
+  summary: "Create a story map epic",
+  body: createStoryMapEpicSchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/story-map/epics/{itemId}",
+  tags: ["story-map"],
+  summary: "Update a story map epic",
+  body: updateStoryMapEpicSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/story-map/epics/{itemId}",
+  tags: ["story-map"],
+  summary: "Delete a story map epic",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/stories",
+  tags: ["story-map"],
+  summary: "Create a story map story",
+  body: createStoryMapStorySchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/story-map/stories/{itemId}",
+  tags: ["story-map"],
+  summary: "Update a story map story",
+  body: updateStoryMapStorySchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/story-map/stories/{itemId}",
+  tags: ["story-map"],
+  summary: "Delete a story map story",
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/scratch-notes",
+  tags: ["story-map"],
+  summary: "List scratch pad notes of a company",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/scratch-notes",
+  tags: ["story-map"],
+  summary: "Write a scratch pad note",
+  body: createScratchNoteSchema,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}",
+  tags: ["story-map"],
+  summary: "Edit your own scratch pad note",
+  body: updateScratchNoteSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}",
+  tags: ["story-map"],
+  summary: "Delete your own scratch pad note",
 });
 
 registerCurrentRoute({
