@@ -241,6 +241,55 @@ describeEmbeddedPostgres("story map service", () => {
     expect(await svc.listScratchNotes(companyId)).toHaveLength(0);
   });
 
+  it("promotes a note into the Unscheduled row under a fixed idea column, once", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board as PDF\nSo I can share it" });
+
+    const { note: promoted, story } = await svc.promoteScratchNote(companyId, note.id);
+    expect(promoted.status).toBe("promoted");
+    expect(promoted.promotedStoryId).toBe(story.id);
+    expect(story.title).toBe("Export the board as PDF");
+    expect(story.description).toContain("So I can share it");
+    expect(story.releaseId).toBeNull();
+
+    const tree = await svc.getTree(companyId);
+    expect(tree.activities.map((a) => a.name)).toEqual(["Scratch pad ideas"]);
+    expect(tree.tasks.map((t) => t.name)).toEqual(["Promoted ideas"]);
+    expect(tree.stories.map((s) => s.id)).toEqual([story.id]);
+
+    // A second note reuses the same activity and task.
+    const other = await svc.createScratchNote(companyId, "u2", { body: "Dark mode" });
+    await svc.promoteScratchNote(companyId, other.id);
+    const again = await svc.getTree(companyId);
+    expect(again.activities).toHaveLength(1);
+    expect(again.tasks).toHaveLength(1);
+    expect(again.stories).toHaveLength(2);
+
+    // The same note cannot be promoted twice.
+    await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
+  });
+
+  it("archives a note and refuses to promote it afterwards", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Old idea" });
+
+    const archived = await svc.archiveScratchNote(companyId, note.id);
+    expect(archived.status).toBe("archived");
+    expect((await svc.archiveScratchNote(companyId, note.id)).status).toBe("archived");
+    await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
+  });
+
+  it("cannot promote or archive another company's note", async () => {
+    const svc = storyMapService(db);
+    const companyA = await seedCompany();
+    const companyB = await seedCompany();
+    const note = await svc.createScratchNote(companyA, "u1", { body: "Private idea" });
+    await expect(svc.promoteScratchNote(companyB, note.id)).rejects.toThrow(/not found/i);
+    await expect(svc.archiveScratchNote(companyB, note.id)).rejects.toThrow(/not found/i);
+  });
+
   it("lists scratch notes newest first and only for their own company", async () => {
     const svc = storyMapService(db);
     const companyA = await seedCompany();

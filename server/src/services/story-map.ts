@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, max } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  authUsers,
   scratchNotes,
   storyMapActivities,
   storyMapEpics,
@@ -9,15 +10,19 @@ import {
   storyMapTasks,
   storyMaps,
 } from "@paperclipai/db";
-import type {
-  CreateScratchNote,
+import {
+  PROMOTED_NOTES_ACTIVITY,
+  PROMOTED_NOTES_TASK,
+  type CreateScratchNote,
   CreateStoryMapActivity,
   CreateStoryMapEpic,
   CreateStoryMapRelease,
   CreateStoryMapStory,
   CreateStoryMapTask,
   MoveStoryMapStory,
+  PromoteScratchNoteResult,
   ScratchNote,
+  ScratchNoteView,
   StoryMap,
   StoryMapActivity,
   StoryMapEpic,
@@ -32,7 +37,7 @@ import type {
   UpdateStoryMapStory,
   UpdateStoryMapTask,
 } from "@paperclipai/shared";
-import { forbidden, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 
 const DEFAULT_MAP_NAME = "Story map";
 
@@ -449,12 +454,76 @@ export function storyMapService(db: Db) {
       });
     },
 
-    async listScratchNotes(companyId: string): Promise<ScratchNote[]> {
-      return db
-        .select()
+    async listScratchNotes(companyId: string): Promise<ScratchNoteView[]> {
+      const rows = await db
+        .select({ note: scratchNotes, authorName: authUsers.name })
         .from(scratchNotes)
+        .leftJoin(authUsers, eq(authUsers.id, scratchNotes.authorUserId))
         .where(eq(scratchNotes.companyId, companyId))
         .orderBy(desc(scratchNotes.createdAt));
+      return rows.map((row) => ({ ...row.note, authorName: row.authorName ?? null }));
+    },
+
+    /**
+     * Turns an active note into a story in the Unscheduled row. The story goes under a fixed
+     * activity and task for promoted ideas, created on first use, so no task has to be chosen.
+     */
+    async promoteScratchNote(companyId: string, id: string): Promise<PromoteScratchNoteResult> {
+      const [note] = await db
+        .select()
+        .from(scratchNotes)
+        .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
+        .limit(1);
+      if (!note) throw notFound("Note not found");
+      if (note.status !== "active") throw conflict("Only an active note can be promoted");
+
+      const map = await ensureMap(companyId);
+      let [activity] = await db
+        .select()
+        .from(storyMapActivities)
+        .where(and(eq(storyMapActivities.mapId, map.id), eq(storyMapActivities.name, PROMOTED_NOTES_ACTIVITY)))
+        .limit(1);
+      if (!activity) {
+        activity = await storyMapService(db).createActivity(companyId, { name: PROMOTED_NOTES_ACTIVITY });
+      }
+      let [task] = await db
+        .select()
+        .from(storyMapTasks)
+        .where(and(eq(storyMapTasks.activityId, activity.id), eq(storyMapTasks.name, PROMOTED_NOTES_TASK)))
+        .limit(1);
+      if (!task) {
+        task = await storyMapService(db).createTask(companyId, { activityId: activity.id, name: PROMOTED_NOTES_TASK });
+      }
+
+      const firstLine = note.body.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? note.body.trim();
+      const title = firstLine.length > 200 ? `${firstLine.slice(0, 197)}...` : firstLine;
+      const story = await storyMapService(db).createStory(companyId, {
+        taskId: task.id,
+        title,
+        description: note.body.trim() === title ? null : note.body.trim(),
+      });
+      const [updated] = await db
+        .update(scratchNotes)
+        .set({ status: "promoted", promotedStoryId: story.id, updatedAt: new Date() })
+        .where(eq(scratchNotes.id, note.id))
+        .returning();
+      return { note: required(updated, "Note not found"), story };
+    },
+
+    async archiveScratchNote(companyId: string, id: string): Promise<ScratchNote> {
+      const [note] = await db
+        .select()
+        .from(scratchNotes)
+        .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
+        .limit(1);
+      if (!note) throw notFound("Note not found");
+      if (note.status === "archived") return note;
+      const [updated] = await db
+        .update(scratchNotes)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(scratchNotes.id, note.id))
+        .returning();
+      return required(updated, "Note not found");
     },
 
     async createScratchNote(companyId: string, authorUserId: string, input: CreateScratchNote): Promise<ScratchNote> {

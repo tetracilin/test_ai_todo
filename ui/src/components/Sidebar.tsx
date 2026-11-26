@@ -26,6 +26,7 @@ import {
   MessagesSquare,
   GanttChartSquare,
   LayoutGrid,
+  StickyNote,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -230,6 +231,7 @@ export function Sidebar() {
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
           <SidebarNavItem to="/issues" label="Tasks" icon={CircleDot} />
           <SidebarNavItem to="/story-map" label="Story map" icon={LayoutGrid} />
+          <SidebarNavItem to="/scratch-pad" label="Scratch pad" icon={StickyNote} />
           {showCases ? (
             <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
           ) : null}

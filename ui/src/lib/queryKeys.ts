@@ -317,6 +317,9 @@ export const queryKeys = {
       ["projects", companyId, { includeArchived: opts.includeArchived === true }] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
   },
+  scratchPad: {
+    list: (companyId: string) => ["scratch-pad", companyId] as const,
+  },
   storyMap: {
     tree: (companyId: string) => ["story-map", companyId] as const,
   },

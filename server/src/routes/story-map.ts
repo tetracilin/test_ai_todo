@@ -19,7 +19,7 @@ import {
 import type { ZodTypeAny } from "zod";
 import { validate } from "../middleware/validate.js";
 import { forbidden } from "../errors.js";
-import { logActivity, storyMapService } from "../services/index.js";
+import { accessService, logActivity, storyMapService } from "../services/index.js";
 import type { MovableStoryMapKind } from "../services/story-map.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -101,6 +101,7 @@ function pick(row: Row, fields: string[]) {
 export function storyMapRoutes(db: Db) {
   const router = Router();
   const svc = storyMapService(db);
+  const access = accessService(db);
 
   async function log(req: Request, companyId: string, action: string, entityType: string, entityId: string, details: Record<string, unknown>) {
     const actor = getActorInfo(req);
@@ -122,6 +123,21 @@ export function storyMapRoutes(db: Db) {
   function authorizeWrite(req: Request, companyId: string) {
     assertBoard(req);
     assertCompanyAccess(req, companyId);
+  }
+
+  /** Owners and admins of the company moderate the scratch pad (AD-106). */
+  async function canModerate(req: Request, companyId: string) {
+    if (req.actor.type !== "board") return false;
+    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+    const userId = req.actor.userId;
+    if (!userId) return false;
+    const membership = await access.getMembership(companyId, "user", userId);
+    return membership?.status === "active" && (membership.membershipRole === "owner" || membership.membershipRole === "admin");
+  }
+
+  async function authorizeModerate(req: Request, companyId: string) {
+    authorizeWrite(req, companyId);
+    if (!(await canModerate(req, companyId))) throw forbidden("Only company owners and admins can do this");
   }
 
   function requireUserId(req: Request) {
@@ -207,7 +223,11 @@ export function storyMapRoutes(db: Db) {
   router.get("/companies/:companyId/scratch-notes", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json(await svc.listScratchNotes(companyId));
+    res.json({
+      notes: await svc.listScratchNotes(companyId),
+      viewerUserId: req.actor.type === "board" ? (req.actor.userId ?? null) : null,
+      canModerate: await canModerate(req, companyId),
+    });
   });
 
   router.post("/companies/:companyId/scratch-notes", validate(createScratchNoteSchema), async (req, res) => {
@@ -225,6 +245,23 @@ export function storyMapRoutes(db: Db) {
     const updated = await svc.updateScratchNote(companyId, req.params.noteId as string, requireUserId(req), req.body);
     await log(req, companyId, "scratch_note.updated", "scratch_note", updated.id, { length: updated.body.length });
     res.json(updated);
+  });
+
+  router.post("/companies/:companyId/scratch-notes/:noteId/promote", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await authorizeModerate(req, companyId);
+    const result = await svc.promoteScratchNote(companyId, req.params.noteId as string);
+    await log(req, companyId, "scratch_note.promoted", "scratch_note", result.note.id, { storyId: result.story.id });
+    await log(req, companyId, "story_map_story.created", "story_map_story", result.story.id, pick(result.story, ["title", "taskId", "releaseId", "status", "position"]));
+    res.json(result);
+  });
+
+  router.post("/companies/:companyId/scratch-notes/:noteId/archive", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await authorizeModerate(req, companyId);
+    const archived = await svc.archiveScratchNote(companyId, req.params.noteId as string);
+    await log(req, companyId, "scratch_note.archived", "scratch_note", archived.id, {});
+    res.json(archived);
   });
 
   router.delete("/companies/:companyId/scratch-notes/:noteId", async (req, res) => {

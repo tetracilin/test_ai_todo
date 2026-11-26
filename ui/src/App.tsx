@@ -40,6 +40,7 @@ import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
 import { StoryMap } from "./pages/StoryMap";
 import { StoryMapBacklog } from "./pages/StoryMapBacklog";
+import { ScratchPad } from "./pages/ScratchPad";
 import { Today } from "./pages/Today";
 import { Schedule } from "./pages/Schedule";
 import { SchedulingRoutines } from "./pages/SchedulingRoutines";
@@ -229,6 +230,7 @@ function boardRoutes() {
       <Route path="routines" element={<Routines />} />
       <Route path="story-map" element={<StoryMap />} />
       <Route path="story-map/backlog" element={<StoryMapBacklog />} />
+      <Route path="scratch-pad" element={<ScratchPad />} />
       <Route
         path="cases"
         element={<CasesExperimentalGate><Cases /></CasesExperimentalGate>}

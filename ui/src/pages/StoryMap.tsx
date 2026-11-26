@@ -10,7 +10,9 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { Map as MapIcon, PanelRightOpen, Plus } from "lucide-react";
+import { scratchPadApi } from "../api/scratchPad";
 import { storyMapApi } from "../api/storyMap";
+import { Link } from "../lib/router";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -174,6 +176,16 @@ export function StoryMap() {
     queryFn: () => storyMapApi.get(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  // Stories promoted from a scratch pad note link back to the scratch pad.
+  const { data: scratchPad } = useQuery({
+    queryKey: queryKeys.scratchPad.list(selectedCompanyId ?? ""),
+    queryFn: () => scratchPadApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const promotedStoryIds = new Set(
+    (scratchPad?.notes ?? []).flatMap((note) => (note.promotedStoryId ? [note.promotedStoryId] : [])),
+  );
 
   const change = useMutation<unknown, Error, () => Promise<unknown>>({
     mutationFn: (action) => action(),
@@ -407,6 +419,11 @@ export function StoryMap() {
                                 className="border border-border bg-card p-2 text-sm"
                               >
                                 {epic ? <div className="text-xs text-muted-foreground">{epic.name}</div> : null}
+                                {promotedStoryIds.has(story.id) ? (
+                                  <Link to="/scratch-pad" className="text-xs underline">
+                                    From scratch pad
+                                  </Link>
+                                ) : null}
                                 <div className="flex items-center justify-between gap-1">
                                   <InlineText
                                     value={story.title}

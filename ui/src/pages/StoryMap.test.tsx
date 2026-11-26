@@ -31,7 +31,10 @@ const dndState = vi.hoisted(() => ({ onDragEnd: null as null | ((event: unknown)
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => companyState }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => breadcrumbState }));
+const scratchPadApiMock = vi.hoisted(() => ({ list: vi.fn() }));
+
 vi.mock("../api/storyMap", () => ({ storyMapApi: storyMapApiMock }));
+vi.mock("../api/scratchPad", () => ({ scratchPadApi: scratchPadApiMock }));
 
 // Render the menu inline (no radix portal) so menu items are clickable in jsdom.
 vi.mock("@/components/ui/dropdown-menu", () => ({
@@ -102,6 +105,8 @@ const fullTree: StoryMapTree = {
 
 const emptyTree: StoryMapTree = { map: null, activities: [], tasks: [], releases: [], epics: [], stories: [] };
 
+let scratchNotes: unknown = { notes: [], viewerUserId: "me", canModerate: false };
+
 async function flush() {
   await act(async () => {
     await Promise.resolve();
@@ -121,6 +126,7 @@ describe("Story map page", () => {
 
   async function render(tree: StoryMapTree) {
     storyMapApiMock.get.mockResolvedValue(tree);
+    scratchPadApiMock.list.mockResolvedValue(scratchNotes);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
       root.render(
@@ -156,6 +162,7 @@ describe("Story map page", () => {
     root = createRoot(container);
     companyState.selectedCompanyId = "company-1";
     for (const mock of Object.values(storyMapApiMock)) mock.mockReset();
+    scratchNotes = { notes: [], viewerUserId: "me", canModerate: false };
     breadcrumbState.setBreadcrumbs.mockReset();
   });
 
@@ -399,6 +406,19 @@ describe("Story map page", () => {
     const dialog = container.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Epic details");
     expect(dialog.textContent).toContain("Pick a template");
+  });
+
+  it("links a story promoted from the scratch pad back to the scratch pad", async () => {
+    scratchNotes = {
+      notes: [{ id: "n1", authorUserId: "me", authorName: "Tester", body: "x", status: "promoted", promotedStoryId: "s2", createdAt: NOW, updatedAt: NOW, companyId: "company-1" }],
+      viewerUserId: "me",
+      canModerate: true,
+    };
+    await render(fullTree);
+    const links = [...container.querySelectorAll("a")].filter((a) => a.textContent === "From scratch pad");
+    expect(links).toHaveLength(1);
+    expect(links[0]!.getAttribute("href")).toBe("/scratch-pad");
+    expect(links[0]!.closest("[data-drag-key]")?.getAttribute("data-drag-key")).toBe("story:s2");
   });
 
   it("asks to select a company when none is selected", async () => {

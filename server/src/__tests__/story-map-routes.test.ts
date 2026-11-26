@@ -13,12 +13,17 @@ const mockService = vi.hoisted(() => ({
   createScratchNote: vi.fn(),
   updateScratchNote: vi.fn(),
   deleteScratchNote: vi.fn(),
+  promoteScratchNote: vi.fn(),
+  archiveScratchNote: vi.fn(),
 }));
+
+const mockAccess = vi.hoisted(() => ({ getMembership: vi.fn() }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
   storyMapService: () => mockService,
+  accessService: () => mockAccess,
   logActivity: mockLogActivity,
 }));
 
@@ -162,6 +167,7 @@ describe("story map move routes", () => {
 describe("scratch note routes", () => {
   beforeEach(() => {
     for (const mock of Object.values(mockService)) mock.mockReset();
+    mockAccess.getMembership.mockReset();
     mockLogActivity.mockReset();
   });
 
@@ -193,5 +199,56 @@ describe("scratch note routes", () => {
     await request(app).delete(`/api/companies/${COMPANY}/scratch-notes/${ID}`);
     expect(mockService.updateScratchNote).toHaveBeenCalledWith(COMPANY, ID, "user-1", { body: "Edited" });
     expect(mockService.deleteScratchNote).toHaveBeenCalledWith(COMPANY, ID, "user-1");
+  });
+
+  it("lists the notes with what the viewer may do, and lets an admin moderate", async () => {
+    mockService.listScratchNotes.mockResolvedValue([{ id: ID, body: "An idea", authorName: "Ana" }]);
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "admin" });
+    const res = await request(await createApp(board)).get(`/api/companies/${COMPANY}/scratch-notes`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      notes: [{ id: ID, body: "An idea", authorName: "Ana" }],
+      viewerUserId: "user-1",
+      canModerate: true,
+    });
+  });
+
+  it("does not let an operator or viewer moderate", async () => {
+    mockService.listScratchNotes.mockResolvedValue([]);
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "operator" });
+    const app = await createApp(board);
+    const list = await request(app).get(`/api/companies/${COMPANY}/scratch-notes`);
+    expect(list.body.canModerate).toBe(false);
+
+    const promote = await request(app).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    const archive = await request(app).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/archive`).send({});
+    expect(promote.status).toBe(403);
+    expect(archive.status).toBe(403);
+    expect(mockService.promoteScratchNote).not.toHaveBeenCalled();
+    expect(mockService.archiveScratchNote).not.toHaveBeenCalled();
+  });
+
+  it("lets an owner promote a note and logs the note and the new story", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
+    mockService.promoteScratchNote.mockResolvedValue({ note: { id: ID }, story: { id: "story-9", title: "An idea" } });
+    const res = await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    expect(res.status).toBe(200);
+    expect(mockService.promoteScratchNote).toHaveBeenCalledWith(COMPANY, ID);
+    const actions = mockLogActivity.mock.calls.map((call) => call[1].action);
+    expect(actions).toEqual(["scratch_note.promoted", "story_map_story.created"]);
+  });
+
+  it("lets an admin archive a note", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "admin" });
+    mockService.archiveScratchNote.mockResolvedValue({ id: ID, status: "archived" });
+    const res = await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/archive`).send({});
+    expect(res.status).toBe(200);
+    expect(mockLogActivity).toHaveBeenCalledWith({}, expect.objectContaining({ action: "scratch_note.archived" }));
+  });
+
+  it("does not let an agent moderate", async () => {
+    const agent = { type: "agent", agentId: "agent-1", companyId: COMPANY, source: "agent_key" };
+    const res = await request(await createApp(agent)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    expect(res.status).toBe(403);
   });
 });

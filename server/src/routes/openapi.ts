@@ -869,6 +869,8 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/scratch-notes/{noteId}/promote",
+  "POST /api/companies/{companyId}/scratch-notes/{noteId}/archive",
   "POST /api/companies/{companyId}/story-map/activities/{itemId}/move",
   "POST /api/companies/{companyId}/story-map/tasks/{itemId}/move",
   "POST /api/companies/{companyId}/story-map/releases/{itemId}/move",
@@ -7089,6 +7091,20 @@ registerCurrentRoute({
   tags: ["story-map"],
   summary: "Edit your own scratch pad note",
   body: updateScratchNoteSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}/promote",
+  tags: ["story-map"],
+  summary: "Promote a scratch pad note to a story (owner or admin)",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}/archive",
+  tags: ["story-map"],
+  summary: "Archive a scratch pad note (owner or admin)",
 });
 
 registerCurrentRoute({

@@ -423,6 +423,8 @@ describe("openapi routes", () => {
     writes.push(["post", `${base}/scratch-notes`]);
     writes.push(["patch", `${base}/scratch-notes/{noteId}`]);
     writes.push(["delete", `${base}/scratch-notes/{noteId}`]);
+    writes.push(["post", `${base}/scratch-notes/{noteId}/promote`]);
+    writes.push(["post", `${base}/scratch-notes/{noteId}/archive`]);
 
     // The routes call assertBoard, so agents must not be advertised as allowed.
     for (const [method, path] of writes) {
