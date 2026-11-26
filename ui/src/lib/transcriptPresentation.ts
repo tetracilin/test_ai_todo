@@ -273,7 +273,29 @@ export function parseSystemActivity(text: string): TranscriptActivity | null {
 
 export function shouldHideNiceModeStderr(text: string): boolean {
   const normalized = compactWhitespace(text).toLowerCase();
-  return normalized.startsWith("[paperclip] skipping saved session resume");
+  return (
+    normalized.startsWith("[paperclip] skipping saved session resume")
+    // The acpx engine states the effective adapter execution timeout at run
+    // start. It is a diagnostic notice, not a failure: the real timeout failure
+    // starts with "Run exceeded the adapter execution timeout". Nice mode hides
+    // this notice so a normal run does not read as an error; Raw mode keeps it.
+    || normalized.startsWith("[paperclip] adapter execution timeout:")
+  );
+}
+
+/**
+ * Remove start-of-run `[paperclip]` notices from a raw stderr excerpt. The run
+ * detail page renders excerpts in a red failure treatment, so an informational
+ * notice would otherwise read as an error. The persisted run log keeps every
+ * line; only the failure summary filters the known-benign notices.
+ */
+export function stripInformationalStderrExcerpt(text: string | null | undefined): string {
+  if (!text) return "";
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !shouldHideNiceModeStderr(line))
+    .join("\n")
+    .trim();
 }
 
 export function summarizeNotice(text: string, max = 160): string {
