@@ -7,6 +7,7 @@ export { feedbackService } from "./feedback.js";
 export { companySkillService } from "./company-skills.js";
 export { companySkillPolicyService, normalizeSkillPolicySourceType } from "./company-skill-policy.js";
 export { folderService } from "./folders.js";
+export { storyMapService } from "./story-map.js";
 export { schedulingService } from "./scheduling.js";
 export { agentService, deduplicateAgentName } from "./agents.js";
 export {
