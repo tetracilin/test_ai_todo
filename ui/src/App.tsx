@@ -38,6 +38,7 @@ import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
+import { StoryMap } from "./pages/StoryMap";
 import { Today } from "./pages/Today";
 import { Schedule } from "./pages/Schedule";
 import { SchedulingRoutines } from "./pages/SchedulingRoutines";
@@ -225,6 +226,7 @@ function boardRoutes() {
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
       ) : null}
       <Route path="routines" element={<Routines />} />
+      <Route path="story-map" element={<StoryMap />} />
       <Route
         path="cases"
         element={<CasesExperimentalGate><Cases /></CasesExperimentalGate>}
