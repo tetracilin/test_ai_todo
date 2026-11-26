@@ -245,6 +245,16 @@ const runtimeServicesByReuseKey = new Map<string, string>();
 const runtimeServiceLeasesByRun = new Map<string, string[]>();
 const runtimeProvisionByWorkspace = new Map<string, Promise<void>>();
 const runtimeControlStartByOwner = new Map<string, Promise<void>>();
+/**
+ * Teardown work scheduled by a child-process exit handler.
+ *
+ * A process exit cannot be awaited by whoever caused it, so the handler's
+ * database write is fire-and-forget by nature. Tracking it here lets the test
+ * reset drain it before the in-memory state is cleared; otherwise a `stopped`
+ * row can still reach the database after the test `afterEach` deleted the
+ * parent company (`workspace_runtime_services_company_id_companies_id_fk`).
+ */
+const runtimeServiceExitContinuations = new Set<Promise<void>>();
 const runtimeReplacementClaimsByReuseKey = new Map<string, number>();
 const quarantinedRuntimeExposurePorts = new Set<number>();
 /**
@@ -481,6 +491,29 @@ type ProcessOutputAccumulator = {
 };
 
 /**
+ * Waits until no runtime continuation is in flight.
+ *
+ * The trackers are read again after every round because a continuation can
+ * enqueue another one: a start queued behind a running start, a provision that
+ * a start awaits, or a child exit caused by the teardown itself. Only an empty
+ * set of trackers proves that nothing can still write a
+ * `workspace_runtime_services` row.
+ */
+async function drainRuntimeContinuations() {
+  for (;;) {
+    const inFlight = [
+      ...runtimeProvisionByWorkspace.values(),
+      ...runtimeControlStartByOwner.values(),
+      ...runtimeServiceExitContinuations,
+    ];
+    if (inFlight.length === 0) return;
+    // A continuation's failure is already reported by its own caller; the reset
+    // only has to know that it has settled.
+    await Promise.allSettled(inFlight);
+  }
+}
+
+/**
  * Drops in-memory runtime state between tests.
  *
  * By default the spawned backend processes are deliberately left running: the
@@ -492,10 +525,18 @@ type ProcessOutputAccumulator = {
  * squatting a port in the dedicated exposure range for the life of the host.
  * Termination runs before the exposure deps are restored so the suite's own
  * broker fake handles the removal rather than the real host broker.
+ *
+ * In-flight continuations are drained before teardown, so a start that is still
+ * running is registered (and then terminated) instead of writing a row after
+ * this reset. Teardown continuations are drained again afterwards, because
+ * stopping a process schedules its exit-handler write. Without both drains a
+ * late write can outlive the test and hit the parent company's foreign key after
+ * the suite cleaned it up.
  */
 export async function resetRuntimeServicesForTests(
   opts: { terminateProcesses?: boolean; simulateSupervisorExit?: boolean } = {},
 ) {
+  await drainRuntimeContinuations();
   if (opts.terminateProcesses) {
     for (const serviceId of [...runtimeServicesById.keys()]) {
       await stopRuntimeService(serviceId).catch(() => undefined);
@@ -511,11 +552,13 @@ export async function resetRuntimeServicesForTests(
       record.child?.stderr?.destroy();
     }
   }
+  await drainRuntimeContinuations();
   runtimeServicesById.clear();
   runtimeServicesByReuseKey.clear();
   runtimeServiceLeasesByRun.clear();
   runtimeProvisionByWorkspace.clear();
   runtimeControlStartByOwner.clear();
+  runtimeServiceExitContinuations.clear();
   runtimeReplacementClaimsByReuseKey.clear();
   quarantinedRuntimeExposurePorts.clear();
   exposurePortPairClaims.clear();
@@ -6637,12 +6680,30 @@ function registerRuntimeService(db: Db | undefined, record: RuntimeServiceRecord
     if (current.reuseKey && runtimeServicesByReuseKey.get(current.reuseKey) === current.id) {
       runtimeServicesByReuseKey.delete(current.reuseKey);
     }
-    void (async () => {
+    trackRuntimeServiceExitContinuation((async () => {
       await cleanupRecordExposure(current);
       await removeLocalServiceRegistryRecord(current.serviceKey);
       await persistRuntimeServiceRecord(db, current);
-    })();
+    })());
   });
+}
+
+/**
+ * Adds a child-exit teardown continuation to the drain set and removes it once
+ * it settles. The rejection is logged rather than left unhandled: the write is
+ * best effort, but a late or failed write still has to be visible.
+ */
+function trackRuntimeServiceExitContinuation(continuation: Promise<void>) {
+  runtimeServiceExitContinuations.add(continuation);
+  void continuation.then(
+    () => {
+      runtimeServiceExitContinuations.delete(continuation);
+    },
+    (error) => {
+      runtimeServiceExitContinuations.delete(continuation);
+      console.warn("[workspace-runtime] runtime service exit teardown failed", error);
+    },
+  );
 }
 
 function readRuntimeServiceEntries(config: Record<string, unknown>) {
