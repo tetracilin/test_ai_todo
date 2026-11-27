@@ -16,6 +16,7 @@ import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { parseDocumentAnnotationHash } from "../lib/document-annotation-hash";
 import { deriveDocumentRevisionState } from "../lib/document-revisions";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
@@ -85,25 +86,6 @@ type DocumentSubjectConfig = {
 
 const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
 const DOCUMENT_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
-const getFoldedDocumentsStorageKey = (issueId: string) => `paperclip:issue-document-folds:${issueId}`;
-
-function loadFoldedDocumentKeys(issueId: string) {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(getFoldedDocumentsStorageKey(issueId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveFoldedDocumentKeys(issueId: string, keys: string[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(getFoldedDocumentsStorageKey(issueId), JSON.stringify(keys));
-}
-
 function renderFoldableBody(
   body: string,
   className?: string,
@@ -307,7 +289,13 @@ export function IssueDocumentsSection({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
-  const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(documentSubject.id));
+  // Session-only: every document starts collapsed and nothing is persisted between visits.
+  const [expandedDocumentKeys, setExpandedDocumentKeys] = useState<string[]>(
+    () => [...(defaultAnnotationPanelOpenKeys ?? [])],
+  );
+  const expandDocument = useCallback((key: string) => {
+    setExpandedDocumentKeys((current) => (current.includes(key) ? current : [...current, key]));
+  }, []);
   const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>(
     () => (defaultAnnotationPanelOpenKeys ?? []),
   );
@@ -486,7 +474,7 @@ export function IssueDocumentsSection({
     const doc = sortedDocuments.find((entry) => entry.key === key);
     if (!doc) return;
     const conflictedDraft = documentConflict?.key === key ? documentConflict.localDraft : null;
-    setFoldedDocumentKeys((current) => current.filter((entry) => entry !== key));
+    expandDocument(key);
     resetAutosaveState();
     setDocumentConflict((current) => current?.key === key ? current : null);
     setDraft({
@@ -584,6 +572,7 @@ export function IssueDocumentsSection({
           : currentDraft.baseRevisionId,
       });
       setError(null);
+      if (currentDraft.isNew) expandDocument(saved.key);
       setDocumentConflict((current) => current?.key === normalizedKey ? null : current);
       setDraft((value) => {
         if (!value || value.key !== normalizedKey) return value;
@@ -630,7 +619,7 @@ export function IssueDocumentsSection({
             },
             showRemote: true,
           });
-          setFoldedDocumentKeys((current) => current.filter((key) => key !== normalizedKey));
+          expandDocument(normalizedKey);
           setError(null);
           resetAutosaveState();
           return false;
@@ -731,7 +720,7 @@ export function IssueDocumentsSection({
     resetAutosaveState();
     setDraft((current) => current?.key === doc.key ? null : current);
     setDocumentConflict((current) => current?.key === doc.key ? null : current);
-    setFoldedDocumentKeys((current) => current.filter((entry) => entry !== doc.key));
+    expandDocument(doc.key);
     setSelectedRevisionIds((current) => ({ ...current, [doc.key]: selectedRevision.id }));
     setError(null);
   }, [documentConflict, draft, getDocumentRevisions, resetAutosaveState, returnToLatestRevision]);
@@ -768,28 +757,16 @@ export function IssueDocumentsSection({
     }
   };
 
+  const previousSubjectIdRef = useRef(documentSubject.id);
   useEffect(() => {
-    setFoldedDocumentKeys(loadFoldedDocumentKeys(documentSubject.id));
+    if (previousSubjectIdRef.current === documentSubject.id) return;
+    previousSubjectIdRef.current = documentSubject.id;
+    setExpandedDocumentKeys([]);
   }, [documentSubject.id]);
 
   useEffect(() => {
     hasScrolledToHashRef.current = false;
   }, [documentSubject.id, location.hash]);
-
-  useEffect(() => {
-    const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
-    setFoldedDocumentKeys((current) => {
-      const next = current.filter((key) => validKeys.has(key));
-      if (next.length !== current.length) {
-        saveFoldedDocumentKeys(documentSubject.id, next);
-      }
-      return next;
-    });
-  }, [documentSubject.id, sortedDocuments]);
-
-  useEffect(() => {
-    saveFoldedDocumentKeys(documentSubject.id, foldedDocumentKeys);
-  }, [documentSubject.id, foldedDocumentKeys]);
 
   useEffect(() => {
     if (!documentConflict) return;
@@ -805,11 +782,12 @@ export function IssueDocumentsSection({
   useEffect(() => {
     const hash = location.hash;
     if (!hash.startsWith("#document-")) return;
-    const documentKey = decodeURIComponent(hash.slice("#document-".length));
+    const documentKey = parseDocumentAnnotationHash(hash)?.documentKey;
+    if (!documentKey) return;
     const targetExists = sortedDocuments.some((doc) => doc.key === documentKey)
       || (documentKey === "plan" && Boolean(documentSubject.legacyPlanDocument));
     if (!targetExists || hasScrolledToHashRef.current) return;
-    setFoldedDocumentKeys((current) => current.filter((key) => key !== documentKey));
+    expandDocument(documentKey);
     const element = document.getElementById(`document-${documentKey}`);
     if (!element) return;
     hasScrolledToHashRef.current = true;
@@ -862,8 +840,13 @@ export function IssueDocumentsSection({
   const documentBodyShellClassName = "mt-3";
   const documentBodyPaddingClassName = "";
   const documentBodyContentClassName = "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7";
+  const allDocumentsExpanded =
+    sortedDocuments.length > 0 && sortedDocuments.every((doc) => expandedDocumentKeys.includes(doc.key));
+  const toggleAllDocuments = () => {
+    setExpandedDocumentKeys(allDocumentsExpanded ? [] : sortedDocuments.map((doc) => doc.key));
+  };
   const toggleFoldedDocument = (key: string) => {
-    setFoldedDocumentKeys((current) =>
+    setExpandedDocumentKeys((current) =>
       current.includes(key)
         ? current.filter((entry) => entry !== key)
         : [...current, key],
@@ -877,16 +860,16 @@ export function IssueDocumentsSection({
       return current;
     });
     if (nextOpen) {
-      setFoldedDocumentKeys((current) => current.filter((entry) => entry !== key));
+      expandDocument(key);
     }
-  }, []);
+  }, [expandDocument]);
   const toggleAnnotationPanel = useCallback((key: string) => {
     setAnnotationPanelOpenKeys((current) => {
       if (current.includes(key)) return current.filter((entry) => entry !== key);
-      setFoldedDocumentKeys((folded) => folded.filter((entry) => entry !== key));
+      expandDocument(key);
       return [...current, key];
     });
-  }, []);
+  }, [expandDocument]);
 
   return (
     <div className="space-y-3">
@@ -904,6 +887,11 @@ export function IssueDocumentsSection({
           <h3 className="w-full text-sm font-medium text-muted-foreground shrink-0 sm:w-auto">Documents</h3>
           <div className="flex flex-wrap items-center gap-2 min-w-0 sm:ml-auto">
             {extraActions}
+            {sortedDocuments.length > 0 ? (
+              <Button variant="ghost" size="sm" onClick={toggleAllDocuments} className="shrink-0">
+                {allDocumentsExpanded ? "Collapse all" : "Expand all"}
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={beginNewDocument} className="shrink-0">
               <Plus className="mr-1.5 h-3.5 w-3.5" />
               <span className="hidden sm:inline">New document</span>
@@ -995,7 +983,7 @@ export function IssueDocumentsSection({
           const isLocked = Boolean(doc.lockedAt);
           const activeDraft = !isLocked && draft?.key === doc.key && !draft.isNew ? draft : null;
           const activeConflict = !isLocked && documentConflict?.key === doc.key ? documentConflict : null;
-          const isFolded = foldedDocumentKeys.includes(doc.key);
+          const isFolded = !expandedDocumentKeys.includes(doc.key);
           const rawRevisionHistory = getDocumentRevisions(doc.key);
           const revisionState = deriveDocumentRevisionState(doc, rawRevisionHistory);
           const revisionHistory = revisionState.revisions;
