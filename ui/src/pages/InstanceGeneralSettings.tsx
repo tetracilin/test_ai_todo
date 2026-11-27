@@ -9,6 +9,7 @@ import {
 } from "@paperclipai/shared";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
+import { AppVersion } from "@/components/AppVersion";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { ModeBadge } from "@/components/access/ModeBadge";
 import { Button } from "../components/ui/button";
@@ -115,6 +116,11 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
           </p>
         </div>
       ) : null}
+
+      <section aria-label="Version" className="space-y-1">
+        <h2 className="text-sm font-medium">Version</h2>
+        <AppVersion />
+      </section>
 
       {visibleActionError && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">

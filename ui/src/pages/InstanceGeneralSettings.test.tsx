@@ -261,6 +261,14 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
     expect(container.textContent).toContain("Sign out");
   });
 
+  it("shows the running version and build commit", async () => {
+    await renderPage({ ...SELF_HOSTED_HEALTH, version: "0.3.1", commit: "2bfb9246abcdef0123456789abcdef0123456789" });
+
+    const section = container.querySelector('[aria-label="Version"]')!;
+    expect(section.textContent).toContain("v0.3.1");
+    expect(section.textContent).toContain("2bfb9246");
+  });
+
   it("shows every section when nothing is hidden", async () => {
     await renderPage(SELF_HOSTED_HEALTH);
 

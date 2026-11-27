@@ -25,6 +25,8 @@ export type CloudInstanceHealthStatus = {
 export type HealthStatus = {
   status: "ok";
   version?: string;
+  /** The build git sha (public). Null when the build does not know it. */
+  commit?: string | null;
   deploymentMode?: "local_trusted" | "authenticated";
   deploymentExposure?: "private" | "public";
   authReady?: boolean;
