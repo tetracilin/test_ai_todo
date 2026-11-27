@@ -1,6 +1,7 @@
 import { useState, type RefObject } from "react";
 import type { CompanyArtifact } from "../api/artifacts";
 import { DocumentPanelFileTree } from "./DocumentPanelFileTree";
+import { DocumentPanelChat } from "./DocumentPanelChat";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 export interface DocumentPopoverPanelProps {
@@ -9,6 +10,7 @@ export interface DocumentPopoverPanelProps {
   returnFocusRef?: RefObject<HTMLElement | null>;
   companyId?: string | null;
   projectId?: string | null;
+  issueId?: string | null;
 }
 
 /**
@@ -16,7 +18,7 @@ export interface DocumentPopoverPanelProps {
  * the edit pane takes the right 75%. Areas hold placeholders until they are built.
  * Radix Dialog supplies the focus trap, Escape handling and focus return.
  */
-export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId }: DocumentPopoverPanelProps) {
+export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId, issueId }: DocumentPopoverPanelProps) {
   const [openTabs, setOpenTabs] = useState<CompanyArtifact[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = openTabs.find((tab) => tab.id === activeId) ?? null;
@@ -68,7 +70,7 @@ export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, com
               data-testid="document-panel-chat"
               className="min-w-0 flex-1 overflow-auto border-b border-border p-3 text-sm text-muted-foreground md:border-b-0 md:border-l"
             >
-              Task chat
+              <DocumentPanelChat issueId={issueId} companyId={companyId} projectId={projectId} />
             </section>
           </div>
           <section
