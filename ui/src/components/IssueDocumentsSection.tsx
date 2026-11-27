@@ -36,7 +36,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Check, Copy, Diff, Download, FilePenLine, FileText, Lock, MoreHorizontal, Plus, Trash2, Unlock, X } from "lucide-react";
+import { Check, Copy, Diff, Download, FilePenLine, FileText, Lock, MoreHorizontal, PanelRightOpen, Plus, Trash2, Unlock, X } from "lucide-react";
+import { DocumentPopoverPanel } from "./DocumentPopoverPanel";
 import { DocumentDiffModal } from "./DocumentDiffModal";
 import { DocumentFrameHeader, type DocumentFrameHeaderRevisionActor } from "./DocumentFrameHeader";
 import { SourceTrustBadge } from "./SourceTrustBadge";
@@ -286,6 +287,8 @@ export function IssueDocumentsSection({
     return configured;
   }, [documentSubject]);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  const [panelDocumentKey, setPanelDocumentKey] = useState<string | null>(null);
+  const panelOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
@@ -1070,6 +1073,19 @@ export function IssueDocumentsSection({
                     <Button
                       variant="ghost"
                       size="icon-xs"
+                      className="text-muted-foreground"
+                      title="Open document in panel"
+                      aria-label={`Open ${doc.key} document in panel`}
+                      onClick={(event) => {
+                        panelOpenerRef.current = event.currentTarget;
+                        setPanelDocumentKey(doc.key);
+                      }}
+                    >
+                      <PanelRightOpen className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
                       className={cn(
                         "text-muted-foreground transition-colors",
                         copiedDocumentKey === doc.key && "text-foreground",
@@ -1383,6 +1399,12 @@ export function IssueDocumentsSection({
           );
         })}
       </div>
+
+      <DocumentPopoverPanel
+        documentKey={panelDocumentKey}
+        onClose={() => setPanelDocumentKey(null)}
+        returnFocusRef={panelOpenerRef}
+      />
 
       {diffViewKey && (() => {
         const diffDoc = sortedDocuments.find((d) => d.key === diffViewKey);

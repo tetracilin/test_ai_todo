@@ -428,6 +428,55 @@ describe("IssueDocumentsSection", () => {
     queryClient.clear();
   });
 
+  it("opens a document in a three-area pop-over panel and returns focus on close", async () => {
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([createIssueDocument({ key: "plan", body: "Plan body text" })]);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+
+    const opener = container.querySelector('button[aria-label="Open plan document in panel"]') as HTMLButtonElement;
+    expect(opener).not.toBeNull();
+    expect(document.querySelector('[data-testid="document-popover-panel"]')).toBeNull();
+
+    await act(async () => {
+      opener.focus();
+      opener.click();
+    });
+    await flush();
+
+    const panel = document.querySelector('[data-testid="document-popover-panel"]') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.getAttribute("role")).toBe("dialog");
+    expect(panel.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(panel.querySelector('[data-testid="document-panel-file-tree"]')).not.toBeNull();
+    expect(panel.querySelector('[data-testid="document-panel-chat"]')).not.toBeNull();
+    const edit = panel.querySelector('[data-testid="document-panel-edit"]') as HTMLElement;
+    expect(edit.className).toContain("md:basis-3/4");
+    expect(panel.contains(document.activeElement)).toBe(true);
+
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="document-popover-panel"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
   it("keeps system handoff documents out of the normal document surface", async () => {
     const issue = createIssue();
     const root = createRoot(container);
