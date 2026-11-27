@@ -70,6 +70,9 @@
 }
 
 :root {
+  /* Story map grid (PF-02): width of the row label column and of one task column. */
+  --story-map-row-label: 10rem;
+  --story-map-task-col: 14rem;
   color-scheme: light;
   --radius: 0.5rem;
   --background: oklch(1 0 0);
