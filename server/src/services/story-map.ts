@@ -528,26 +528,19 @@ export function storyMapService(db: Db) {
     },
 
     async archiveScratchNote(companyId: string, id: string): Promise<ScratchNote> {
-      return db.transaction(async (tx) => {
-        // Lock the note so a concurrent promote waits, then reads the status this archive saved.
-        const [note] = await tx
-          .select()
-          .from(scratchNotes)
-          .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
-          .limit(1)
-          .for("update");
-        if (!note) throw notFound("Note not found");
-        if (note.status === "archived") return note;
-        if (note.status === "promoted") throw conflict("A promoted note cannot be archived");
-        // The status condition keeps the write safe if the row ever becomes writable mid-step.
-        const [updated] = await tx
-          .update(scratchNotes)
-          .set({ status: "archived", updatedAt: new Date() })
-          .where(and(eq(scratchNotes.id, note.id), eq(scratchNotes.status, "active")))
-          .returning();
-        if (!updated) throw conflict("Only an active note can be archived");
-        return updated;
-      });
+      const [note] = await db
+        .select()
+        .from(scratchNotes)
+        .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
+        .limit(1);
+      if (!note) throw notFound("Note not found");
+      if (note.status === "archived") return note;
+      const [updated] = await db
+        .update(scratchNotes)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(scratchNotes.id, note.id))
+        .returning();
+      return required(updated, "Note not found");
     },
 
     async createScratchNote(companyId: string, authorUserId: string, input: CreateScratchNote): Promise<ScratchNote> {

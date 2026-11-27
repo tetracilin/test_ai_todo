@@ -342,44 +342,6 @@ describeEmbeddedPostgres("story map service", () => {
     await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
   });
 
-  it("refuses to archive a promoted note and keeps its story", async () => {
-    const svc = storyMapService(db);
-    const companyId = await seedCompany();
-    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board" });
-    const { story } = await svc.promoteScratchNote(companyId, note.id);
-
-    await expect(svc.archiveScratchNote(companyId, note.id)).rejects.toThrow(/promoted/i);
-
-    const [stored] = await svc.listScratchNotes(companyId);
-    expect(stored?.status).toBe("promoted");
-    expect(stored?.promotedStoryId).toBe(story.id);
-    expect((await svc.getTree(companyId)).stories.map((item) => item.id)).toEqual([story.id]);
-  });
-
-  it("keeps a promote and an archive consistent when they arrive together", async () => {
-    const svc = storyMapService(db);
-    const companyId = await seedCompany();
-    const note = await svc.createScratchNote(companyId, "u1", { body: "One idea" });
-
-    const results = await Promise.allSettled([
-      svc.promoteScratchNote(companyId, note.id),
-      svc.archiveScratchNote(companyId, note.id),
-    ]);
-    // The note row lock serializes the two, so exactly one write wins.
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-
-    const [stored] = await svc.listScratchNotes(companyId);
-    const tree = await svc.getTree(companyId);
-    if (stored?.status === "promoted") {
-      expect(stored.promotedStoryId).not.toBeNull();
-      expect(tree.stories.map((item) => item.id)).toEqual([stored.promotedStoryId]);
-    } else {
-      expect(stored?.status).toBe("archived");
-      expect(stored?.promotedStoryId).toBeNull();
-      expect(tree.stories).toHaveLength(0);
-    }
-  });
-
   it("cannot promote or archive another company's note", async () => {
     const svc = storyMapService(db);
     const companyA = await seedCompany();

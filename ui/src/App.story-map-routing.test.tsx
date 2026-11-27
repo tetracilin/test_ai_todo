@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-// Regression guard for the story map URL: the page is company-scoped, so the
-// sidebar emits a prefixed URL, but the advertised unprefixed `/story-map`
-// must redirect to the selected company's page. This drives the real <App>
-// route table. The backlog and scratch-pad cases join this file with their own
-// slices.
+// Regression guard for the story map and scratch pad links: the pages are
+// company-scoped, so the sidebar and the pages themselves emit prefixed URLs,
+// but the advertised unprefixed URLs (/story-map, /story-map/backlog,
+// /scratch-pad) must redirect to the selected company's page. This drives the
+// real <App> route table; removing the UnprefixedBoardRedirect routes makes the
+// sentinels disappear.
 
 import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -52,9 +53,13 @@ vi.mock("./components/OnboardingWizardVariant", () => ({
   OnboardingWizardVariant: () => null,
 }));
 
-// A sentinel so we can assert which route resolved: it only renders when the
-// unprefixed path redirected onto the company-prefixed board route.
+// Sentinels so we can assert which route resolved: a sentinel only renders
+// when the unprefixed path redirected onto the company-prefixed board route.
 vi.mock("./pages/StoryMap", () => ({ StoryMap: () => <div>STORY_MAP_PAGE</div> }));
+vi.mock("./pages/StoryMapBacklog", () => ({
+  StoryMapBacklog: () => <div>STORY_MAP_BACKLOG_PAGE</div>,
+}));
+vi.mock("./pages/ScratchPad", () => ({ ScratchPad: () => <div>SCRATCH_PAD_PAGE</div> }));
 
 // Cloud access is unrelated to the route table. Let it fall through
 // synchronously so this test does not poll its three query transitions.
@@ -96,7 +101,7 @@ async function waitForRoute(container: HTMLElement, text: string) {
   await vi.waitFor(() => expect(container.textContent).toContain(text));
 }
 
-describe("App story map routing (company-aware URL)", () => {
+describe("App story map and scratch pad routing (company-aware URLs)", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
@@ -110,12 +115,19 @@ describe("App story map routing (company-aware URL)", () => {
     vi.clearAllMocks();
   });
 
-  const cases = ["/story-map", "/PAP/story-map"];
+  const cases: Array<[string, string]> = [
+    ["/story-map", "STORY_MAP_PAGE"],
+    ["/story-map/backlog", "STORY_MAP_BACKLOG_PAGE"],
+    ["/scratch-pad", "SCRATCH_PAD_PAGE"],
+    ["/PAP/story-map", "STORY_MAP_PAGE"],
+    ["/PAP/story-map/backlog", "STORY_MAP_BACKLOG_PAGE"],
+    ["/PAP/scratch-pad", "SCRATCH_PAD_PAGE"],
+  ];
 
-  for (const path of cases) {
-    it(`resolves ${path} to the story map page`, async () => {
+  for (const [path, sentinel] of cases) {
+    it(`resolves ${path} to the ${sentinel}`, async () => {
       const root = renderAppAt(container, path);
-      await waitForRoute(container, "STORY_MAP_PAGE");
+      await waitForRoute(container, sentinel);
       expect(container.textContent).not.toContain("No company matches prefix");
       flushSync(() => root.unmount());
     });
