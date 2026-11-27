@@ -16,6 +16,7 @@ import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { parseDocumentAnnotationHash } from "../lib/document-annotation-hash";
 import { deriveDocumentRevisionState } from "../lib/document-revisions";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
@@ -289,7 +290,9 @@ export function IssueDocumentsSection({
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
   // Session-only: every document starts collapsed and nothing is persisted between visits.
-  const [expandedDocumentKeys, setExpandedDocumentKeys] = useState<string[]>([]);
+  const [expandedDocumentKeys, setExpandedDocumentKeys] = useState<string[]>(
+    () => [...(defaultAnnotationPanelOpenKeys ?? [])],
+  );
   const expandDocument = useCallback((key: string) => {
     setExpandedDocumentKeys((current) => (current.includes(key) ? current : [...current, key]));
   }, []);
@@ -569,6 +572,7 @@ export function IssueDocumentsSection({
           : currentDraft.baseRevisionId,
       });
       setError(null);
+      if (currentDraft.isNew) expandDocument(saved.key);
       setDocumentConflict((current) => current?.key === normalizedKey ? null : current);
       setDraft((value) => {
         if (!value || value.key !== normalizedKey) return value;
@@ -753,21 +757,16 @@ export function IssueDocumentsSection({
     }
   };
 
+  const previousSubjectIdRef = useRef(documentSubject.id);
   useEffect(() => {
+    if (previousSubjectIdRef.current === documentSubject.id) return;
+    previousSubjectIdRef.current = documentSubject.id;
     setExpandedDocumentKeys([]);
   }, [documentSubject.id]);
 
   useEffect(() => {
     hasScrolledToHashRef.current = false;
   }, [documentSubject.id, location.hash]);
-
-  useEffect(() => {
-    const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
-    setExpandedDocumentKeys((current) => {
-      const next = current.filter((key) => validKeys.has(key));
-      return next.length === current.length ? current : next;
-    });
-  }, [sortedDocuments]);
 
   useEffect(() => {
     if (!documentConflict) return;
@@ -783,7 +782,8 @@ export function IssueDocumentsSection({
   useEffect(() => {
     const hash = location.hash;
     if (!hash.startsWith("#document-")) return;
-    const documentKey = decodeURIComponent(hash.slice("#document-".length));
+    const documentKey = parseDocumentAnnotationHash(hash)?.documentKey;
+    if (!documentKey) return;
     const targetExists = sortedDocuments.some((doc) => doc.key === documentKey)
       || (documentKey === "plan" && Boolean(documentSubject.legacyPlanDocument));
     if (!targetExists || hasScrolledToHashRef.current) return;

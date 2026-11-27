@@ -26,6 +26,8 @@ const markdownEditorMockState = vi.hoisted(() => ({
   emitMountEmptyChange: false,
 }));
 
+const mockLocationState = vi.hoisted(() => ({ hash: "" }));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,7 +60,7 @@ vi.mock("../hooks/useAutosaveIndicator", () => ({
 }));
 
 vi.mock("@/lib/router", () => ({
-  useLocation: () => ({ hash: "" }),
+  useLocation: () => ({ hash: mockLocationState.hash }),
 }));
 
 vi.mock("./MarkdownBody", () => ({
@@ -306,10 +308,64 @@ describe("IssueDocumentsSection", () => {
     // default implementation, so a full reset is safe.
     for (const mock of Object.values(mockIssuesApi)) mock.mockReset();
     markdownEditorMockState.emitMountEmptyChange = false;
+    mockLocationState.hash = "";
   });
 
   afterEach(() => {
     container.remove();
+  });
+
+  it("expands the linked document for a comment deep link with a thread parameter", async () => {
+    mockLocationState.hash = "#document-plan&thread=t1";
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({ key: "plan", body: "Plan body text" }),
+      createIssueDocument({ id: "document-notes", key: "notes", body: "Notes body text" }),
+    ]);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+    expect(container.textContent).toContain("Plan body text");
+    expect(container.textContent).not.toContain("Notes body text");
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
+  it("opens the document listed in defaultAnnotationPanelOpenKeys on first render", async () => {
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({ key: "plan", body: "Plan body text" }),
+      createIssueDocument({ id: "document-notes", key: "notes", body: "Notes body text" }),
+    ]);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} defaultAnnotationPanelOpenKeys={["notes"]} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+    const states = Array.from(
+      container.querySelectorAll('button[aria-label$=" document"][aria-expanded]'),
+    ).map((button) => button.getAttribute("aria-expanded"));
+    expect(states).toEqual(["false", "true"]);
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
   });
 
   it("shows documents collapsed by default, toggles rows, and does not remember the state", async () => {
