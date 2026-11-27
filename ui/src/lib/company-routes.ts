@@ -32,6 +32,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "settings",
   "timeline",
   "story-map",
+  "scratch-pad",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
