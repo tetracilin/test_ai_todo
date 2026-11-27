@@ -4,7 +4,9 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { COMPANY_ARTIFACTS_MAX_LIMIT } from "@paperclipai/shared";
 import { DocumentPopoverPanel } from "./DocumentPopoverPanel";
+import { artifactTreePaths } from "./DocumentPanelFileTree";
 
 const mockList = vi.hoisted(() => vi.fn());
 vi.mock("../api/artifacts", () => ({ artifactsApi: { list: mockList } }));
@@ -68,6 +70,22 @@ describe("DocumentPopoverPanel file tree", () => {
       folder.click();
     });
     expect(document.querySelector('[data-file-tree-path="T-1/budget.xlsx"]')).toBeNull();
+  });
+
+  it("requests no more files than the server allows", async () => {
+    mockList.mockResolvedValue({ artifacts: [], nextCursor: null });
+    await renderPanel();
+    const options = mockList.mock.calls[0][1] as { limit: number };
+    expect(options.limit).toBeLessThanOrEqual(COMPANY_ARTIFACTS_MAX_LIMIT);
+  });
+
+  it("keeps three same-named attachments of one task apart", () => {
+    const paths = artifactTreePaths([
+      artifact("attachment:11111111-aaaa", "same.docx"),
+      artifact("attachment:22222222-bbbb", "same.docx"),
+      artifact("attachment:33333333-cccc", "same.docx"),
+    ] as never);
+    expect(paths.size).toBe(3);
   });
 
   it("shows an empty message when the project has no artifacts", async () => {

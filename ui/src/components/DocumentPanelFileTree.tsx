@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { COMPANY_ARTIFACTS_MAX_LIMIT } from "@paperclipai/shared";
 import { artifactsApi, type CompanyArtifact } from "../api/artifacts";
 import { queryKeys } from "../lib/queryKeys";
 import { FileTree, buildFileTree } from "./FileTree";
@@ -18,7 +19,12 @@ export function artifactTreePaths(artifacts: CompanyArtifact[]): Map<string, Com
     const folder = (artifact.issue.identifier || artifact.issue.title || "Task").replace(/\//g, "-");
     const name = (artifact.title || artifact.id).replace(/\//g, "-");
     let path = `${folder}/${name}`;
-    if (byPath.has(path)) path = `${folder}/${name} (${artifact.id.slice(0, 8)})`;
+    if (byPath.has(path)) {
+      const uniquePart = artifact.id.slice(artifact.id.lastIndexOf(":") + 1);
+      const base = `${folder}/${name} (${uniquePart.slice(0, 8)})`;
+      path = base;
+      for (let n = 2; byPath.has(path); n += 1) path = `${base} ${n}`;
+    }
     byPath.set(path, artifact);
   }
   return byPath;
@@ -34,7 +40,7 @@ export function DocumentPanelFileTree({
   const enabled = Boolean(companyId && projectId);
   const query = useQuery({
     queryKey: [...queryKeys.artifacts.list(companyId ?? "", "all"), "project", projectId ?? ""],
-    queryFn: () => artifactsApi.list(companyId!, { projectId: projectId!, limit: 200 }),
+    queryFn: () => artifactsApi.list(companyId!, { projectId: projectId!, limit: COMPANY_ARTIFACTS_MAX_LIMIT }),
     enabled,
   });
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
