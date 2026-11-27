@@ -81,17 +81,32 @@ function StoryForm({
       }}
     >
       <Field label="Title">
-        <Input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+        <Input value={title} maxLength={200} disabled={saving} onChange={(event) => setTitle(event.target.value)} />
       </Field>
       <Field label="Description">
-        <Textarea value={description} maxLength={10000} onChange={(event) => setDescription(event.target.value)} />
+        <Textarea
+          value={description}
+          maxLength={10000}
+          disabled={saving}
+          onChange={(event) => setDescription(event.target.value)}
+        />
       </Field>
       <Field label="Acceptance criteria">
-        <Textarea value={acceptance} maxLength={10000} onChange={(event) => setAcceptance(event.target.value)} />
+        <Textarea
+          value={acceptance}
+          maxLength={10000}
+          disabled={saving}
+          onChange={(event) => setAcceptance(event.target.value)}
+        />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Size">
-          <select className={selectClass} value={size} onChange={(event) => setSize(event.target.value)}>
+          <select
+            className={selectClass}
+            value={size}
+            disabled={saving}
+            onChange={(event) => setSize(event.target.value)}
+          >
             <option value={NONE}>Not sized</option>
             {!knownSize ? <option value={size}>{size}</option> : null}
             {STORY_SIZES.map((item) => (
@@ -105,6 +120,7 @@ function StoryForm({
           <select
             className={selectClass}
             value={status}
+            disabled={saving}
             onChange={(event) => setStatus(event.target.value as StoryMapStoryStatus)}
           >
             {STORY_MAP_STORY_STATUSES.map((item) => (
@@ -117,7 +133,12 @@ function StoryForm({
       </div>
       {epics.length > 0 ? (
         <Field label="Epic">
-          <select className={selectClass} value={epicId} onChange={(event) => setEpicId(event.target.value)}>
+          <select
+            className={selectClass}
+            value={epicId}
+            disabled={saving}
+            onChange={(event) => setEpicId(event.target.value)}
+          >
             <option value={NONE}>No epic</option>
             {epics.map((epic) => (
               <option key={epic.id} value={epic.id}>
@@ -168,10 +189,15 @@ function EpicForm({
         }}
       >
         <Field label="Epic name">
-          <Input value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
+          <Input value={name} maxLength={200} disabled={saving} onChange={(event) => setName(event.target.value)} />
         </Field>
         <Field label="Description">
-          <Textarea value={description} maxLength={10000} onChange={(event) => setDescription(event.target.value)} />
+          <Textarea
+            value={description}
+            maxLength={10000}
+            disabled={saving}
+            onChange={(event) => setDescription(event.target.value)}
+          />
         </Field>
         <Button type="submit" disabled={saving}>
           Save epic

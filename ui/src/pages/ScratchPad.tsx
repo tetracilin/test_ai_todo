@@ -37,6 +37,7 @@ function NoteCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.body);
+  const [saving, setSaving] = useState(false);
 
   return (
     <article className="space-y-2 border border-border bg-card p-3" data-note-id={note.id} aria-label="Note">
@@ -46,22 +47,32 @@ function NoteCard({
             aria-label="Edit note"
             value={draft}
             maxLength={SCRATCH_NOTE_MAX_LENGTH}
+            disabled={busy || saving}
             onChange={(event) => setDraft(event.target.value)}
           />
           <div className="flex gap-2">
             <Button
               type="button"
               size="sm"
-              disabled={busy || draft.trim().length === 0}
+              disabled={busy || saving || draft.trim().length === 0}
               onClick={() => {
+                if (saving) return;
+                setSaving(true);
                 onEdit(draft.trim())
                   .then(() => setEditing(false))
-                  .catch(() => undefined); // the page shows the error
+                  .catch(() => undefined) // the page shows the error
+                  .finally(() => setSaving(false));
               }}
             >
               Save
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy || saving}
+              onClick={() => setEditing(false)}
+            >
               Cancel
             </Button>
           </div>

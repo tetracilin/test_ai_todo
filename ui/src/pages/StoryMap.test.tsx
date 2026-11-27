@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryMapTree } from "@paperclipai/shared";
-import { StoryMap } from "./StoryMap";
+import { queryKeys } from "../lib/queryKeys";
+import { collisionDetection, StoryMap } from "./StoryMap";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,6 +29,7 @@ const storyMapApiMock = vi.hoisted(() => ({
 }));
 
 const dndState = vi.hoisted(() => ({ onDragEnd: null as null | ((event: unknown) => void) }));
+const pointerWithinMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => companyState }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => breadcrumbState }));
@@ -70,6 +72,7 @@ vi.mock("@dnd-kit/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@dnd-kit/core")>();
   return {
     ...actual,
+    pointerWithin: pointerWithinMock,
     DndContext: ({ children, onDragEnd }: { children: React.ReactNode; onDragEnd: (event: unknown) => void }) => {
       dndState.onDragEnd = onDragEnd;
       return <actual.DndContext>{children}</actual.DndContext>;
@@ -124,13 +127,13 @@ describe("Story map page", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
-  async function render(tree: StoryMapTree) {
+  async function render(tree: StoryMapTree, queryClient?: QueryClient) {
     storyMapApiMock.get.mockResolvedValue(tree);
     scratchPadApiMock.list.mockResolvedValue(scratchNotes);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
       root.render(
-        <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={client}>
           <MemoryRouter>
             <StoryMap />
           </MemoryRouter>
@@ -162,6 +165,7 @@ describe("Story map page", () => {
     root = createRoot(container);
     companyState.selectedCompanyId = "company-1";
     for (const mock of Object.values(storyMapApiMock)) mock.mockReset();
+    pointerWithinMock.mockReset();
     scratchNotes = { notes: [], viewerUserId: "me", canModerate: false };
     breadcrumbState.setBreadcrumbs.mockReset();
   });
@@ -373,6 +377,21 @@ describe("Story map page", () => {
     expect(storyMapApiMock.move).not.toHaveBeenCalled();
   });
 
+  it("treats a drop back on the dragged card's own spot as no target", () => {
+    // The card keeps its pre-drag droppable rect, so its own spot still reports
+    // the card plus the cell around it. Falling through to the cell would move
+    // the card to the end of its release.
+    pointerWithinMock.mockReturnValue([{ id: "story:s1" }, { id: "cell:t1|r1" }]);
+    const args = { active: { id: "story:s1" } } as unknown as Parameters<typeof collisionDetection>[0];
+    expect(collisionDetection(args)).toEqual([]);
+  });
+
+  it("still prefers another card under the pointer over the cell around it", () => {
+    pointerWithinMock.mockReturnValue([{ id: "cell:t1|r1" }, { id: "story:s2" }]);
+    const args = { active: { id: "story:s1" } } as unknown as Parameters<typeof collisionDetection>[0];
+    expect(collisionDetection(args)).toEqual([{ id: "story:s2" }]);
+  });
+
   it("opens a story in the detail panel, saves it and closes the panel", async () => {
     storyMapApiMock.updateStory.mockResolvedValue({});
     await render(fullTree);
@@ -397,6 +416,32 @@ describe("Story map page", () => {
       "s1",
       expect.objectContaining({ title: "Pick a template", description: "Choose one", epicId: "e1" }),
     );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("locks the detail fields while a story save is pending", async () => {
+    let finish!: (value: unknown) => void;
+    storyMapApiMock.updateStory.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await render(fullTree);
+    await click("Open story Pick a template");
+
+    const description = [...container.querySelectorAll("label")]
+      .find((l) => l.textContent?.startsWith("Description"))!
+      .querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(description, "Choose one");
+      description.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector('[role="dialog"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    // Editing is blocked, so text typed after submitting cannot be dropped when
+    // the successful save closes the panel.
+    expect(description.disabled).toBe(true);
+
+    await act(async () => finish({}));
+    await flush();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
@@ -508,6 +553,22 @@ describe("Story map page", () => {
     });
     await flush();
     expect(container.textContent).toContain("The scratch pad could not be loaded: Scratch pad is down");
+  });
+
+  it("does not carry an open add form into another company", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await render(fullTree, queryClient);
+    await click("Add release");
+    await typeInto("Add release: name", "Draft written in company one");
+
+    // Company B's map is cached, so switching stays on the grid instead of a
+    // loading state that would hide a stale form.
+    queryClient.setQueryData(queryKeys.storyMap.tree("company-2"), fullTree);
+    companyState.selectedCompanyId = "company-2";
+    await render(fullTree, queryClient);
+
+    expect(byLabel("Add release: name")).toBeNull();
+    expect(storyMapApiMock.createRelease).not.toHaveBeenCalled();
   });
 
   it("takes the grid column widths from tokens, not literal sizes", async () => {

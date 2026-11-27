@@ -157,6 +157,24 @@ describe("Scratch pad page", () => {
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit note"]')!.value).toBe("Changed text");
   });
 
+  it("disables the note editor while its save is pending", async () => {
+    let finish!: (value: unknown) => void;
+    scratchPadApiMock.update.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await render(list([note({})]));
+    const card = container.querySelector<HTMLElement>('[data-note-id="n1"]')!;
+    await act(async () => button("Edit", card)!.click());
+    await typeNote("Changed text", "Edit note");
+    await act(async () => button("Save", card)!.click());
+
+    // Editing is blocked, so text typed after submitting cannot be dropped when
+    // the successful save closes the editor.
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit note"]')!.disabled).toBe(true);
+
+    await act(async () => finish({}));
+    await flush();
+    expect(container.querySelector('textarea[aria-label="Edit note"]')).toBeNull();
+  });
+
   it("does not carry a draft or an open editor into another company", async () => {
     scratchPadApiMock.create.mockResolvedValue({});
     await render(list([note({})]));

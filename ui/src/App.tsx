@@ -607,6 +607,9 @@ export function App() {
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
+          <Route path="story-map" element={<UnprefixedBoardRedirect />} />
+          <Route path="story-map/backlog" element={<UnprefixedBoardRedirect />} />
+          <Route path="scratch-pad" element={<UnprefixedBoardRedirect />} />
           <Route path="today" element={<UnprefixedBoardRedirect />} />
           <Route path="schedule" element={<UnprefixedBoardRedirect />} />
           <Route path="schedule/routines" element={<UnprefixedBoardRedirect />} />

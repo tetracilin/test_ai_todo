@@ -173,14 +173,28 @@ function AddInline({
   );
 }
 
-/** Prefer the card under the pointer over the cell around it, and never the dragged card itself. */
-const collisionDetection: CollisionDetection = (args) => {
-  const hits = pointerWithin(args).filter((hit) => hit.id !== args.active.id);
+/**
+ * Prefer the card under the pointer over the cell around it.
+ *
+ * The dragged card keeps the droppable rect it had before the drag started, so
+ * a pointer back over its own spot still reports the card itself. Treat that as
+ * no target: without it the filter below would fall through to the surrounding
+ * cell, and dropping there would move the card to the end of its row.
+ */
+export const collisionDetection: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  if (hits.some((hit) => hit.id === args.active.id)) return [];
   const cards = hits.filter((hit) => !String(hit.id).startsWith("cell:"));
   return cards.length > 0 ? cards : hits;
 };
 
+/** Keyed by company, so a form draft typed in one company cannot be saved into another. */
 export function StoryMap() {
+  const { selectedCompanyId } = useCompany();
+  return <StoryMapForCompany key={selectedCompanyId ?? "none"} />;
+}
+
+function StoryMapForCompany() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
