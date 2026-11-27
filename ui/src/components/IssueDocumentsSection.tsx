@@ -1404,6 +1404,8 @@ export function IssueDocumentsSection({
         documentKey={panelDocumentKey}
         onClose={() => setPanelDocumentKey(null)}
         returnFocusRef={panelOpenerRef}
+        companyId={issue?.companyId}
+        projectId={issue?.projectId}
       />
 
       {diffViewKey && (() => {
