@@ -51,6 +51,7 @@ import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
+import { AppVersion } from "./AppVersion";
 
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
@@ -300,6 +301,7 @@ export function Sidebar() {
           missingBehavior="placeholder"
         />
       </nav>
+      <AppVersion className="border-t border-border px-3 py-2" />
     </aside>
   );
 }
