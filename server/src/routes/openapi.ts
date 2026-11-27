@@ -76,6 +76,8 @@ import {
   createStoryMapReleaseSchema,
   createStoryMapStorySchema,
   createStoryMapTaskSchema,
+  moveStoryMapItemSchema,
+  moveStoryMapStorySchema,
   updateScratchNoteSchema,
   updateStoryMapActivitySchema,
   updateStoryMapEpicSchema,
@@ -867,6 +869,13 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/scratch-notes/{noteId}/promote",
+  "POST /api/companies/{companyId}/scratch-notes/{noteId}/archive",
+  "POST /api/companies/{companyId}/story-map/activities/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/tasks/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/releases/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/epics/{itemId}/move",
+  "POST /api/companies/{companyId}/story-map/stories/{itemId}/move",
   "POST /api/companies/{companyId}/story-map/activities",
   "PATCH /api/companies/{companyId}/story-map/activities/{itemId}",
   "DELETE /api/companies/{companyId}/story-map/activities/{itemId}",
@@ -7022,6 +7031,46 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/activities/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map activity among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/tasks/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map task among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/releases/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map release among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/epics/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map epic among its siblings",
+  body: moveStoryMapItemSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/story-map/stories/{itemId}/move",
+  tags: ["story-map"],
+  summary: "Move a story map story among its siblings",
+  body: moveStoryMapStorySchema,
+});
+
+registerCurrentRoute({
   method: "get",
   path: "/api/companies/{companyId}/scratch-notes",
   tags: ["story-map"],
@@ -7042,6 +7091,20 @@ registerCurrentRoute({
   tags: ["story-map"],
   summary: "Edit your own scratch pad note",
   body: updateScratchNoteSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}/promote",
+  tags: ["story-map"],
+  summary: "Promote a scratch pad note to a story (owner or admin)",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/scratch-notes/{noteId}/archive",
+  tags: ["story-map"],
+  summary: "Archive a scratch pad note (owner or admin)",
 });
 
 registerCurrentRoute({

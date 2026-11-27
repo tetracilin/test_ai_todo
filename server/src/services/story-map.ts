@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, max } from "drizzle-orm";
+import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  authUsers,
   scratchNotes,
   storyMapActivities,
   storyMapEpics,
@@ -9,14 +10,19 @@ import {
   storyMapTasks,
   storyMaps,
 } from "@paperclipai/db";
-import type {
-  CreateScratchNote,
+import {
+  PROMOTED_NOTES_ACTIVITY,
+  PROMOTED_NOTES_TASK,
+  type CreateScratchNote,
   CreateStoryMapActivity,
   CreateStoryMapEpic,
   CreateStoryMapRelease,
   CreateStoryMapStory,
   CreateStoryMapTask,
+  MoveStoryMapStory,
+  PromoteScratchNoteResult,
   ScratchNote,
+  ScratchNoteView,
   StoryMap,
   StoryMapActivity,
   StoryMapEpic,
@@ -31,7 +37,7 @@ import type {
   UpdateStoryMapStory,
   UpdateStoryMapTask,
 } from "@paperclipai/shared";
-import { forbidden, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 
 const DEFAULT_MAP_NAME = "Story map";
 
@@ -49,6 +55,24 @@ function blankToNull(value: string | null | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export type MovableStoryMapKind = "activities" | "tasks" | "releases" | "epics" | "stories";
+
+/**
+ * Places `id` among `ids`: before `beforeId`, or at `endIndex` (default: the end) when no
+ * target is given. Returns the new order. The target must be one of the siblings.
+ */
+export function planStoryMapOrder(ids: string[], id: string, beforeId: string | null | undefined, endIndex?: number) {
+  const rest = ids.filter((other) => other !== id);
+  if (beforeId) {
+    const index = rest.indexOf(beforeId);
+    if (index < 0) throw unprocessable("The target is not a sibling of the moved item");
+    rest.splice(index, 0, id);
+  } else {
+    rest.splice(endIndex ?? rest.length, 0, id);
+  }
+  return rest;
 }
 
 export function storyMapService(db: Db) {
@@ -137,6 +161,9 @@ export function storyMapService(db: Db) {
   }
 
   return {
+    /** Used inside a transaction by promotion. Same as the private ensureMap. */
+    ensureMapForWrite: (companyId: string) => ensureMap(companyId),
+
     async getTree(companyId: string): Promise<StoryMapTree> {
       const map = await findMap(companyId);
       if (!map) {
@@ -344,12 +371,183 @@ export function storyMapService(db: Db) {
       return row;
     },
 
-    async listScratchNotes(companyId: string): Promise<ScratchNote[]> {
-      return db
-        .select()
+    /**
+     * Moves an item among its siblings and renumbers them in one transaction, so the order
+     * is saved as a whole. A story may also change release in the same step.
+     */
+    async moveItem(
+      companyId: string,
+      kind: MovableStoryMapKind,
+      id: string,
+      input: MoveStoryMapStory,
+    ): Promise<StoryMapActivity | StoryMapTask | StoryMapRelease | StoryMapEpic | StoryMapStory> {
+      if (input.beforeId === id) throw unprocessable("An item cannot be moved before itself");
+      if (kind !== "stories" && input.releaseId !== undefined) {
+        throw unprocessable("Only a story can change release");
+      }
+      if (input.releaseId) await requireRelease(companyId, input.releaseId);
+
+      return db.transaction(async (tx) => {
+        // The tables share id, company, position and timestamps, so one table type stands for all.
+        const table = {
+          activities: storyMapActivities,
+          tasks: storyMapTasks,
+          releases: storyMapReleases,
+          epics: storyMapEpics,
+          stories: storyMapStories,
+        }[kind] as typeof storyMapActivities;
+
+        const [item] = await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), eq(table.id, id)))
+          .limit(1);
+        if (!item) throw notFound("Item not found");
+
+        const scope =
+          kind === "activities" || kind === "releases"
+            ? eq(table.mapId, item.mapId)
+            : kind === "tasks"
+              ? eq(storyMapTasks.activityId, (item as unknown as StoryMapTask).activityId)
+              : eq(
+                  (kind === "epics" ? storyMapEpics : storyMapStories).taskId,
+                  (item as unknown as StoryMapEpic | StoryMapStory).taskId,
+                );
+        const siblings = (await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), scope))
+          .orderBy(asc(table.position), asc(table.createdAt))
+          // Lock the siblings so a second move waits and then reads the order the first one saved.
+          .for("update")) as unknown as Array<{
+          id: string;
+          position: number;
+          releaseId?: string | null;
+        }>;
+
+        const releaseChange = kind === "stories" && input.releaseId !== undefined;
+        let endIndex: number | undefined;
+        if (releaseChange && !input.beforeId) {
+          // Dropped on a cell without a target: go after the last story already in that release.
+          const rest = siblings.filter((other) => other.id !== id);
+          const lastInRelease = rest.map((other) => (other.releaseId ?? null) === (input.releaseId ?? null)).lastIndexOf(true);
+          endIndex = lastInRelease < 0 ? rest.length : lastInRelease + 1;
+        }
+        const order = planStoryMapOrder(siblings.map((s) => s.id), id, input.beforeId, endIndex);
+
+        const positions = new Map(siblings.map((s) => [s.id, s.position]));
+        const now = new Date();
+        for (const [index, siblingId] of order.entries()) {
+          const changesRelease = releaseChange && siblingId === id;
+          if (positions.get(siblingId) === index && !changesRelease) continue;
+          await tx
+            .update(table)
+            .set({
+              position: index,
+              updatedAt: now,
+              ...(changesRelease ? ({ releaseId: input.releaseId ?? null } as Record<string, unknown>) : {}),
+            })
+            .where(and(eq(table.companyId, companyId), eq(table.id, siblingId)));
+        }
+
+        const [moved] = await tx
+          .select()
+          .from(table)
+          .where(and(eq(table.companyId, companyId), eq(table.id, id)))
+          .limit(1);
+        return required(moved, "Item not found") as unknown as StoryMapStory;
+      });
+    },
+
+    async listScratchNotes(companyId: string): Promise<ScratchNoteView[]> {
+      const rows = await db
+        .select({ note: scratchNotes, authorName: authUsers.name })
         .from(scratchNotes)
+        .leftJoin(authUsers, eq(authUsers.id, scratchNotes.authorUserId))
         .where(eq(scratchNotes.companyId, companyId))
         .orderBy(desc(scratchNotes.createdAt));
+      return rows.map((row) => ({ ...row.note, authorName: row.authorName ?? null }));
+    },
+
+    /**
+     * Turns an active note into a story in the Unscheduled row. The story goes under a fixed
+     * activity and task for promoted ideas, created on first use, so no task has to be chosen.
+     */
+    async promoteScratchNote(companyId: string, id: string): Promise<PromoteScratchNoteResult> {
+      return db.transaction(async (tx) => {
+        // Lock the note so a double click or a second admin waits, then sees it is no longer active.
+        const [note] = await tx
+          .select()
+          .from(scratchNotes)
+          .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
+          .limit(1)
+          .for("update");
+        if (!note) throw notFound("Note not found");
+        if (note.status !== "active") throw conflict("Only an active note can be promoted");
+
+        // Serialize the first-use creation of the idea column for this company.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`story-map-promote:${companyId}`}))`);
+
+        const inner = storyMapService(tx as unknown as Db);
+        const map = await inner.ensureMapForWrite(companyId);
+        const createdParents: PromoteScratchNoteResult["createdParents"] = { activity: null, task: null };
+
+        let [activity] = await tx
+          .select()
+          .from(storyMapActivities)
+          .where(and(eq(storyMapActivities.mapId, map.id), eq(storyMapActivities.name, PROMOTED_NOTES_ACTIVITY)))
+          .limit(1);
+        if (!activity) {
+          activity = await inner.createActivity(companyId, { name: PROMOTED_NOTES_ACTIVITY });
+          createdParents.activity = activity;
+        }
+        let [task] = await tx
+          .select()
+          .from(storyMapTasks)
+          .where(and(eq(storyMapTasks.activityId, activity.id), eq(storyMapTasks.name, PROMOTED_NOTES_TASK)))
+          .limit(1);
+        if (!task) {
+          task = await inner.createTask(companyId, { activityId: activity.id, name: PROMOTED_NOTES_TASK });
+          createdParents.task = task;
+        }
+
+        const firstLine = note.body.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? note.body.trim();
+        const title = firstLine.length > 200 ? `${firstLine.slice(0, 197)}...` : firstLine;
+        const story = await inner.createStory(companyId, {
+          taskId: task.id,
+          title,
+          description: note.body.trim() === title ? null : note.body.trim(),
+        });
+        const [updated] = await tx
+          .update(scratchNotes)
+          .set({ status: "promoted", promotedStoryId: story.id, updatedAt: new Date() })
+          .where(and(eq(scratchNotes.id, note.id), eq(scratchNotes.status, "active")))
+          .returning();
+        return { note: required(updated, "Note not found"), story, createdParents };
+      });
+    },
+
+    async archiveScratchNote(companyId: string, id: string): Promise<ScratchNote> {
+      return db.transaction(async (tx) => {
+        // Lock the note so a concurrent promote waits, then reads the status this archive saved.
+        const [note] = await tx
+          .select()
+          .from(scratchNotes)
+          .where(and(eq(scratchNotes.companyId, companyId), eq(scratchNotes.id, id)))
+          .limit(1)
+          .for("update");
+        if (!note) throw notFound("Note not found");
+        if (note.status === "archived") return note;
+        if (note.status === "promoted") throw conflict("A promoted note cannot be archived");
+        // The status condition keeps the write safe if the row ever becomes writable mid-step.
+        const [updated] = await tx
+          .update(scratchNotes)
+          .set({ status: "archived", updatedAt: new Date() })
+          .where(and(eq(scratchNotes.id, note.id), eq(scratchNotes.status, "active")))
+          .returning();
+        if (!updated) throw conflict("Only an active note can be archived");
+        return updated;
+      });
     },
 
     async createScratchNote(companyId: string, authorUserId: string, input: CreateScratchNote): Promise<ScratchNote> {
