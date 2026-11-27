@@ -147,6 +147,81 @@ describeEmbeddedPostgres("story map service", () => {
     expect((await svc.getTree(companyA)).tasks[0]?.name).toBe("Create project");
   });
 
+  it("moves activities, tasks and epics before a sibling or to the end, and renumbers", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const a = await svc.createActivity(companyId, { name: "A" });
+    await svc.createActivity(companyId, { name: "B" });
+    const c = await svc.createActivity(companyId, { name: "C" });
+
+    await svc.moveItem(companyId, "activities", c.id, { beforeId: a.id });
+    expect((await svc.getTree(companyId)).activities.map((x) => x.name)).toEqual(["C", "A", "B"]);
+
+    await svc.moveItem(companyId, "activities", c.id, {});
+    const tree = await svc.getTree(companyId);
+    expect(tree.activities.map((x) => x.name)).toEqual(["A", "B", "C"]);
+    expect(tree.activities.map((x) => x.position)).toEqual([0, 1, 2]);
+
+    const t1 = await svc.createTask(companyId, { activityId: a.id, name: "T1" });
+    const t2 = await svc.createTask(companyId, { activityId: a.id, name: "T2" });
+    await svc.moveItem(companyId, "tasks", t2.id, { beforeId: t1.id });
+    expect((await svc.getTree(companyId)).tasks.map((x) => x.name)).toEqual(["T2", "T1"]);
+
+    const e1 = await svc.createEpic(companyId, { taskId: t1.id, name: "E1" });
+    await svc.createEpic(companyId, { taskId: t1.id, name: "E2" });
+    await svc.moveItem(companyId, "epics", e1.id, {});
+    expect((await svc.getTree(companyId)).epics.map((x) => x.name)).toEqual(["E2", "E1"]);
+  });
+
+  it("moves a story to a release and places it among the stories of that release", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const activity = await svc.createActivity(companyId, { name: "Plan work" });
+    const task = await svc.createTask(companyId, { activityId: activity.id, name: "Create project" });
+    const release = await svc.createRelease(companyId, { name: "Release 1" });
+    const first = await svc.createStory(companyId, { taskId: task.id, releaseId: release.id, title: "First" });
+    const loose = await svc.createStory(companyId, { taskId: task.id, title: "Loose" });
+    const second = await svc.createStory(companyId, { taskId: task.id, releaseId: release.id, title: "Second" });
+
+    // No target: goes after the last story already in Release 1.
+    const moved = await svc.moveItem(companyId, "stories", loose.id, { releaseId: release.id });
+    expect((moved as { releaseId: string | null }).releaseId).toBe(release.id);
+    let stories = (await svc.getTree(companyId)).stories;
+    expect(stories.filter((s) => s.releaseId === release.id).map((s) => s.title)).toEqual(["First", "Second", "Loose"]);
+
+    // Before a target: lands in front of it.
+    await svc.moveItem(companyId, "stories", loose.id, { beforeId: first.id, releaseId: release.id });
+    stories = (await svc.getTree(companyId)).stories;
+    expect(stories.map((s) => s.title)).toEqual(["Loose", "First", "Second"]);
+
+    // Back to Unscheduled.
+    await svc.moveItem(companyId, "stories", second.id, { releaseId: null });
+    stories = (await svc.getTree(companyId)).stories;
+    expect(stories.find((s) => s.id === second.id)?.releaseId).toBeNull();
+  });
+
+  it("keeps the saved order after a reload and rejects bad moves", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const other = await seedCompany();
+    const a = await svc.createActivity(companyId, { name: "First step" });
+    const b = await svc.createActivity(companyId, { name: "Second step" });
+    const foreign = await svc.createActivity(other, { name: "Foreign" });
+
+    await svc.moveItem(companyId, "activities", b.id, { beforeId: a.id });
+    // A fresh service instance reads the same order: it is stored, not held in memory.
+    const names = (await storyMapService(db).getTree(companyId)).activities.map((x) => x.name);
+    expect(names).toEqual(["Second step", "First step"]);
+
+    await expect(svc.moveItem(companyId, "activities", a.id, { beforeId: foreign.id })).rejects.toThrow(/sibling/);
+    await expect(svc.moveItem(companyId, "activities", a.id, { beforeId: a.id })).rejects.toThrow(/itself/);
+    await expect(svc.moveItem(other, "activities", a.id, {})).rejects.toThrow(/not found/i);
+    await expect(svc.moveItem(companyId, "activities", a.id, { releaseId: null })).rejects.toThrow(/story/i);
+    await expect(
+      svc.moveItem(companyId, "stories", a.id, { releaseId: "99999999-9999-4999-8999-999999999999" }),
+    ).rejects.toThrow(/not found/i);
+  });
+
   it("lets only the author edit or delete a scratch note", async () => {
     const svc = storyMapService(db);
     const companyId = await seedCompany();
@@ -164,6 +239,154 @@ describeEmbeddedPostgres("story map service", () => {
 
     await svc.deleteScratchNote(companyId, note.id, "author-1");
     expect(await svc.listScratchNotes(companyId)).toHaveLength(0);
+  });
+
+  it("promotes a note into the Unscheduled row under a fixed idea column, once", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board as PDF\nSo I can share it" });
+
+    const { note: promoted, story } = await svc.promoteScratchNote(companyId, note.id);
+    expect(promoted.status).toBe("promoted");
+    expect(promoted.promotedStoryId).toBe(story.id);
+    expect(story.title).toBe("Export the board as PDF");
+    expect(story.description).toContain("So I can share it");
+    expect(story.releaseId).toBeNull();
+
+    const tree = await svc.getTree(companyId);
+    expect(tree.activities.map((a) => a.name)).toEqual(["Scratch pad ideas"]);
+    expect(tree.tasks.map((t) => t.name)).toEqual(["Promoted ideas"]);
+    expect(tree.stories.map((s) => s.id)).toEqual([story.id]);
+
+    // A second note reuses the same activity and task.
+    const other = await svc.createScratchNote(companyId, "u2", { body: "Dark mode" });
+    await svc.promoteScratchNote(companyId, other.id);
+    const again = await svc.getTree(companyId);
+    expect(again.activities).toHaveLength(1);
+    expect(again.tasks).toHaveLength(1);
+    expect(again.stories).toHaveLength(2);
+
+    // The same note cannot be promoted twice.
+    await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
+  });
+
+  it("promotes a note once when two requests arrive together, and reports the parents it created", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board as PDF" });
+
+    const results = await Promise.allSettled([
+      svc.promoteScratchNote(companyId, note.id),
+      svc.promoteScratchNote(companyId, note.id),
+      svc.promoteScratchNote(companyId, note.id),
+    ]);
+    const done = results.filter((r) => r.status === "fulfilled");
+    expect(done).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(2);
+
+    const tree = await svc.getTree(companyId);
+    expect(tree.stories).toHaveLength(1);
+    expect(tree.activities).toHaveLength(1);
+    expect(tree.tasks).toHaveLength(1);
+    const first = (done[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof svc.promoteScratchNote>>>).value;
+    expect(first.note.promotedStoryId).toBe(tree.stories[0]!.id);
+    expect(first.createdParents.activity?.name).toBe("Scratch pad ideas");
+    expect(first.createdParents.task?.name).toBe("Promoted ideas");
+
+    // The column exists now: a later promotion creates no parents.
+    const other = await svc.createScratchNote(companyId, "u2", { body: "Dark mode" });
+    const second = await svc.promoteScratchNote(companyId, other.id);
+    expect(second.createdParents).toEqual({ activity: null, task: null });
+  });
+
+  it("creates the idea column once when different notes are promoted together", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const notes = await Promise.all(
+      ["One", "Two", "Three"].map((body, index) => svc.createScratchNote(companyId, `u${index}`, { body })),
+    );
+    await Promise.all(notes.map((note) => svc.promoteScratchNote(companyId, note.id)));
+    const tree = await svc.getTree(companyId);
+    expect(tree.activities).toHaveLength(1);
+    expect(tree.tasks).toHaveLength(1);
+    expect(tree.stories).toHaveLength(3);
+  });
+
+  it("keeps positions unique when several moves run together", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const items = [];
+    for (const name of ["A", "B", "C", "D", "E"]) items.push(await svc.createActivity(companyId, { name }));
+
+    await Promise.all([
+      svc.moveItem(companyId, "activities", items[4]!.id, { beforeId: items[0]!.id }),
+      svc.moveItem(companyId, "activities", items[3]!.id, { beforeId: items[0]!.id }),
+      svc.moveItem(companyId, "activities", items[0]!.id, {}),
+      svc.moveItem(companyId, "activities", items[2]!.id, { beforeId: items[1]!.id }),
+    ]);
+
+    const activities = (await svc.getTree(companyId)).activities;
+    expect(activities).toHaveLength(5);
+    expect(activities.map((a) => a.position).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(new Set(activities.map((a) => a.id)).size).toBe(5);
+  });
+
+  it("archives a note and refuses to promote it afterwards", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Old idea" });
+
+    const archived = await svc.archiveScratchNote(companyId, note.id);
+    expect(archived.status).toBe("archived");
+    expect((await svc.archiveScratchNote(companyId, note.id)).status).toBe("archived");
+    await expect(svc.promoteScratchNote(companyId, note.id)).rejects.toThrow(/active/);
+  });
+
+  it("refuses to archive a promoted note and keeps its story", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "Export the board" });
+    const { story } = await svc.promoteScratchNote(companyId, note.id);
+
+    await expect(svc.archiveScratchNote(companyId, note.id)).rejects.toThrow(/promoted/i);
+
+    const [stored] = await svc.listScratchNotes(companyId);
+    expect(stored?.status).toBe("promoted");
+    expect(stored?.promotedStoryId).toBe(story.id);
+    expect((await svc.getTree(companyId)).stories.map((item) => item.id)).toEqual([story.id]);
+  });
+
+  it("keeps a promote and an archive consistent when they arrive together", async () => {
+    const svc = storyMapService(db);
+    const companyId = await seedCompany();
+    const note = await svc.createScratchNote(companyId, "u1", { body: "One idea" });
+
+    const results = await Promise.allSettled([
+      svc.promoteScratchNote(companyId, note.id),
+      svc.archiveScratchNote(companyId, note.id),
+    ]);
+    // The note row lock serializes the two, so exactly one write wins.
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+
+    const [stored] = await svc.listScratchNotes(companyId);
+    const tree = await svc.getTree(companyId);
+    if (stored?.status === "promoted") {
+      expect(stored.promotedStoryId).not.toBeNull();
+      expect(tree.stories.map((item) => item.id)).toEqual([stored.promotedStoryId]);
+    } else {
+      expect(stored?.status).toBe("archived");
+      expect(stored?.promotedStoryId).toBeNull();
+      expect(tree.stories).toHaveLength(0);
+    }
+  });
+
+  it("cannot promote or archive another company's note", async () => {
+    const svc = storyMapService(db);
+    const companyA = await seedCompany();
+    const companyB = await seedCompany();
+    const note = await svc.createScratchNote(companyA, "u1", { body: "Private idea" });
+    await expect(svc.promoteScratchNote(companyB, note.id)).rejects.toThrow(/not found/i);
+    await expect(svc.archiveScratchNote(companyB, note.id)).rejects.toThrow(/not found/i);
   });
 
   it("lists scratch notes newest first and only for their own company", async () => {

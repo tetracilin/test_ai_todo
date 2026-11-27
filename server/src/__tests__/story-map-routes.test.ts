@@ -8,16 +8,22 @@ const mockService = vi.hoisted(() => ({
   updateActivity: vi.fn(),
   deleteActivity: vi.fn(),
   createStory: vi.fn(),
+  moveItem: vi.fn(),
   listScratchNotes: vi.fn(),
   createScratchNote: vi.fn(),
   updateScratchNote: vi.fn(),
   deleteScratchNote: vi.fn(),
+  promoteScratchNote: vi.fn(),
+  archiveScratchNote: vi.fn(),
 }));
+
+const mockAccess = vi.hoisted(() => ({ getMembership: vi.fn() }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
   storyMapService: () => mockService,
+  accessService: () => mockAccess,
   logActivity: mockLogActivity,
 }));
 
@@ -114,9 +120,54 @@ describe("story map routes", () => {
   });
 });
 
+describe("story map move routes", () => {
+  beforeEach(() => {
+    for (const mock of Object.values(mockService)) mock.mockReset();
+    mockLogActivity.mockReset();
+  });
+
+  it("moves an item before a sibling and logs the move", async () => {
+    mockService.moveItem.mockResolvedValue({ id: ID });
+    const BEFORE = "22222222-2222-4222-8222-222222222222";
+    const res = await request(await createApp(board))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({ beforeId: BEFORE });
+    expect(res.status).toBe(200);
+    expect(mockService.moveItem).toHaveBeenCalledWith(COMPANY, "tasks", ID, { beforeId: BEFORE });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ action: "story_map_task.moved", entityId: ID, details: { beforeId: BEFORE } }),
+    );
+  });
+
+  it("moves a story to a release, or to Unscheduled with null", async () => {
+    mockService.moveItem.mockResolvedValue({ id: ID });
+    const RELEASE = "33333333-3333-4333-8333-333333333333";
+    const app = await createApp(board);
+    await request(app).post(`/api/companies/${COMPANY}/story-map/stories/${ID}/move`).send({ releaseId: RELEASE });
+    await request(app).post(`/api/companies/${COMPANY}/story-map/stories/${ID}/move`).send({ releaseId: null });
+    expect(mockService.moveItem).toHaveBeenNthCalledWith(1, COMPANY, "stories", ID, { releaseId: RELEASE });
+    expect(mockService.moveItem).toHaveBeenNthCalledWith(2, COMPANY, "stories", ID, { releaseId: null });
+  });
+
+  it("refuses a bad id and a move by an agent", async () => {
+    const bad = await request(await createApp(board))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({ beforeId: "not-a-uuid" });
+    expect(bad.status).toBe(400);
+    const agent = { type: "agent", agentId: "agent-1", companyId: COMPANY, source: "agent_key" };
+    const denied = await request(await createApp(agent))
+      .post(`/api/companies/${COMPANY}/story-map/tasks/${ID}/move`)
+      .send({});
+    expect(denied.status).toBe(403);
+    expect(mockService.moveItem).not.toHaveBeenCalled();
+  });
+});
+
 describe("scratch note routes", () => {
   beforeEach(() => {
     for (const mock of Object.values(mockService)) mock.mockReset();
+    mockAccess.getMembership.mockReset();
     mockLogActivity.mockReset();
   });
 
@@ -148,5 +199,80 @@ describe("scratch note routes", () => {
     await request(app).delete(`/api/companies/${COMPANY}/scratch-notes/${ID}`);
     expect(mockService.updateScratchNote).toHaveBeenCalledWith(COMPANY, ID, "user-1", { body: "Edited" });
     expect(mockService.deleteScratchNote).toHaveBeenCalledWith(COMPANY, ID, "user-1");
+  });
+
+  it("lists the notes with what the viewer may do, and lets an admin moderate", async () => {
+    mockService.listScratchNotes.mockResolvedValue([{ id: ID, body: "An idea", authorName: "Ana" }]);
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "admin" });
+    const res = await request(await createApp(board)).get(`/api/companies/${COMPANY}/scratch-notes`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      notes: [{ id: ID, body: "An idea", authorName: "Ana" }],
+      viewerUserId: "user-1",
+      canModerate: true,
+    });
+  });
+
+  it("does not let an operator or viewer moderate", async () => {
+    mockService.listScratchNotes.mockResolvedValue([]);
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "operator" });
+    const app = await createApp(board);
+    const list = await request(app).get(`/api/companies/${COMPANY}/scratch-notes`);
+    expect(list.body.canModerate).toBe(false);
+
+    const promote = await request(app).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    const archive = await request(app).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/archive`).send({});
+    expect(promote.status).toBe(403);
+    expect(archive.status).toBe(403);
+    expect(mockService.promoteScratchNote).not.toHaveBeenCalled();
+    expect(mockService.archiveScratchNote).not.toHaveBeenCalled();
+  });
+
+  it("lets an owner promote a note and logs the note and the new story", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
+    mockService.promoteScratchNote.mockResolvedValue({
+      note: { id: ID },
+      story: { id: "story-9", title: "An idea" },
+      createdParents: { activity: null, task: null },
+    });
+    const res = await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    expect(res.status).toBe(200);
+    expect(mockService.promoteScratchNote).toHaveBeenCalledWith(COMPANY, ID);
+    const actions = mockLogActivity.mock.calls.map((call) => call[1].action);
+    expect(actions).toEqual(["scratch_note.promoted", "story_map_story.created"]);
+  });
+
+  it("logs the idea column when the first promotion creates it", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
+    mockService.promoteScratchNote.mockResolvedValue({
+      note: { id: ID },
+      story: { id: "story-9", title: "An idea" },
+      createdParents: {
+        activity: { id: "act-1", name: "Scratch pad ideas", position: 0 },
+        task: { id: "task-1", name: "Promoted ideas", activityId: "act-1", position: 0 },
+      },
+    });
+    await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    const actions = mockLogActivity.mock.calls.map((call) => call[1].action);
+    expect(actions).toEqual([
+      "story_map_activity.created",
+      "story_map_task.created",
+      "scratch_note.promoted",
+      "story_map_story.created",
+    ]);
+  });
+
+  it("lets an admin archive a note", async () => {
+    mockAccess.getMembership.mockResolvedValue({ status: "active", membershipRole: "admin" });
+    mockService.archiveScratchNote.mockResolvedValue({ id: ID, status: "archived" });
+    const res = await request(await createApp(board)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/archive`).send({});
+    expect(res.status).toBe(200);
+    expect(mockLogActivity).toHaveBeenCalledWith({}, expect.objectContaining({ action: "scratch_note.archived" }));
+  });
+
+  it("does not let an agent moderate", async () => {
+    const agent = { type: "agent", agentId: "agent-1", companyId: COMPANY, source: "agent_key" };
+    const res = await request(await createApp(agent)).post(`/api/companies/${COMPANY}/scratch-notes/${ID}/promote`).send({});
+    expect(res.status).toBe(403);
   });
 });
