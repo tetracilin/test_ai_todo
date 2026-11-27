@@ -26,6 +26,8 @@ const markdownEditorMockState = vi.hoisted(() => ({
   emitMountEmptyChange: false,
 }));
 
+const mockLocationState = vi.hoisted(() => ({ hash: "" }));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,7 +60,7 @@ vi.mock("../hooks/useAutosaveIndicator", () => ({
 }));
 
 vi.mock("@/lib/router", () => ({
-  useLocation: () => ({ hash: "" }),
+  useLocation: () => ({ hash: mockLocationState.hash }),
 }));
 
 vi.mock("./MarkdownBody", () => ({
@@ -195,6 +197,15 @@ async function flush() {
   });
 }
 
+async function expandAllDocuments(container: HTMLElement) {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (candidate) => candidate.textContent?.trim() === "Expand all",
+  );
+  await act(async () => {
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
 function createIssueDocument(overrides: Partial<IssueDocument> = {}): IssueDocument {
   return {
     id: "document-1",
@@ -297,10 +308,124 @@ describe("IssueDocumentsSection", () => {
     // default implementation, so a full reset is safe.
     for (const mock of Object.values(mockIssuesApi)) mock.mockReset();
     markdownEditorMockState.emitMountEmptyChange = false;
+    mockLocationState.hash = "";
   });
 
   afterEach(() => {
     container.remove();
+  });
+
+  it("expands the linked document for a comment deep link with a thread parameter", async () => {
+    mockLocationState.hash = "#document-plan&thread=t1";
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({ key: "plan", body: "Plan body text" }),
+      createIssueDocument({ id: "document-notes", key: "notes", body: "Notes body text" }),
+    ]);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+    expect(container.textContent).toContain("Plan body text");
+    expect(container.textContent).not.toContain("Notes body text");
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
+  it("opens the document listed in defaultAnnotationPanelOpenKeys on first render", async () => {
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({ key: "plan", body: "Plan body text" }),
+      createIssueDocument({ id: "document-notes", key: "notes", body: "Notes body text" }),
+    ]);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} defaultAnnotationPanelOpenKeys={["notes"]} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+    const states = Array.from(
+      container.querySelectorAll('button[aria-label$=" document"][aria-expanded]'),
+    ).map((button) => button.getAttribute("aria-expanded"));
+    expect(states).toEqual(["false", "true"]);
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
+  it("shows documents collapsed by default, toggles rows, and does not remember the state", async () => {
+    const issue = createIssue();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({ key: "plan", body: "Plan body text" }),
+      createIssueDocument({ id: "document-notes", key: "notes", body: "Notes body text" }),
+    ]);
+    const renderSection = async () => {
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+          </QueryClientProvider>,
+        );
+      });
+      await flush();
+      await flush();
+      return root;
+    };
+    const toggles = () =>
+      Array.from(container.querySelectorAll('button[aria-label$=" document"][aria-expanded]')) as HTMLButtonElement[];
+
+    let root = await renderSection();
+    expect(container.textContent).toContain("plan");
+    expect(container.textContent).toContain("notes");
+    expect(container.textContent).not.toContain("Plan body text");
+    expect(container.textContent).not.toContain("Notes body text");
+    expect(toggles().map((button) => button.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+
+    await act(async () => {
+      toggles()[0]!.click();
+    });
+    expect(container.textContent).toContain("Plan body text");
+    expect(container.textContent).not.toContain("Notes body text");
+    expect(toggles()[0]!.getAttribute("aria-expanded")).toBe("true");
+
+    await act(async () => {
+      toggles()[0]!.click();
+    });
+    expect(container.textContent).not.toContain("Plan body text");
+
+    await expandAllDocuments(container);
+    expect(container.textContent).toContain("Plan body text");
+    expect(container.textContent).toContain("Notes body text");
+
+    await act(async () => {
+      root.unmount();
+    });
+    expect(window.localStorage.getItem("paperclip:issue-document-folds:" + issue.id)).toBeNull();
+    root = await renderSection();
+    expect(container.textContent).not.toContain("Plan body text");
+    expect(container.textContent).not.toContain("Notes body text");
+
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
   });
 
   it("keeps system handoff documents out of the normal document surface", async () => {
@@ -336,6 +461,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(container.textContent).toContain("# Plan");
     expect(container.textContent).not.toContain("# Handoff");
@@ -509,6 +635,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(container.textContent).toContain("Locked plan body");
     expect(container.textContent).not.toContain("Edit document");
@@ -725,6 +852,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(container.textContent).toContain("Current plan body");
 
@@ -804,6 +932,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(container.textContent).toContain("Current plan body");
 
@@ -866,6 +995,7 @@ describe("IssueDocumentsSection", () => {
 
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(container.textContent).toContain("Loaded plan body");
     expect(container.textContent).not.toContain("Markdown body");
@@ -914,6 +1044,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     const markdownBodies = Array.from(
       container.querySelectorAll('[data-testid="markdown-body"]'),
@@ -1036,6 +1167,7 @@ describe("IssueDocumentsSection", () => {
     });
     await flush();
     await flush();
+    await expandAllDocuments(container);
 
     expect(listDocuments).toHaveBeenCalled();
     expect(container.textContent).toContain("Reusable case document body");
