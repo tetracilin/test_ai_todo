@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
 import { healthApi } from "@/api/health";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { queryKeys } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +40,7 @@ export function AppVersion({ className }: { className?: string }) {
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(copyText);
+      await copyTextToClipboard(copyText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

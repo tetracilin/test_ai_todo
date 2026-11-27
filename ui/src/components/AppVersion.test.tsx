@@ -9,7 +9,9 @@ import { AppVersion, formatAppVersion } from "./AppVersion";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const healthApiMock = vi.hoisted(() => ({ get: vi.fn() }));
+const clipboardMock = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
 vi.mock("@/api/health", () => ({ healthApi: healthApiMock }));
+vi.mock("@/lib/clipboard", () => clipboardMock);
 
 const SHA = "2bfb9246abcdef0123456789abcdef0123456789";
 
@@ -40,7 +42,7 @@ describe("formatAppVersion", () => {
 describe("AppVersion", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
-  const writeText = vi.fn();
+  const writeText = clipboardMock.copyTextToClipboard;
 
   async function render() {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,7 +65,6 @@ describe("AppVersion", () => {
     root = createRoot(container);
     healthApiMock.get.mockReset();
     writeText.mockReset();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   });
 
   afterEach(async () => {
