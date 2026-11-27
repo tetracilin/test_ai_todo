@@ -78,6 +78,14 @@ export const updateStoryMapStorySchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: "At least one story field is required" });
 
+export const moveStoryMapItemSchema = z.object({
+  beforeId: id.optional().nullable(),
+});
+export const moveStoryMapStorySchema = z.object({
+  beforeId: id.optional().nullable(),
+  releaseId: id.optional().nullable(),
+});
+
 const scratchNoteBody = z.string().trim().min(1).max(SCRATCH_NOTE_MAX_LENGTH);
 export const createScratchNoteSchema = z.object({ body: scratchNoteBody });
 export const updateScratchNoteSchema = z.object({ body: scratchNoteBody });
@@ -92,5 +100,7 @@ export type CreateStoryMapEpic = z.infer<typeof createStoryMapEpicSchema>;
 export type UpdateStoryMapEpic = z.infer<typeof updateStoryMapEpicSchema>;
 export type CreateStoryMapStory = z.infer<typeof createStoryMapStorySchema>;
 export type UpdateStoryMapStory = z.infer<typeof updateStoryMapStorySchema>;
+export type MoveStoryMapItem = z.infer<typeof moveStoryMapItemSchema>;
+export type MoveStoryMapStory = z.infer<typeof moveStoryMapStorySchema>;
 export type CreateScratchNote = z.infer<typeof createScratchNoteSchema>;
 export type UpdateScratchNote = z.infer<typeof updateScratchNoteSchema>;

@@ -99,6 +99,30 @@ export interface ScratchNote {
   updatedAt: Date;
 }
 
+/** A scratch note with its author's display name. */
+export interface ScratchNoteView extends ScratchNote {
+  authorName: string | null;
+}
+
+/** The scratch pad of a company, plus what the viewer may do with it. */
+export interface ScratchNoteList {
+  notes: ScratchNoteView[];
+  viewerUserId: string | null;
+  /** Owners and admins can promote a note to a story or archive it. */
+  canModerate: boolean;
+}
+
+export interface PromoteScratchNoteResult {
+  note: ScratchNote;
+  story: StoryMapStory;
+  /** The idea column is created on first use. These are the parents this promotion created, if any. */
+  createdParents: { activity: StoryMapActivity | null; task: StoryMapTask | null };
+}
+
+/** Where promoted notes land on the story map. */
+export const PROMOTED_NOTES_ACTIVITY = "Scratch pad ideas";
+export const PROMOTED_NOTES_TASK = "Promoted ideas";
+
 export interface CreateStoryMapActivityRequest { name: string; position?: number | null }
 export interface UpdateStoryMapActivityRequest { name?: string; position?: number }
 export interface CreateStoryMapTaskRequest { activityId: string; name: string; position?: number | null }
@@ -133,5 +157,12 @@ export interface UpdateStoryMapStoryRequest {
   status?: StoryMapStoryStatus;
   position?: number;
 }
+/**
+ * Moves one item among its siblings. The item goes before `beforeId`, or to the
+ * end when `beforeId` is null or missing. Siblings are renumbered in one step.
+ */
+export interface MoveStoryMapItemRequest { beforeId?: string | null }
+/** A story can also change release in the same move. `releaseId: null` means Unscheduled. */
+export interface MoveStoryMapStoryRequest extends MoveStoryMapItemRequest { releaseId?: string | null }
 export interface CreateScratchNoteRequest { body: string }
 export interface UpdateScratchNoteRequest { body: string }
