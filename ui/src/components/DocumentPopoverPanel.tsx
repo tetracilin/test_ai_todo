@@ -1,6 +1,7 @@
 import { useState, type RefObject } from "react";
 import type { CompanyArtifact } from "../api/artifacts";
 import { DocumentPanelFileTree } from "./DocumentPanelFileTree";
+import { DocumentPanelTabs } from "./DocumentPanelTabs";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 export interface DocumentPopoverPanelProps {
@@ -9,22 +10,35 @@ export interface DocumentPopoverPanelProps {
   returnFocusRef?: RefObject<HTMLElement | null>;
   companyId?: string | null;
   projectId?: string | null;
+  /** Ids of open files with unsaved changes (set by the editors). Closing them asks for confirmation. */
+  unsavedIds?: ReadonlySet<string>;
 }
+
+const DISCARD_MESSAGE = "This document has unsaved changes. Close it and lose them?";
 
 /**
  * Pop-over shell for a document: file tree and task chat share the left 25%,
  * the edit pane takes the right 75%. Areas hold placeholders until they are built.
  * Radix Dialog supplies the focus trap, Escape handling and focus return.
  */
-export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId }: DocumentPopoverPanelProps) {
+export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId, unsavedIds }: DocumentPopoverPanelProps) {
   const [openTabs, setOpenTabs] = useState<CompanyArtifact[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = openTabs.find((tab) => tab.id === activeId) ?? null;
+  function closeTab(id: string): boolean {
+    if (unsavedIds?.has(id) && !window.confirm(DISCARD_MESSAGE)) return false;
+    const index = openTabs.findIndex((tab) => tab.id === id);
+    const remaining = openTabs.filter((tab) => tab.id !== id);
+    setOpenTabs(remaining);
+    if (id === activeId) setActiveId((remaining[index] ?? remaining[index - 1] ?? null)?.id ?? null);
+    return true;
+  }
   return (
     <Dialog
       open={documentKey !== null}
       onOpenChange={(open) => {
         if (!open) {
+          if (openTabs.some((tab) => unsavedIds?.has(tab.id)) && !window.confirm(DISCARD_MESSAGE)) return;
           setOpenTabs([]);
           setActiveId(null);
           onClose();
@@ -77,20 +91,13 @@ export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, com
             className="min-h-0 min-w-0 flex-1 overflow-auto p-3 text-sm text-muted-foreground md:basis-3/4 md:border-l md:border-border"
           >
             {openTabs.length > 0 ? (
-              <div role="tablist" aria-label="Open files" className="flex flex-wrap gap-1">
-                {openTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab.id === activeId}
-                    className={tab.id === activeId ? "rounded-md bg-accent px-2 py-1 text-foreground" : "rounded-md px-2 py-1"}
-                    onClick={() => setActiveId(tab.id)}
-                  >
-                    {tab.title}
-                  </button>
-                ))}
-              </div>
+              <DocumentPanelTabs
+                tabs={openTabs}
+                activeId={activeId}
+                unsavedIds={unsavedIds}
+                onSelect={setActiveId}
+                onClose={closeTab}
+              />
             ) : (
               "Edit pane"
             )}
