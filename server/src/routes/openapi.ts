@@ -4528,8 +4528,17 @@ registry.registerPath({
   path: "/api/companies/{companyId}/heartbeat-runs",
   tags: ["runs"],
   summary: "List heartbeat runs for a company",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  description: "Returns heartbeat runs for a company. When updatedSince is provided, results are ordered by updatedAt ascending (oldest first) so that limit-based pagination is safe. Without updatedSince, results are ordered by createdAt descending (newest first).",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      agentId: z.string().optional().describe("Filter runs by agent ID"),
+      limit: z.string().optional().describe("Maximum number of runs to return (1-1000, default 200)"),
+      summary: z.string().optional().describe("Return summary fields only (true/1 for summary mode)"),
+      updatedSince: z.string().optional().describe("ISO-8601 date to filter runs updated since this timestamp. When present, results are ordered by updatedAt ascending. Returns 400 if unparseable."),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
