@@ -46,6 +46,10 @@ async function act<T>(callback: () => T | Promise<T>): Promise<T> {
   return resolved as T;
 }
 
+vi.mock("./DocumentPanelChat", () => ({
+  DocumentPanelChat: () => <div>Task chat</div>,
+}));
+
 vi.mock("../api/issues", () => ({
   issuesApi: mockIssuesApi,
 }));
