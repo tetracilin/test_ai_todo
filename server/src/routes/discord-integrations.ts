@@ -17,7 +17,7 @@ import {
   issues,
   projects,
 } from "@paperclipai/db";
-import { classifyWp0Inbound, renderWp0HelpMessage, renderWp0Message, splitWp0IntakeText } from "@paperclipai/shared";
+import { classifyWp0Inbound, renderWp0HelpMessage, renderWp0Message, resolveWp0Verb, splitWp0IntakeText } from "@paperclipai/shared";
 import {
   isAllowedContentType,
   normalizeIssueAttachmentMaxBytes,
@@ -25,9 +25,13 @@ import {
 } from "../attachment-types.js";
 import { badRequest, forbidden, HttpError } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
+import { discordCaptureService, type MediaFetch } from "../services/discord-capture.js";
 import { discordDmInbox } from "../services/discord-dm-inbox.js";
 import { discordIntakeService } from "../services/discord-intake.js";
 import { issueService } from "../services/issues.js";
+import { createStructuringClient, type StructuringClientOptions } from "../services/wp0-structuring.js";
+import { createStorageService } from "../storage/service.js";
+import type { StorageProvider } from "../storage/types.js";
 import { assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
 
 export const DISCORD_NOTIFICATION_EVENTS = [
@@ -86,6 +90,9 @@ const dmAttachmentsSchema = z.array(z.object({
   filename: z.string().trim().min(1).max(260),
   contentType: z.string().trim().max(255).nullable(),
   size: z.number().int().min(0),
+  // F-CAP-1: where Discord serves the bytes. Optional so a bridge from before
+  // F-CAP-1 still works; the capture service re-checks the host before fetching.
+  url: z.string().url().max(2_048).optional(),
 }).strict()).max(10).default([]);
 const dmInboundSchema = z.object({
   discordUserId: z.string().trim().min(1).max(128),
@@ -106,6 +113,14 @@ const dmInboundSchema = z.object({
   // the bridge missed. Optional so a bridge from before F-DM-3 still works.
   messageCreatedAt: z.string().datetime({ offset: true }).optional(),
   replay: z.boolean().optional(),
+  // F-CAP-1 message pairing: the text message the bridge paired with this media
+  // message (photo first and caption next, or the other way round). The two
+  // form ONE capture, so the caption's own message id is settled with it.
+  caption: z.object({
+    messageId: z.string().trim().min(1).max(128),
+    content: z.string().max(4_000),
+    messageCreatedAt: z.string().datetime({ offset: true }).optional(),
+  }).strict().optional(),
 }).strict();
 const dmDowntimeSchema = z.object({
   startedAt: z.string().datetime({ offset: true }),
@@ -163,11 +178,27 @@ function issueUrl(issue: { id: string; identifier: string | null }) {
   return `${base}/issues/${encodeURIComponent(issue.identifier ?? issue.id)}`;
 }
 
-export function discordIntegrationRoutes(db: Db) {
+export interface DiscordIntegrationRouteOptions {
+  externalStorage?: StorageProvider | null;
+  /** Overrides for the capture pipeline's outbound calls (the model provider and the Discord CDN). */
+  capture?: { structuring?: StructuringClientOptions; fetchMedia?: MediaFetch };
+}
+
+export function discordIntegrationRoutes(db: Db, opts: DiscordIntegrationRouteOptions = {}) {
   const router = Router();
   const issueSvc = issueService(db);
   const dmInbox = discordDmInbox(db);
   const intakeSvc = discordIntakeService(db);
+  // F-CAP-1: captured bytes go to the evidence bucket (PC-007 AC1), the same
+  // store the evidence upload route uses. Without one there is nowhere to keep
+  // a capture, so a media DM is answered 503 and stays in Discord for the replay.
+  const captureSvc = opts.externalStorage
+    ? discordCaptureService(db, {
+      storage: createStorageService(opts.externalStorage),
+      structuring: createStructuringClient(db, opts.capture?.structuring),
+      fetchMedia: opts.capture?.fetchMedia,
+    })
+    : null;
   const allowRequest = createSlidingWindowRateLimiter();
 
 
@@ -479,6 +510,10 @@ export function discordIntegrationRoutes(db: Db) {
       // A forward is always a job order; typed text is one only after the
       // capture phrase and a delimiter ("việc mới: ...").
       const jobOrderText = input.forwarded ? input.forwarded.content.trim() : splitWp0IntakeText(text);
+      // Only the DM's own files are a capture, and only when the bridge said
+      // where to fetch them; a forward's files belong to the job order.
+      const capturable = input.forwarded ? [] : input.attachments.flatMap((attachment) => attachment.url ? [{ ...attachment, url: attachment.url }] : []);
+      let holdReplyForCaption = false;
       let reply: string;
       if (rejected) {
         reply = renderWp0Message("media_rejected", { item: `tệp ${rejected.filename}` });
@@ -502,18 +537,61 @@ export function discordIntegrationRoutes(db: Db) {
         reply = intake.duplicate
           ? renderWp0Message("intake_duplicate", { card, url })
           : renderWp0Message(intake.triage ? "intake_created_triage" : "intake_created", { card, title: intake.issue.title, url });
+      } else if (capturable.length > 0) {
+        // F-CAP-1: a DM carrying files is a capture. Its caption is the text
+        // sent with the files plus the message the bridge paired with them; a
+        // bare verb ("nộp bằng chứng") is how the engineer asked, not a caption.
+        if (!captureSvc) throw asHttp("evidence_storage_not_configured", 503);
+        const captionText = [text, input.caption?.content.trim() ?? ""].filter((part) => part && !resolveWp0Verb(part)).join("\n");
+        const captured = await captureSvc.capture({
+          companyId: link.companyId,
+          userId: link.userId,
+          discordUserId: input.discordUserId,
+          discordMessageId: input.messageId,
+          caption: captionText || null,
+          attachments: capturable,
+          maxBytes,
+        });
+        if (captured.kind === "media_fetch_failed") {
+          reply = renderWp0Message("media_fetch_failed", { item: `tệp ${captured.filename}` });
+        } else if (captured.kind === "media_rejected") {
+          reply = renderWp0Message("media_rejected", { item: `tệp ${captured.filename}` });
+        } else {
+          const card = captured.card.identifier ?? captured.card.id;
+          reply = captured.kind === "filed"
+            ? renderWp0Message("capture_confirmed", { card, summary: captured.summary })
+            : renderWp0Message(captured.reason === "no_open_cards" ? "no_open_cards" : "capture_unstructured_triage", { card });
+        }
       } else if (!text) {
         reply = renderWp0HelpMessage();
       } else {
         const classification = classifyWp0Inbound(text, { pendingCaptureCardId: null });
-        // Until capture (F-CAP-1) and brief (F-BRIEF-1) ship, every recognized verb
-        // answers with the help table; those units replace this branch per verb.
-        reply = classification.kind === "unknown"
-          ? renderWp0Message("unknown_phrase", { input: text.slice(0, DM_ECHO_MAX_CHARS) })
-          : renderWp0HelpMessage();
+        // Until brief (F-BRIEF-1) and the correction turn (F-CAP-5) ship, every
+        // recognized verb answers with the help table.
+        if (classification.kind === "unknown") {
+          reply = renderWp0Message("unknown_phrase", { input: text.slice(0, DM_ECHO_MAX_CHARS) });
+          // Caption first, photo second: unrecognized text may be the caption of
+          // a photo that is seconds away. The bridge holds this reply for its
+          // pairing window and drops it if the photo arrives.
+          holdReplyForCaption = input.attachments.length === 0 && !input.replay;
+        } else {
+          reply = renderWp0HelpMessage();
+        }
+      }
+      // The paired caption was consumed by this capture: settle its message id
+      // too, or the replay would answer it a second time on its own.
+      if (input.caption && capturable.length > 0) {
+        const captionClaim = await dmInbox.claim({
+          companyId: link.companyId,
+          discordUserId: input.discordUserId,
+          discordMessageId: input.caption.messageId,
+          channelId: input.channelId,
+          messageCreatedAt: input.caption.messageCreatedAt ? new Date(input.caption.messageCreatedAt) : new Date(),
+        });
+        if (captionClaim.claimed) await dmInbox.succeed(input.caption.messageId);
       }
       await dmInbox.succeed(input.messageId);
-      res.json({ linked: true, companyId: link.companyId, duplicate: false, reply, attachments });
+      res.json({ linked: true, companyId: link.companyId, duplicate: false, reply, attachments, ...(holdReplyForCaption ? { holdReplyForCaption: true } : {}) });
     } catch (error) {
       await dmInbox.fail(input.messageId, "processing_failed").catch(() => undefined);
       throw error;

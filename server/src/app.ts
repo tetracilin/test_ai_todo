@@ -551,7 +551,7 @@ export async function createApp(
   api.use(decisionRoutes(db, opts.decisionServiceOptions));
   api.use(decisionQueueRoutes(db));
   api.use(userProfileRoutes(db));
-  api.use(discordIntegrationRoutes(db));
+  api.use(discordIntegrationRoutes(db, { externalStorage: opts.externalStorage ?? null }));
   api.use(sidebarBadgeRoutes(db));
   api.use(sidebarPreferenceRoutes(db));
   api.use(resourceMembershipRoutes(db));

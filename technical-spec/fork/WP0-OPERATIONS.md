@@ -133,7 +133,10 @@ component that is not there yet.
 | Vietnamese phrase table | **Yes** | `packages/shared/src/wp0-phrases.ts` (op AC10) |
 | DM surface: message-content intent, DM auth gate, media fetch | **No — WP-0 pilot build** | privileged-intent request is on the critical path |
 | Inbound capture persistence + replay on reconnect (op AC9) | **No — WP-0 pilot build** | no message handler and no inbound table in `discord-bridge/src/`; §4 and §7 depend on this |
-| Capture pipeline, re-brief, PM digest | **No — WP-0 verbs 1–3** | |
+| Capture pipeline (verb 1: F-CAP-1, F-CAP-2) | **Yes — needs the two settings below before it files anything** | `server/src/services/discord-capture.ts`, `server/src/services/wp0-structuring.ts`, `discord-bridge/src/lib/dmHandler.ts` (`DmPairing`) |
+| …capture needs the evidence bucket | **Operator setting** | Capture stores bytes through the external evidence store (`PAPERCLIP_STORAGE_EXTERNAL_*`, the same store `POST /companies/:companyId/issues/:issueId/evidence-links/upload` uses; it needs at least `PAPERCLIP_STORAGE_EXTERNAL_ENDPOINT` and `PAPERCLIP_STORAGE_EXTERNAL_BUCKET`). Without it a photo DM is answered `503 evidence_storage_not_configured`, the message stays unsettled, and the bridge replays it (§8) |
+| …capture needs a model provider | **Operator setting** | Server env `PAPERCLIP_WP0_LLM_BASE_URL` (an OpenAI-compatible `/v1` root) and `PAPERCLIP_WP0_LLM_MODEL`; company secret `WP0_LLM_API_KEY`. `PAPERCLIP_WP0_LLM_ALLOW_PRIVATE_NETWORK=1` only for a self-hosted model. Without them every capture is filed raw on the engineer's `Unsorted chat captures` card (label `triage`) and nothing is lost |
+| Re-brief, PM digest | **No — WP-0 verbs 2–3** | |
 | Pending-write queue + 5-minute replay for a rejected evidence write (op AC9) | **No — WP-0 pilot build** | no retry path in `server/src/services/assets.ts`; §8 depends on this |
 | Evidence provenance `source` column | **Landing — PC-011** | `issue_evidence_links.source` / `issue_attachments.source`; needed before the band can be queried at all |
 | Teable REST client | **No — PC-005 / PC-010** | no client exists in the repo today |
