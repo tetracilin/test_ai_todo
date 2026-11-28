@@ -104,6 +104,18 @@ describe("DocumentPanelChat", () => {
     expect(mockUpdate).toHaveBeenCalledWith("i1", { workMode: "planning" });
   });
 
+  it("shows an error when the work mode cannot be saved", async () => {
+    mockListComments.mockResolvedValue([]);
+    mockGet.mockResolvedValue({ id: "i1", workMode: "ask" });
+    mockUpdate.mockRejectedValue(new Error("boom"));
+    const container = await renderChat("i1");
+    const change = threadProps.current?.onWorkModeChange as (mode: string) => Promise<void>;
+    await act(async () => {
+      await change("planning").catch(() => undefined);
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("boom");
+  });
+
   it("shows a placeholder without a task", async () => {
     const container = await renderChat(null);
     expect(container.textContent).toBe("Task chat");

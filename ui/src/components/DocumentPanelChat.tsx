@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
@@ -36,6 +37,7 @@ export function DocumentPanelChat({ issueId, companyId, projectId }: DocumentPan
     queryFn: () => issuesApi.get(issueId as string),
     enabled: !!issueId,
   });
+  const [modeError, setModeError] = useState<string | null>(null);
   const updateWorkMode = useMutation({
     mutationFn: (workMode: string) => issuesApi.update(issueId as string, { workMode }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId as string) }),
@@ -45,6 +47,11 @@ export function DocumentPanelChat({ issueId, companyId, projectId }: DocumentPan
   const currentMode = issue?.workMode ?? "standard";
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {modeError ? (
+        <div role="alert" className="text-destructive">
+          The work mode was not saved, so the message was not sent: {modeError}
+        </div>
+      ) : null}
       <TaskChatThread
         comments={comments}
         issueId={issueId}
@@ -54,7 +61,13 @@ export function DocumentPanelChat({ issueId, companyId, projectId }: DocumentPan
         issueWorkMode={currentMode}
         onWorkModeChange={async (nextMode) => {
           if (nextMode === currentMode) return;
-          await updateWorkMode.mutateAsync(nextMode);
+          try {
+            await updateWorkMode.mutateAsync(nextMode);
+            setModeError(null);
+          } catch (error) {
+            setModeError(error instanceof Error && error.message ? error.message : "The work mode could not be saved.");
+            throw error;
+          }
         }}
         onAdd={async (body, reopen) => {
           await issuesApi.addComment(issueId, body, reopen);
