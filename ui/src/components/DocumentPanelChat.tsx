@@ -9,9 +9,14 @@ export interface DocumentPanelChatProps {
   projectId?: string | null;
 }
 
-/** Same draft key as the task page, so a half-typed message survives closing the panel. */
+/** Draft key of the panel chat only (the composer adds the work mode); a half-typed message survives closing the panel. */
 export function taskChatDraftKey(issueId: string) {
-  return `paperclip:issue-comment-draft:${issueId}`;
+  return `paperclip:document-panel-chat-draft:${issueId}`;
+}
+
+/** Own cache entry: the task page stores an infinite query under queryKeys.issues.comments(issueId). */
+export function documentPanelCommentsKey(issueId: string) {
+  return [...queryKeys.issues.comments(issueId), "document-panel"] as const;
 }
 
 /**
@@ -21,7 +26,7 @@ export function taskChatDraftKey(issueId: string) {
 export function DocumentPanelChat({ issueId, companyId, projectId }: DocumentPanelChatProps) {
   const queryClient = useQueryClient();
   const { data: comments = [], isError } = useQuery({
-    queryKey: queryKeys.issues.comments(issueId ?? ""),
+    queryKey: documentPanelCommentsKey(issueId ?? ""),
     queryFn: () => issuesApi.listComments(issueId as string, { order: "asc" }),
     enabled: !!issueId,
     refetchInterval: 3000,
