@@ -25,12 +25,13 @@ export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, com
   const [openTabs, setOpenTabs] = useState<CompanyArtifact[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = openTabs.find((tab) => tab.id === activeId) ?? null;
-  function closeTab(id: string) {
-    if (unsavedIds?.has(id) && !window.confirm(DISCARD_MESSAGE)) return;
+  function closeTab(id: string): boolean {
+    if (unsavedIds?.has(id) && !window.confirm(DISCARD_MESSAGE)) return false;
     const index = openTabs.findIndex((tab) => tab.id === id);
     const remaining = openTabs.filter((tab) => tab.id !== id);
     setOpenTabs(remaining);
     if (id === activeId) setActiveId((remaining[index] ?? remaining[index - 1] ?? null)?.id ?? null);
+    return true;
   }
   return (
     <Dialog

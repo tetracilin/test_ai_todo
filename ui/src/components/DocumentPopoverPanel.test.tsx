@@ -107,7 +107,7 @@ describe("DocumentPopoverPanel tabs", () => {
       el.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
     });
   };
-  async function openFiles(names: string[], unsavedIds?: Set<string>) {
+  async function openFiles(names: string[], unsavedIds?: Set<string>, onClose: () => void = () => {}) {
     mockList.mockResolvedValue({
       artifacts: [artifact("a1", "budget.xlsx"), artifact("a2", "spec.docx")],
       nextCursor: null,
@@ -118,7 +118,7 @@ describe("DocumentPopoverPanel tabs", () => {
     await act(async () => {
       createRoot(container).render(
         <QueryClientProvider client={queryClient}>
-          <DocumentPopoverPanel documentKey="plan" onClose={() => {}} companyId="c1" projectId="p1" unsavedIds={unsavedIds} />
+          <DocumentPopoverPanel documentKey="plan" onClose={onClose} companyId="c1" projectId="p1" unsavedIds={unsavedIds} />
         </QueryClientProvider>,
       );
     });
@@ -159,6 +159,31 @@ describe("DocumentPopoverPanel tabs", () => {
     confirm.mockReturnValue(true);
     await click('[aria-label="Close budget.xlsx"]');
     expect(tabs()).toHaveLength(0);
+    confirm.mockRestore();
+  });
+
+  it("keeps the active tab when Delete on an unsaved tab is cancelled", async () => {
+    await openFiles(["budget.xlsx", "spec.docx"], new Set(["a1"]));
+    await click('[data-tab-id="a1"]');
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await key(tabs()[0], "Delete");
+    expect(tabs()).toHaveLength(2);
+    expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
+    confirm.mockRestore();
+  });
+
+  it("asks before closing the panel with an unsaved tab", async () => {
+    const onClose = vi.fn();
+    await openFiles(["budget.xlsx"], new Set(["a1"]), onClose);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const dialog = document.querySelector('[data-testid="document-popover-panel"]') as HTMLElement;
+    await key(dialog, "Escape");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(tabs()).toHaveLength(1);
+    confirm.mockReturnValue(true);
+    await key(dialog, "Escape");
+    expect(onClose).toHaveBeenCalledTimes(1);
     confirm.mockRestore();
   });
 });

@@ -8,7 +8,8 @@ export interface DocumentPanelTabsProps {
   /** Ids of tabs with unsaved changes; they are marked and closing them asks first. */
   unsavedIds?: ReadonlySet<string>;
   onSelect: (id: string) => void;
-  onClose: (id: string) => void;
+  /** Returns false when the close was cancelled and the tab stays open. */
+  onClose: (id: string) => boolean;
 }
 
 /** Tab bar of the edit pane: roving focus, arrow/Home/End to move, Delete or the close control to close. */
@@ -33,8 +34,7 @@ export function DocumentPanelTabs({ tabs, activeId, unsavedIds, onSelect, onClos
     else if (event.key === "Delete") {
       event.preventDefault();
       const next = tabs[index + 1] ?? tabs[index - 1];
-      onClose(tabs[index].id);
-      if (next) focusTab(next.id);
+      if (onClose(tabs[index].id) && next) focusTab(next.id);
       return;
     }
     if (target === null) return;
