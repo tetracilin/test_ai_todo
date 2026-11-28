@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { TaskChatThread } from "./TaskChatThread";
@@ -31,20 +31,36 @@ export function DocumentPanelChat({ issueId, companyId, projectId }: DocumentPan
     enabled: !!issueId,
     refetchInterval: 3000,
   });
+  const { data: issue } = useQuery({
+    queryKey: queryKeys.issues.detail(issueId ?? ""),
+    queryFn: () => issuesApi.get(issueId as string),
+    enabled: !!issueId,
+  });
+  const updateWorkMode = useMutation({
+    mutationFn: (workMode: string) => issuesApi.update(issueId as string, { workMode }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId as string) }),
+  });
   if (!issueId) return <div className="text-muted-foreground">Task chat</div>;
   if (isError) return <div role="alert" className="text-destructive">The task chat could not be loaded.</div>;
+  const currentMode = issue?.workMode ?? "standard";
   return (
-    <TaskChatThread
-      comments={comments}
-      issueId={issueId}
-      companyId={companyId}
-      projectId={projectId}
-      draftKey={taskChatDraftKey(issueId)}
-      showJumpToLatest={false}
-      onAdd={async (body, reopen) => {
-        await issuesApi.addComment(issueId, body, reopen);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId) });
-      }}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <TaskChatThread
+        comments={comments}
+        issueId={issueId}
+        companyId={companyId}
+        projectId={projectId}
+        draftKey={taskChatDraftKey(issueId)}
+        issueWorkMode={currentMode}
+        onWorkModeChange={async (nextMode) => {
+          if (nextMode === currentMode) return;
+          await updateWorkMode.mutateAsync(nextMode);
+        }}
+        onAdd={async (body, reopen) => {
+          await issuesApi.addComment(issueId, body, reopen);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId) });
+        }}
+      />
+    </div>
   );
 }

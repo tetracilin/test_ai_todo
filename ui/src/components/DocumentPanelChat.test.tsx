@@ -8,10 +8,12 @@ import { DocumentPanelChat, documentPanelCommentsKey, taskChatDraftKey } from ".
 
 const mockListComments = vi.hoisted(() => vi.fn());
 const mockAddComment = vi.hoisted(() => vi.fn());
+const mockGet = vi.hoisted(() => vi.fn());
+const mockUpdate = vi.hoisted(() => vi.fn());
 const threadProps = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }));
 
 vi.mock("../api/issues", () => ({
-  issuesApi: { listComments: mockListComments, addComment: mockAddComment },
+  issuesApi: { listComments: mockListComments, addComment: mockAddComment, get: mockGet, update: mockUpdate },
 }));
 vi.mock("./TaskChatThread", () => ({
   TaskChatThread: (props: Record<string, unknown>) => {
@@ -87,6 +89,19 @@ describe("DocumentPanelChat", () => {
     expect(container.textContent).toContain("hello");
     expect(queryClient.getQueryData(["issues", "comments", "i1"])).toBe(infinite);
     expect(documentPanelCommentsKey("i1")).not.toEqual(["issues", "comments", "i1"]);
+  });
+
+  it("passes the saved work mode and saves a changed one on the task", async () => {
+    mockListComments.mockResolvedValue([]);
+    mockGet.mockResolvedValue({ id: "i1", workMode: "ask" });
+    mockUpdate.mockResolvedValue({});
+    await renderChat("i1");
+    expect(threadProps.current?.issueWorkMode).toBe("ask");
+    const change = threadProps.current?.onWorkModeChange as (mode: string) => Promise<void>;
+    await act(async () => {
+      await change("planning");
+    });
+    expect(mockUpdate).toHaveBeenCalledWith("i1", { workMode: "planning" });
   });
 
   it("shows a placeholder without a task", async () => {
