@@ -1,8 +1,9 @@
-import { useState, type RefObject } from "react";
+import { useCallback, useMemo, useState, type RefObject } from "react";
 import type { CompanyArtifact } from "../api/artifacts";
 import { DocumentPanelFileTree } from "./DocumentPanelFileTree";
 import { DocumentPanelChat } from "./DocumentPanelChat";
 import { DocumentPanelTabs } from "./DocumentPanelTabs";
+import { DocumentPanelEditor } from "./DocumentPanelEditor";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 export interface DocumentPopoverPanelProps {
@@ -23,7 +24,21 @@ const DISCARD_MESSAGE = "This document has unsaved changes. Close it and lose th
  * the edit pane takes the right 75%. Areas hold placeholders until they are built.
  * Radix Dialog supplies the focus trap, Escape handling and focus return.
  */
-export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId, issueId, unsavedIds }: DocumentPopoverPanelProps) {
+export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, companyId, projectId, issueId, unsavedIds: externalUnsavedIds }: DocumentPopoverPanelProps) {
+  const [editorDirtyIds, setEditorDirtyIds] = useState<ReadonlySet<string>>(new Set());
+  const onDirtyChange = useCallback((id: string, dirty: boolean) => {
+    setEditorDirtyIds((current) => {
+      if (current.has(id) === dirty) return current;
+      const next = new Set(current);
+      if (dirty) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  const unsavedIds = useMemo(
+    () => (externalUnsavedIds ? new Set([...externalUnsavedIds, ...editorDirtyIds]) : editorDirtyIds),
+    [externalUnsavedIds, editorDirtyIds],
+  );
   const [openTabs, setOpenTabs] = useState<CompanyArtifact[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = openTabs.find((tab) => tab.id === activeId) ?? null;
@@ -103,7 +118,11 @@ export function DocumentPopoverPanel({ documentKey, onClose, returnFocusRef, com
             ) : (
               "Edit pane"
             )}
-            {active ? <div className="mt-3 text-foreground">{active.title}</div> : null}
+            {active ? (
+              <div className="mt-3 text-foreground">
+                <DocumentPanelEditor key={active.id} artifact={active} onDirtyChange={onDirtyChange} />
+              </div>
+            ) : null}
           </section>
         </div>
       </DialogContent>
