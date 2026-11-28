@@ -1406,6 +1406,7 @@ export function IssueDocumentsSection({
         returnFocusRef={panelOpenerRef}
         companyId={issue?.companyId}
         projectId={issue?.projectId}
+        issueId={issue?.id}
       />
 
       {diffViewKey && (() => {
